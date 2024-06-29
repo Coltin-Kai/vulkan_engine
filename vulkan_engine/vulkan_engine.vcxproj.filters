@@ -13,10 +13,99 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
+    <Filter Include="Source Files\ThirdParty">
+      <UniqueIdentifier>{45bacbfb-ce5b-4c34-8a3b-264523460533}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\ThirdParty">
+      <UniqueIdentifier>{0d8ee8dc-8cdb-4dae-8343-524f6b8a00d5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\ThirdParty\Imgui">
+      <UniqueIdentifier>{940a0b53-025a-4f4d-923e-eddd50f4aa02}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\ThirdParty\VkBootStrap">
+      <UniqueIdentifier>{82051f57-527e-43c8-b104-eba7c5f23465}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\ThirdParty\Imgui">
+      <UniqueIdentifier>{f186b1e8-0f9e-45f5-b032-c36c26b07eac}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\ThirdParty\VkBootstrap">
+      <UniqueIdentifier>{881dc657-f110-406a-8b61-4f3ff8591916}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\engine.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\imgui.cpp">
+      <Filter>Source Files\ThirdParty\Imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="src\imgui_demo.cpp">
+      <Filter>Source Files\ThirdParty\Imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="src\imgui_draw.cpp">
+      <Filter>Source Files\ThirdParty\Imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="src\imgui_impl_sdl2.cpp">
+      <Filter>Source Files\ThirdParty\Imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="src\imgui_impl_vulkan.cpp">
+      <Filter>Source Files\ThirdParty\Imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="src\imgui_tables.cpp">
+      <Filter>Source Files\ThirdParty\Imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="src\imgui_widgets.cpp">
+      <Filter>Source Files\ThirdParty\Imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="src\VkBootstrap.cpp">
+      <Filter>Source Files\ThirdParty\VkBootStrap</Filter>
+    </ClCompile>
+    <ClCompile Include="src\vulkanUtility.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="include\engine.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\imconfig.h">
+      <Filter>Header Files\ThirdParty\Imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="include\imgui.h">
+      <Filter>Header Files\ThirdParty\Imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="include\imgui_impl_sdl2.h">
+      <Filter>Header Files\ThirdParty\Imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="include\imgui_impl_vulkan.h">
+      <Filter>Header Files\ThirdParty\Imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="include\imgui_internal.h">
+      <Filter>Header Files\ThirdParty\Imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="include\imstb_rectpack.h">
+      <Filter>Header Files\ThirdParty\Imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="include\imstb_textedit.h">
+      <Filter>Header Files\ThirdParty\Imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="include\imstb_truetype.h">
+      <Filter>Header Files\ThirdParty\Imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="include\VkBootstrap.h">
+      <Filter>Header Files\ThirdParty\VkBootstrap</Filter>
+    </ClInclude>
+    <ClInclude Include="include\VkBootstrapDispatch.h">
+      <Filter>Header Files\ThirdParty\VkBootstrap</Filter>
+    </ClInclude>
+    <ClInclude Include="include\checkVkResult.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\vulkanUtility.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

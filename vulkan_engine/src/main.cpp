@@ -1,10 +1,10 @@
-#include "engine.h"
 #include <iostream>
 #include <stdexcept>
 
-int main() {
-	Engine engine;
+#include "engine.h"
 
+int main(int argc, char* argv[]) {
+	Engine engine;
 	try {
 		engine.init();
 		engine.run();
