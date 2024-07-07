@@ -31,6 +31,9 @@
     <Filter Include="Header Files\ThirdParty\VkBootstrap">
       <UniqueIdentifier>{881dc657-f110-406a-8b61-4f3ff8591916}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Resource Files\shaders">
+      <UniqueIdentifier>{36234b87-be4a-488c-8629-5520bb632a9c}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\main.cpp">
@@ -64,6 +67,12 @@
       <Filter>Source Files\ThirdParty\VkBootStrap</Filter>
     </ClCompile>
     <ClCompile Include="src\vulkanUtility.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\descriptor.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\pipeline.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -107,5 +116,28 @@
     <ClInclude Include="include\vulkanUtility.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="include\descriptor.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\pipeline.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="shaders\default.vert">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\default.frag">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\compile.bat">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\default_frag.spv">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\default_vert.spv">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
   </ItemGroup>
 </Project>

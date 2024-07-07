@@ -3,12 +3,16 @@
 #include "VkBootstrap.h"
 #include "vulkan/vk_enum_string_helper.h"
 
+#define VMA_IMPLEMENTATION
+#include "vk_mem_alloc.h"
+
 #include "checkVkResult.h"
 #include "vulkanUtility.h"
 
 #include <thread>
 #include <iostream>
 #include <format>
+#include <pipeline.h>
 
 void Engine::init() {
 	//Initialize SDL Window
@@ -21,6 +25,7 @@ void Engine::init() {
 	init_swapchain();
 	init_commands();
 	init_sync_structures();
+	init_graphics_pipeline();
 }
 
 void Engine::run() {
@@ -57,7 +62,10 @@ void Engine::cleanup() {
 		vkDestroySemaphore(_device, _frames[i].renderSemaphore, nullptr);
 		vkDestroySemaphore(_device, _frames[i].swapchainSemaphore, nullptr);
 		
+		_frames[i].deletionQueue.flush();
 	}
+
+	_mainDeletionQueue.flush();
 
 	destroy_swapchain();
 	vkDestroySurfaceKHR(_instance, _surface, nullptr);
@@ -70,6 +78,9 @@ void Engine::cleanup() {
 
 void Engine::draw() {
 	VK_CHECK(vkWaitForFences(_device, 1, &get_current_frame().renderFence, true, 1000000000));
+	
+	get_current_frame().deletionQueue.flush();
+	
 	VK_CHECK(vkResetFences(_device, 1, &get_current_frame().renderFence));
 
 	uint32_t swapchainImageIndex;
@@ -95,6 +106,8 @@ void Engine::draw() {
 
 	vkCmdClearColorImage(cmd, _swapchain.images[swapchainImageIndex], VK_IMAGE_LAYOUT_GENERAL, &clearValue, 1, &clearRange);
 
+	draw_geometry(cmd, swapchainImageIndex);
+
 	vkutil::transition_image(cmd, _swapchain.images[swapchainImageIndex], VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 
 	VK_CHECK(vkEndCommandBuffer(cmd));
@@ -119,6 +132,38 @@ void Engine::draw() {
 	VK_CHECK(vkQueuePresentKHR(_graphicsQueue, &presentInfo));
 
 	_frameNumber++;
+}
+
+void Engine::draw_geometry(VkCommandBuffer cmd, uint32_t swapchainImageIndex) {
+	VkRenderingAttachmentInfo colorAttachment = vkutil::attachment_info(_swapchain.imageViews[swapchainImageIndex], nullptr, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+
+	VkRenderingInfo renderInfo = vkutil::rendering_info(_swapchain.extent, &colorAttachment, nullptr);
+	vkCmdBeginRendering(cmd, &renderInfo);
+
+	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _pipeline);
+
+	//Set Dynamic States
+	VkViewport viewport{};
+	viewport.x = 0;
+	viewport.y = 0;
+	viewport.width = _swapchain.extent.width;
+	viewport.height = _swapchain.extent.height;
+	viewport.minDepth = 0.0f;
+	viewport.maxDepth = 1.0f;
+
+	vkCmdSetViewport(cmd, 0, 1, &viewport);
+
+	VkRect2D scissor{};
+	scissor.offset.x = 0;
+	scissor.offset.y = 0;
+	scissor.extent.width = _swapchain.extent.width;
+	scissor.extent.height = _swapchain.extent.height;
+
+	vkCmdSetScissor(cmd, 0, 1, &scissor);
+
+	vkCmdDraw(cmd, 3, 1, 0, 0);
+
+	vkCmdEndRendering(cmd);
 }
 
 void Engine::init_vulkan() {
@@ -162,6 +207,17 @@ void Engine::init_vulkan() {
 	_physicalDevice = physicalDevice.physical_device;
 	_graphicsQueue = vkbDevice.get_queue(vkb::QueueType::graphics).value();
 	_graphicsQueueFamily = vkbDevice.get_queue_index(vkb::QueueType::graphics).value();
+
+	VmaAllocatorCreateInfo allocatorInfo{};
+	allocatorInfo.physicalDevice = _physicalDevice;
+	allocatorInfo.device = _device;
+	allocatorInfo.instance = _instance;
+	allocatorInfo.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
+	vmaCreateAllocator(&allocatorInfo, &_allocator);
+
+	_mainDeletionQueue.push_function([&]() {
+		vmaDestroyAllocator(_allocator);
+		});
 }
 
 void Engine::init_swapchain() {
@@ -218,6 +274,45 @@ void Engine::init_sync_structures() {
 		VK_CHECK(vkCreateSemaphore(_device, &semaphoreCreateInfo, nullptr, &_frames[i].swapchainSemaphore));
 		VK_CHECK(vkCreateSemaphore(_device, &semaphoreCreateInfo, nullptr, &_frames[i].renderSemaphore));
 	}
+}
+
+void Engine::init_graphics_pipeline() {
+	VkShaderModule vertexShader;
+	if (!vkutil::load_shader_module("shaders/default_vert.spv", _device, &vertexShader)) 
+		throw std::runtime_error("Error trying to create Vertex Shader Module");
+	else
+		std::cout << "Vertex Shader successfully loaded" << std::endl;
+
+	VkShaderModule fragShader;
+	if (!vkutil::load_shader_module("shaders/default_frag.spv", _device, &fragShader)) 
+		throw std::runtime_error("error trying to create Frag Shader Module");
+	else
+		std::cout << "Fragment Shader successfully loaded" << std::endl;
+
+	VkPipelineLayoutCreateInfo pipeline_layout_info = vkutil::pipeline_layout_create_info();
+	VK_CHECK(vkCreatePipelineLayout(_device, &pipeline_layout_info, nullptr, &_pipelineLayout));
+
+	PipelineBuilder pipelineBuilder;
+	pipelineBuilder._pipelineLayout = _pipelineLayout;
+	pipelineBuilder.set_shaders(vertexShader, fragShader);
+	pipelineBuilder.set_input_topology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+	pipelineBuilder.set_polygon_mode(VK_POLYGON_MODE_FILL);
+	pipelineBuilder.set_cull_mode(VK_CULL_MODE_NONE, VK_FRONT_FACE_CLOCKWISE);
+	pipelineBuilder.set_multisampling_none();
+	pipelineBuilder.disable_blending();
+	pipelineBuilder.disable_depthtest();
+	pipelineBuilder.set_color_attachment_format(_swapchain.format);
+	pipelineBuilder.set_depth_format(VK_FORMAT_UNDEFINED);
+
+	_pipeline = pipelineBuilder.build_pipeline(_device);
+
+	vkDestroyShaderModule(_device, vertexShader, nullptr);
+	vkDestroyShaderModule(_device, fragShader, nullptr);
+
+	_mainDeletionQueue.push_function([&]() {
+		vkDestroyPipelineLayout(_device, _pipelineLayout, nullptr);
+		vkDestroyPipeline(_device, _pipeline, nullptr);
+		});
 }
 
 void Engine::destroy_swapchain() {

@@ -19,6 +19,7 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="src\descriptor.cpp" />
     <ClCompile Include="src\engine.cpp" />
     <ClCompile Include="src\imgui.cpp" />
     <ClCompile Include="src\imgui_demo.cpp" />
@@ -28,11 +29,13 @@
     <ClCompile Include="src\imgui_tables.cpp" />
     <ClCompile Include="src\imgui_widgets.cpp" />
     <ClCompile Include="src\main.cpp" />
+    <ClCompile Include="src\pipeline.cpp" />
     <ClCompile Include="src\VkBootstrap.cpp" />
     <ClCompile Include="src\vulkanUtility.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\checkVkResult.h" />
+    <ClInclude Include="include\descriptor.h" />
     <ClInclude Include="include\engine.h" />
     <ClInclude Include="include\imconfig.h" />
     <ClInclude Include="include\imgui.h" />
@@ -42,9 +45,17 @@
     <ClInclude Include="include\imstb_rectpack.h" />
     <ClInclude Include="include\imstb_textedit.h" />
     <ClInclude Include="include\imstb_truetype.h" />
+    <ClInclude Include="include\pipeline.h" />
     <ClInclude Include="include\VkBootstrap.h" />
     <ClInclude Include="include\VkBootstrapDispatch.h" />
     <ClInclude Include="include\vulkanUtility.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="shaders\compile.bat" />
+    <None Include="shaders\default.frag" />
+    <None Include="shaders\default.vert" />
+    <None Include="shaders\default_frag.spv" />
+    <None Include="shaders\default_vert.spv" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>16.0</VCProjectVersion>
