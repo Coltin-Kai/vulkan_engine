@@ -11,6 +11,8 @@ namespace vkutil {
 
 	VkImageSubresourceRange image_subresource_range(VkImageAspectFlags aspectMask);
 
+	//Create Info Functions
+
 	VkImageCreateInfo image_create_info(VkFormat format, VkImageUsageFlags usageFlags, VkExtent3D extent);
 
 	VkImageViewCreateInfo imageview_create_info(VkFormat format, VkImage image, VkImageAspectFlags aspectFlags);

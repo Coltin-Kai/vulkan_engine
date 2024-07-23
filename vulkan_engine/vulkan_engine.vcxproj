@@ -48,6 +48,7 @@
     <ClInclude Include="include\pipeline.h" />
     <ClInclude Include="include\VkBootstrap.h" />
     <ClInclude Include="include\VkBootstrapDispatch.h" />
+    <ClInclude Include="include\vulkanFunctionPointers.h" />
     <ClInclude Include="include\vulkanUtility.h" />
   </ItemGroup>
   <ItemGroup>

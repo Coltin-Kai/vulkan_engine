@@ -9,6 +9,8 @@
 
 #include "vk_mem_alloc.h"
 
+#include "vec3.hpp"
+
 #include <deque>
 #include <functional>
 
@@ -52,6 +54,12 @@ private:
 		VkFormat format;
 	};
 
+	struct AllocatedBuffer {
+		VkBuffer buffer;
+		VmaAllocation allocation;
+		VmaAllocationInfo info;
+	};
+
 	struct Swapchain {
 		VkSwapchainKHR vkSwapchain;
 		VkFormat format;
@@ -67,7 +75,18 @@ private:
 		VkSemaphore swapchainSemaphore, renderSemaphore;
 		VkFence renderFence;
 
-		DeletionQueue deletionQueue;
+		DeletionQueue deletionQueue; //Currently no resources to delete yet...
+	};
+
+	struct Descriptor {
+		VkDescriptorSetLayout layout;
+		AllocatedBuffer allocBuffer;
+		VkDeviceSize size;
+		VkDeviceSize offset;
+	};
+
+	struct UnifrormData {
+		glm::vec3 color;
 	};
 
 	bool stop_rendering = false;
@@ -82,9 +101,10 @@ private:
 	VkPhysicalDevice _physicalDevice;
 	VkDevice _device;
 	VkSurfaceKHR _surface;
-
+	
 	//Swapchain
 	Swapchain _swapchain;
+	bool windowResized = false;
 
 	DeletionQueue _mainDeletionQueue;
 
@@ -100,15 +120,18 @@ private:
 	VkPipelineLayout _pipelineLayout;
 	VkPipeline _pipeline;
 
-	//Draw and Render
+	//Descriptors
+	Descriptor _uniform_descriptor;
+	AllocatedBuffer _uniformData_buffer;
+	VkDescriptorPool _descriptorPool;
+	VkDescriptorSet _descriptorSet;
+
 	void draw();
 
 	void draw_geometry(VkCommandBuffer cmd, uint32_t swapchainImageIndex);
 
-	//Initialize Vulkan Components
 	void init_vulkan();
 
-	//Initialize Swapchain
 	void init_swapchain();
 
 	void init_commands();
@@ -117,5 +140,14 @@ private:
 
 	void init_graphics_pipeline();
 
+	void setup_descriptors();
+
+	void resize_swapchain();
+
 	void destroy_swapchain();
+
+	//Other Helper Functions
+	AllocatedBuffer create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage);
+
+	void destroy_buffer(const AllocatedBuffer& buffer);
 };

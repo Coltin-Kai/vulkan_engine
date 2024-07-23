@@ -1,177 +1,181 @@
 #include "descriptor.h"
 #include <checkVkResult.h>
 
-void DescriptorLayoutBuilder::add_binding(uint32_t binding, VkDescriptorType type) {
-	VkDescriptorSetLayoutBinding newBind{};
-	newBind.binding = binding;
-	newBind.descriptorCount = 1;
-	newBind.descriptorType = type;
+void UberDescriptorSetManager::add_layout_bindings(uint32_t binding, VkDescriptorType type, uint32_t count, VkShaderStageFlags stages, VkSampler* immutableSamplers) {
+	VkDescriptorSetLayoutBinding layoutBinding{};
+	layoutBinding.binding = binding;
+	layoutBinding.descriptorType = type;
+	layoutBinding.descriptorCount = count;
+	layoutBinding.stageFlags = stages;
+	layoutBinding.pImmutableSamplers = immutableSamplers;
 
-	bindings.push_back(newBind);
+	bindings.push_back(layoutBinding);
 }
 
-void DescriptorLayoutBuilder::clear() {
+void UberDescriptorSetManager::clear_bindings() {
+	poolSizeCounts = {};
 	bindings.clear();
 }
 
-VkDescriptorSetLayout DescriptorLayoutBuilder::build(VkDevice device, VkShaderStageFlags shaderStages, void* pNext, VkDescriptorSetLayoutCreateFlags flags) {
-	for (auto& b : bindings)
-		b.stageFlags |= shaderStages;
-
-	VkDescriptorSetLayoutCreateInfo info{};
-	info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-	info.pNext = pNext;
-
-	info.pBindings = bindings.data();
-	info.bindingCount = (uint32_t)bindings.size();
-	info.flags = flags;
-
-	VkDescriptorSetLayout set;
-	VK_CHECK(vkCreateDescriptorSetLayout(device, &info, nullptr, &set));
-
-	return set;
-}
-
-void DescriptorAllocatorGrowable::init(VkDevice device, uint32_t maxSets, std::span<PoolSizeRatio> poolRatios) {
-	ratios.clear();
-
-	for (auto& r : poolRatios)
-		ratios.push_back(r);
-
-	VkDescriptorPool newPool = create_pool(device, maxSets, poolRatios);
-
-	setsPerPool = maxSets * 1.5f;
-
-	readyPools.push_back(newPool);
-}
-
-void DescriptorAllocatorGrowable::clear_pools(VkDevice device) {
-	for (auto p : readyPools)
-		vkResetDescriptorPool(device, p, 0);
-	for (auto p : fullPools) {
-		vkResetDescriptorPool(device, p, 0);
-		readyPools.push_back(p);
-	}
-	fullPools.clear();
-}
-
-void DescriptorAllocatorGrowable::destroy_pools(VkDevice device) {
-	for (auto p : readyPools)
-		vkDestroyDescriptorPool(device, p, nullptr);
-	readyPools.clear();
-	for (auto p : fullPools)
-		vkDestroyDescriptorPool(device, p, nullptr);
-	fullPools.clear();
-}
-
-VkDescriptorSet DescriptorAllocatorGrowable::allocate(VkDevice device, VkDescriptorSetLayout layout, void* pNext) {
-	VkDescriptorPool poolToUse = get_pool(device);
-
-	VkDescriptorSetAllocateInfo allocInfo{};
-	allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-	allocInfo.pNext = pNext;
-	allocInfo.descriptorPool = poolToUse;
-	allocInfo.descriptorSetCount = 1;
-	allocInfo.pSetLayouts = &layout;
-
-	VkDescriptorSet ds;
-	VkResult result = vkAllocateDescriptorSets(device, &allocInfo, &ds);
-
-	if (result == VK_ERROR_OUT_OF_POOL_MEMORY || result == VK_ERROR_FRAGMENTED_POOL) {
-		fullPools.push_back(poolToUse);
-
-		poolToUse = get_pool(device);
-		allocInfo.descriptorPool = poolToUse;
-
-		VK_CHECK(vkAllocateDescriptorSets(device, &allocInfo, &ds));
+void UberDescriptorSetManager::generateLayout(VkDevice device, VkDescriptorSetLayoutCreateFlags flags, void* pnext) {
+	//Specify Pool Sizes 
+	poolSizeCounts = {};
+	for (VkDescriptorSetLayoutBinding& binding : bindings) {
+		if (binding.descriptorType == VK_DESCRIPTOR_TYPE_SAMPLER)
+			poolSizeCounts.samplerCount += binding.descriptorCount;
+		else if (binding.descriptorType == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
+			poolSizeCounts.combinedImageSamplerCount += binding.descriptorCount;
+		else if (binding.descriptorType == VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE)
+			poolSizeCounts.sampledImageCount += binding.descriptorCount;
+		else if (binding.descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+			poolSizeCounts.storageImageCount += binding.descriptorCount;
+		else if (binding.descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER)
+			poolSizeCounts.uniformTexelBufferCount += binding.descriptorCount;
+		else if (binding.descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER)
+			poolSizeCounts.storageTexelBufferCount += binding.descriptorCount;
+		else if (binding.descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
+			poolSizeCounts.uniformBufferCount += binding.descriptorCount;
+		else if (binding.descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+			poolSizeCounts.storageBufferCount += binding.descriptorCount;
+		else if (binding.descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC)
+			poolSizeCounts.dynamicUniformBufferCount += binding.descriptorCount;
+		else if (binding.descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC)
+			poolSizeCounts.dynamicStorageBufferCount += binding.descriptorCount;
+		else if (binding.descriptorType == VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT)
+			poolSizeCounts.inputAttachmentCount += binding.descriptorCount;
+		else
+			throw std::runtime_error("Failed to Generate Layout as one of the bindings is an unidentifiable Descriptor Type");
 	}
 
-	readyPools.push_back(poolToUse);
-	return ds;
+	//Create Descriptor Set Layout
+	if (layout != VK_NULL_HANDLE)
+		vkDestroyDescriptorSetLayout(device, layout, nullptr);
+
+	VkDescriptorSetLayoutCreateInfo layoutInfo{};
+	layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
+	layoutInfo.pBindings = bindings.data();
+	layoutInfo.flags = flags;
+
+	if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &layout) != VK_SUCCESS)
+		throw std::runtime_error("Failed to craate Descriptor Set Layout.");
 }
 
-VkDescriptorPool DescriptorAllocatorGrowable::get_pool(VkDevice device) {
-	VkDescriptorPool newPool;
-	if (readyPools.size() != 0) {
-		newPool = readyPools.back();
-		readyPools.pop_back();
-	}
-	else {
-		newPool = create_pool(device, setsPerPool, ratios);
+void UberDescriptorSetManager::generateSet(VkDevice device) {
+	if (layout == VK_NULL_HANDLE)
+		throw std::runtime_error("Can't generate Descriptor Set, missing Descriptor Set Layout.");
+	if (pool == VK_NULL_HANDLE)
+		generatePool(device);
 
-		setsPerPool = setsPerPool * 1.5;
-		if (setsPerPool > 4092)
-			setsPerPool = 4092;
+	if (set != VK_NULL_HANDLE)
+		vkResetDescriptorPool(device, pool, 0);
+
+	VkDescriptorSetAllocateInfo allocinfo{};
+	allocinfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	allocinfo.descriptorPool = pool;
+	allocinfo.descriptorSetCount = 1;
+	allocinfo.pSetLayouts = &layout;
+
+	VkResult result = vkAllocateDescriptorSets(device, &allocinfo, &set);
+	if (result != VK_SUCCESS) {
+		if (result == VK_ERROR_OUT_OF_POOL_MEMORY) {
+			throw std::runtime_error("failed to allocate Descriptor Set due to Pool running out of memory");
+		}
+		else
+			throw std::runtime_error("Failed to create Descriptor Set for some other reasion other than running out of memory in pool");
 	}
 
-	return newPool;
+	writer.dstSet = set;
 }
 
-VkDescriptorPool DescriptorAllocatorGrowable::create_pool(VkDevice device, uint32_t setCount, std::span<PoolSizeRatio> poolRatios) {
+void UberDescriptorSetManager::destroyResources(VkDevice device) {
+	vkDestroyDescriptorSetLayout(device, layout, nullptr);
+	vkDestroyDescriptorPool(device, pool, nullptr);
+}
+
+void UberDescriptorSetManager::updateSet(VkDevice device, uint32_t binding, VkDescriptorType type, VkBuffer& buffer, VkDeviceSize range, uint32_t arrayOffset, uint32_t count) {
+	VkDescriptorBufferInfo bufferInfo{};
+	bufferInfo.buffer = buffer;
+	bufferInfo.offset = 0;
+	bufferInfo.range = range;
+
+	writer.descriptorType = type;
+	writer.dstBinding = binding;
+	writer.dstArrayElement = arrayOffset;
+	writer.descriptorCount = count;
+	writer.pBufferInfo = &bufferInfo;
+	writer.pImageInfo = nullptr;
+
+	vkUpdateDescriptorSets(device, 1, &writer, 0, nullptr);
+}
+
+void UberDescriptorSetManager::generatePool(VkDevice device) {
 	std::vector<VkDescriptorPoolSize> poolSizes;
-	for (PoolSizeRatio ratio : poolRatios) {
-		poolSizes.push_back(VkDescriptorPoolSize{
-			.type = ratio.type,
-			.descriptorCount = uint32_t(ratio.ratio * setCount)
-			});
+	
+	VkDescriptorPoolSize poolSize{};
+	if (poolSizeCounts.samplerCount > 0) {
+		poolSize.type = VK_DESCRIPTOR_TYPE_SAMPLER;
+		poolSize.descriptorCount = poolSizeCounts.samplerCount;
+		poolSizes.push_back(poolSize);
+	}
+	if (poolSizeCounts.combinedImageSamplerCount > 0) {
+		poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+		poolSize.descriptorCount = poolSizeCounts.combinedImageSamplerCount;
+		poolSizes.push_back(poolSize);
+	}
+	if (poolSizeCounts.sampledImageCount > 0) {
+		poolSize.type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+		poolSize.descriptorCount = poolSizeCounts.sampledImageCount;
+		poolSizes.push_back(poolSize);
+	}
+	if (poolSizeCounts.storageImageCount > 0) {
+		poolSize.type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+		poolSize.descriptorCount = poolSizeCounts.storageImageCount;
+		poolSizes.push_back(poolSize);
+	}
+	if (poolSizeCounts.uniformTexelBufferCount > 0) {
+		poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER;
+		poolSize.descriptorCount = poolSizeCounts.uniformTexelBufferCount;
+		poolSizes.push_back(poolSize);
+	}
+	if (poolSizeCounts.storageTexelBufferCount > 0) {
+		poolSize.type = VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER;
+		poolSize.descriptorCount = poolSizeCounts.storageTexelBufferCount;
+		poolSizes.push_back(poolSize);
+	}
+	if (poolSizeCounts.uniformBufferCount > 0) {
+		poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		poolSize.descriptorCount = poolSizeCounts.uniformBufferCount;
+		poolSizes.push_back(poolSize);
+	}
+	if (poolSizeCounts.storageBufferCount > 0) {
+		poolSize.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+		poolSize.descriptorCount = poolSizeCounts.storageBufferCount;
+		poolSizes.push_back(poolSize);
+	}
+	if (poolSizeCounts.dynamicUniformBufferCount > 0) {
+		poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+		poolSize.descriptorCount = poolSizeCounts.dynamicUniformBufferCount;
+		poolSizes.push_back(poolSize);
+	}
+	if (poolSizeCounts.dynamicStorageBufferCount > 0) {
+		poolSize.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
+		poolSize.descriptorCount = poolSizeCounts.dynamicStorageBufferCount;
+		poolSizes.push_back(poolSize);
+	}
+	if (poolSizeCounts.inputAttachmentCount > 0) {
+		poolSize.type = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+		poolSize.descriptorCount = poolSizeCounts.inputAttachmentCount;
+		poolSizes.push_back(poolSize);
 	}
 
-	VkDescriptorPoolCreateInfo pool_info{};
-	pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-	pool_info.flags = 0;
-	pool_info.maxSets = setCount;
-	pool_info.poolSizeCount = (uint32_t)poolSizes.size();
-	pool_info.pPoolSizes = poolSizes.data();
+	VkDescriptorPoolCreateInfo poolInfo{};
+	poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+	poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
+	poolInfo.pPoolSizes = poolSizes.data();
+	poolInfo.maxSets - 1;
+	poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT | VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
 
-	VkDescriptorPool newPool;
-	vkCreateDescriptorPool(device, &pool_info, nullptr, &newPool);
-	return newPool;
-}
-
-void DescriptorWriter::write_image(int binding, VkImageView image, VkSampler sampler, VkImageLayout layout, VkDescriptorType type) {
-	VkDescriptorImageInfo& info = imageInfos.emplace_back(VkDescriptorImageInfo{
-		.sampler = sampler,
-		.imageView = image,
-		.imageLayout = layout
-		});
-
-	VkWriteDescriptorSet write{};
-	write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-	write.dstBinding = binding;
-	write.dstSet = VK_NULL_HANDLE;
-	write.descriptorCount = 1;
-	write.descriptorType = type;
-	write.pImageInfo = &info;
-
-	writes.push_back(write);
-}
-
-void DescriptorWriter::write_buffer(int binding, VkBuffer buffer, size_t size, size_t offset, VkDescriptorType type) {
-	VkDescriptorBufferInfo& info = bufferInfos.emplace_back(VkDescriptorBufferInfo{
-		.buffer = buffer,
-		.offset = offset,
-		.range = size
-		});
-
-	VkWriteDescriptorSet write{};
-	write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-	write.dstSet = VK_NULL_HANDLE;
-	write.descriptorCount = 1;
-	write.descriptorType = type;
-	write.pBufferInfo = &info;
-
-	writes.push_back(write);
-}
-
-void DescriptorWriter::clear() {
-	imageInfos.clear();
-	writes.clear();
-	bufferInfos.clear();
-}
-
-void DescriptorWriter::update_set(VkDevice device, VkDescriptorSet set) {
-	for (VkWriteDescriptorSet& write : writes)
-		write.dstSet = set;
-
-	vkUpdateDescriptorSets(device, (uint32_t)writes.size(), writes.data(), 0, nullptr);
+	if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &pool) != VK_SUCCESS)
+		throw std::runtime_error("Failed to create Descriptor Pool");
 }

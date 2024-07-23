@@ -1,0 +1,27 @@
+#pragma once
+
+#include "vulkan/vulkan.h"
+
+PFN_vkGetPhysicalDeviceProperties2KHR vkGetPhysicalDeviceProperties2KHR_;
+#define vkGetPhysicalDeviceProperties2KHR vkGetPhysicalDeviceProperties2KHR_;
+
+PFN_vkGetDescriptorSetLayoutSizeEXT vkGetDescriptorSetLayoutSizeEXT_;
+#define vkGetDescriptorSetLayoutSizeEXT vkGetDescriptorSetLayoutSizeEXT_
+
+PFN_vkGetDescriptorSetLayoutBindingOffsetEXT vkGetDescriptorSetLayoutBindingOffsetEXT_;
+#define vkGetDescriptorSetLayoutBindingOffsetEXT vkGetDescriptorSetLayoutBindingOffsetEXT_
+
+PFN_vkGetDescriptorEXT vkGetDescriptorEXT_;
+#define vkGetDescriptorEXT vkGetDescriptorEXT_
+
+PFN_vkCmdSetDescriptorBufferOffsetsEXT vkCmdSetDescriptorBufferOffsetsEXT_;
+#define vkCmdSetDescriptorBufferOffsetsEXT vkCmdSetDescriptorBufferOffsetsEXT_
+
+void loadFunctionPointers(VkInstance instance, VkDevice device) {
+	vkGetPhysicalDeviceProperties2KHR_ = (PFN_vkGetPhysicalDeviceProperties2KHR)vkGetInstanceProcAddr(instance, "vkGetPhysicalDeviceProperties2KHR");
+	vkGetDescriptorSetLayoutSizeEXT_ = (PFN_vkGetDescriptorSetLayoutSizeEXT)vkGetDeviceProcAddr(device, "vkGetDescriptorSetLayoutSizeEXT");
+	vkGetDescriptorSetLayoutBindingOffsetEXT_ = (PFN_vkGetDescriptorSetLayoutBindingOffsetEXT)vkGetDeviceProcAddr(device, "vkGetDescriptorSetLayoutBindingOffsetEXT");
+	vkGetDescriptorEXT_ = (PFN_vkGetDescriptorEXT)vkGetDeviceProcAddr(device, "vkGetDescriptorEXT");
+	vkCmdSetDescriptorBufferOffsetsEXT_ = (PFN_vkCmdSetDescriptorBufferOffsetsEXT)vkGetDeviceProcAddr(device, "vkCmdSetDescriptorBufferOffsetsEXT");
+
+}
