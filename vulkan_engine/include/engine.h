@@ -9,6 +9,8 @@
 
 #include "vk_mem_alloc.h"
 
+#include "glm.hpp"
+
 #include "vec3.hpp"
 
 #include <deque>
@@ -78,14 +80,19 @@ private:
 		DeletionQueue deletionQueue; //Currently no resources to delete yet...
 	};
 
-	struct Descriptor {
+	struct Descriptor { //Not really useful strucutre now.
 		VkDescriptorSetLayout layout;
 		AllocatedBuffer allocBuffer;
 		VkDeviceSize size;
 		VkDeviceSize offset;
 	};
 
-	struct UnifrormData {
+	struct UnifrormData { 
+		glm::vec3 color;
+	};
+
+	struct Vertex {
+		glm::vec2 pos;
 		glm::vec3 color;
 	};
 
@@ -120,6 +127,16 @@ private:
 	VkPipelineLayout _pipelineLayout;
 	VkPipeline _pipeline;
 
+	//Vertex Input
+	VkVertexInputBindingDescription _bindingDescription;
+	std::vector<VkVertexInputAttributeDescription>_attribueDescriptions;
+	std::vector<Vertex> vertices = {
+		{{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+		{{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
+		{{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
+	};
+	AllocatedBuffer _vertex_data_buffer;
+
 	//Descriptors
 	Descriptor _uniform_descriptor;
 	AllocatedBuffer _uniformData_buffer;
@@ -139,6 +156,8 @@ private:
 	void init_sync_structures();
 
 	void init_graphics_pipeline();
+
+	void setup_vertex_input();
 
 	void setup_descriptors();
 

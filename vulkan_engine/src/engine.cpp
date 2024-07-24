@@ -26,6 +26,7 @@ void Engine::init() {
 	init_swapchain();
 	init_commands();
 	init_sync_structures();
+	setup_vertex_input();
 	setup_descriptors();
 	init_graphics_pipeline();
 }
@@ -53,7 +54,6 @@ void Engine::run() {
 		}
 
 		if (windowResized) {
-			std::cout << "Resizing" << std::endl;
 			resize_swapchain();
 		}
 
@@ -180,6 +180,10 @@ void Engine::draw_geometry(VkCommandBuffer cmd, uint32_t swapchainImageIndex) {
 	scissor.extent.height = _swapchain.extent.height;
 
 	vkCmdSetScissor(cmd, 0, 1, &scissor);
+
+	//Set Vertex Input
+	VkDeviceSize offset[] = { 0 };
+	vkCmdBindVertexBuffers(cmd, 0, 1, &_vertex_data_buffer.buffer, offset);
 
 	//Set Descriptors
 
@@ -340,6 +344,7 @@ void Engine::init_graphics_pipeline() {
 	PipelineBuilder pipelineBuilder;
 	pipelineBuilder._pipelineLayout = _pipelineLayout;
 	pipelineBuilder.set_shaders(vertexShader, fragShader);
+	pipelineBuilder.set_vertex_input(_bindingDescription, _attribueDescriptions);
 	pipelineBuilder.set_input_topology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
 	pipelineBuilder.set_polygon_mode(VK_POLYGON_MODE_FILL);
 	pipelineBuilder.set_cull_mode(VK_CULL_MODE_NONE, VK_FRONT_FACE_CLOCKWISE);
@@ -358,6 +363,37 @@ void Engine::init_graphics_pipeline() {
 		vkDestroyPipelineLayout(_device, _pipelineLayout, nullptr);
 		vkDestroyPipeline(_device, _pipeline, nullptr);
 		});
+}
+
+void Engine::setup_vertex_input() {
+	//Set up Vertex Input Descriptions
+	_bindingDescription = {};
+	_bindingDescription.binding = 0;
+	_bindingDescription.stride = sizeof(Vertex);
+	_bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+	_attribueDescriptions = { {}, {} };
+	_attribueDescriptions[0].binding = 0;
+	_attribueDescriptions[0].location = 0;
+	_attribueDescriptions[0].format = VK_FORMAT_R32G32_SFLOAT;
+	_attribueDescriptions[0].offset = offsetof(Vertex, Vertex::pos);
+
+	_attribueDescriptions[1].binding = 0;
+	_attribueDescriptions[1].location = 1;
+	_attribueDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
+	_attribueDescriptions[1].offset = offsetof(Vertex, Vertex::color);
+
+	//Set up Vertex Input Data Buffer
+	_vertex_data_buffer = create_buffer(sizeof(Vertex) * vertices.size(), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+	
+	_mainDeletionQueue.push_function([=, this]() {
+		destroy_buffer(_vertex_data_buffer);
+		});
+
+	void* mappedData;
+	vmaMapMemory(_allocator, _vertex_data_buffer.allocation, &mappedData);
+	memcpy(mappedData, vertices.data(), sizeof(Vertex) * vertices.size());
+	vmaUnmapMemory(_allocator, _vertex_data_buffer.allocation);
 }
 
 void Engine::setup_descriptors() {
@@ -448,7 +484,6 @@ void Engine::resize_swapchain() {
 	SDL_GetWindowSize(_window, &w, &h);
 	_windowExtent.width = w;
 	_windowExtent.height = h;
-	std::cout << std::format("Swapchain Widht: {} Swapchain Height: {}", _swapchain.extent.width, _swapchain.extent.height) << std::endl;
 	init_swapchain();
 	
 	windowResized = false;
