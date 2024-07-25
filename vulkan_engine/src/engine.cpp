@@ -181,16 +181,17 @@ void Engine::draw_geometry(VkCommandBuffer cmd, uint32_t swapchainImageIndex) {
 
 	vkCmdSetScissor(cmd, 0, 1, &scissor);
 
-	//Set Vertex Input
+	//Set Vertex Input Buffers
 	VkDeviceSize offset[] = { 0 };
 	vkCmdBindVertexBuffers(cmd, 0, 1, &_vertex_data_buffer.buffer, offset);
+	vkCmdBindIndexBuffer(cmd, _index_data_buffer.buffer, 0, VK_INDEX_TYPE_UINT16);
 
 	//Set Descriptors
 
 	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _pipelineLayout, 0, 1, &_descriptorSet, 0, nullptr);
 
 	//Draw
-	vkCmdDraw(cmd, 3, 1, 0, 0);
+	vkCmdDrawIndexed(cmd, static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
 
 	vkCmdEndRendering(cmd);
 }
@@ -385,15 +386,22 @@ void Engine::setup_vertex_input() {
 
 	//Set up Vertex Input Data Buffer
 	_vertex_data_buffer = create_buffer(sizeof(Vertex) * vertices.size(), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
-	
+	_index_data_buffer = create_buffer(sizeof(uint32_t) * indices.size(), VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+
+
 	_mainDeletionQueue.push_function([=, this]() {
 		destroy_buffer(_vertex_data_buffer);
+		destroy_buffer(_index_data_buffer);
 		});
 
 	void* mappedData;
 	vmaMapMemory(_allocator, _vertex_data_buffer.allocation, &mappedData);
 	memcpy(mappedData, vertices.data(), sizeof(Vertex) * vertices.size());
 	vmaUnmapMemory(_allocator, _vertex_data_buffer.allocation);
+
+	vmaMapMemory(_allocator, _index_data_buffer.allocation, &mappedData);
+	memcpy(mappedData, indices.data(), sizeof(uint16_t) * indices.size());
+	vmaUnmapMemory(_allocator, _index_data_buffer.allocation);
 }
 
 void Engine::setup_descriptors() {

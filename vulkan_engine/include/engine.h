@@ -121,6 +121,7 @@ private:
 	int _frameNumber = 0;
 	Frame& get_current_frame() { return _frames[_frameNumber % FRAMES_TOTAL]; };
 
+	//Queues
 	VkQueue _graphicsQueue;
 	uint32_t _graphicsQueueFamily;
 
@@ -130,12 +131,17 @@ private:
 	//Vertex Input
 	VkVertexInputBindingDescription _bindingDescription;
 	std::vector<VkVertexInputAttributeDescription>_attribueDescriptions;
-	std::vector<Vertex> vertices = {
-		{{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-		{{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
-		{{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
+	std::vector<Vertex> vertices = { //Vertices
+		{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+		{{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
+		{{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
+		{{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}
+	};
+	std::vector<uint16_t> indices = {
+		0, 1, 2, 2, 3, 0
 	};
 	AllocatedBuffer _vertex_data_buffer;
+	AllocatedBuffer _index_data_buffer;
 
 	//Descriptors
 	Descriptor _uniform_descriptor;
