@@ -9,6 +9,8 @@
 
 #include "vk_mem_alloc.h"
 
+#define GLM_FORCE_RADIANS
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include "glm.hpp"
 
 #include "vec3.hpp"
@@ -80,19 +82,14 @@ private:
 		DeletionQueue deletionQueue; //Currently no resources to delete yet...
 	};
 
-	struct Descriptor { //Not really useful strucutre now.
-		VkDescriptorSetLayout layout;
-		AllocatedBuffer allocBuffer;
-		VkDeviceSize size;
-		VkDeviceSize offset;
-	};
-
 	struct UnifrormData { 
-		glm::vec3 color;
+		glm::mat4 model;
+		glm::mat4 view;
+		glm::mat4 proj;
 	};
 
 	struct Vertex {
-		glm::vec2 pos;
+		glm::vec3 pos;
 		glm::vec3 color;
 	};
 
@@ -113,10 +110,16 @@ private:
 	Swapchain _swapchain;
 	bool windowResized = false;
 
+	//Depth Image
+	AllocatedImage _depthImage;
+
+	//Deletion Queue
 	DeletionQueue _mainDeletionQueue;
 
+	//VMA Allocator
 	VmaAllocator _allocator;
 
+	//Frame Resources
 	Frame _frames[FRAMES_TOTAL];
 	int _frameNumber = 0;
 	Frame& get_current_frame() { return _frames[_frameNumber % FRAMES_TOTAL]; };
@@ -132,19 +135,24 @@ private:
 	VkVertexInputBindingDescription _bindingDescription;
 	std::vector<VkVertexInputAttributeDescription>_attribueDescriptions;
 	std::vector<Vertex> vertices = { //Vertices
-		{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-		{{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
-		{{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
-		{{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}
+		{{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}},
+		{{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}},
+		{{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}},
+		{{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}},
+
+		{{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+		{{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
+		{{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}},
+		{{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}}
 	};
 	std::vector<uint16_t> indices = {
-		0, 1, 2, 2, 3, 0
+		0, 1, 2, 2, 3, 0, 4, 5, 6, 6, 7, 4
 	};
 	AllocatedBuffer _vertex_data_buffer;
 	AllocatedBuffer _index_data_buffer;
 
 	//Descriptors
-	Descriptor _uniform_descriptor;
+	VkDescriptorSetLayout _uniform_descriptor_set_layout;
 	AllocatedBuffer _uniformData_buffer;
 	VkDescriptorPool _descriptorPool;
 	VkDescriptorSet _descriptorSet;
@@ -162,6 +170,8 @@ private:
 	void init_sync_structures();
 
 	void init_graphics_pipeline();
+
+	void setup_depthImage();
 
 	void setup_vertex_input();
 

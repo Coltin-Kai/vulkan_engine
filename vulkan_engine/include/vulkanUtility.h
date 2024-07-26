@@ -29,5 +29,7 @@ namespace vkutil {
 
 	VkRenderingAttachmentInfo attachment_info(VkImageView view, VkClearValue* clear, VkImageLayout layout);
 
+	VkRenderingAttachmentInfo depth_attachment_info(VkImageView view, VkImageLayout layout);
+
 	VkRenderingInfo rendering_info(VkExtent2D renderExtent, VkRenderingAttachmentInfo* colorAttachment, VkRenderingAttachmentInfo* depthAttachment);
 }

@@ -6,9 +6,10 @@
 #define VMA_IMPLEMENTATION
 #include "vk_mem_alloc.h"
 
+#include "gtc/matrix_transform.hpp"
+
 #include "checkVkResult.h"
 #include "vulkanUtility.h"
-#include "vulkanFunctionPointers.h"
 
 #include <thread>
 #include <iostream>
@@ -26,6 +27,7 @@ void Engine::init() {
 	init_swapchain();
 	init_commands();
 	init_sync_structures();
+	setup_depthImage();
 	setup_vertex_input();
 	setup_descriptors();
 	init_graphics_pipeline();
@@ -114,16 +116,21 @@ void Engine::draw() {
 
 	VK_CHECK(vkBeginCommandBuffer(cmd, &cmdBeginInfo));
 
+	//Transition Images for Drawing
 	vkutil::transition_image(cmd, _swapchain.images[swapchainImageIndex], VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
+	vkutil::transition_image(cmd, _depthImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
 
+	//Clear Color
 	VkClearColorValue clearValue = { {0.0f, 1.0f, 0.0f, 1.0f} };
 
 	VkImageSubresourceRange clearRange = vkutil::image_subresource_range(VK_IMAGE_ASPECT_COLOR_BIT);
 
 	vkCmdClearColorImage(cmd, _swapchain.images[swapchainImageIndex], VK_IMAGE_LAYOUT_GENERAL, &clearValue, 1, &clearRange);
 
+	//Draw
 	draw_geometry(cmd, swapchainImageIndex);
 
+	//Transition for Presentation
 	vkutil::transition_image(cmd, _swapchain.images[swapchainImageIndex], VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 
 	VK_CHECK(vkEndCommandBuffer(cmd));
@@ -156,8 +163,9 @@ void Engine::draw() {
 
 void Engine::draw_geometry(VkCommandBuffer cmd, uint32_t swapchainImageIndex) {
 	VkRenderingAttachmentInfo colorAttachment = vkutil::attachment_info(_swapchain.imageViews[swapchainImageIndex], nullptr, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+	VkRenderingAttachmentInfo depthAttachment = vkutil::depth_attachment_info(_depthImage.imageView, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
 
-	VkRenderingInfo renderInfo = vkutil::rendering_info(_swapchain.extent, &colorAttachment, nullptr);
+	VkRenderingInfo renderInfo = vkutil::rendering_info(_swapchain.extent, &colorAttachment, &depthAttachment);
 	vkCmdBeginRendering(cmd, &renderInfo);
 
 	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _pipeline);
@@ -187,7 +195,6 @@ void Engine::draw_geometry(VkCommandBuffer cmd, uint32_t swapchainImageIndex) {
 	vkCmdBindIndexBuffer(cmd, _index_data_buffer.buffer, 0, VK_INDEX_TYPE_UINT16);
 
 	//Set Descriptors
-
 	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _pipelineLayout, 0, 1, &_descriptorSet, 0, nullptr);
 
 	//Draw
@@ -338,7 +345,7 @@ void Engine::init_graphics_pipeline() {
 
 	VkPipelineLayoutCreateInfo pipeline_layout_info = vkutil::pipeline_layout_create_info();
 	pipeline_layout_info.setLayoutCount = 1;
-	pipeline_layout_info.pSetLayouts = &_uniform_descriptor.layout;
+	pipeline_layout_info.pSetLayouts = &_uniform_descriptor_set_layout;
 
 	VK_CHECK(vkCreatePipelineLayout(_device, &pipeline_layout_info, nullptr, &_pipelineLayout));
 
@@ -351,9 +358,9 @@ void Engine::init_graphics_pipeline() {
 	pipelineBuilder.set_cull_mode(VK_CULL_MODE_NONE, VK_FRONT_FACE_CLOCKWISE);
 	pipelineBuilder.set_multisampling_none();
 	pipelineBuilder.disable_blending();
-	pipelineBuilder.disable_depthtest();
+	pipelineBuilder.enable_depthtest(true, VK_COMPARE_OP_GREATER_OR_EQUAL);
 	pipelineBuilder.set_color_attachment_format(_swapchain.format);
-	pipelineBuilder.set_depth_format(VK_FORMAT_UNDEFINED);
+	pipelineBuilder.set_depth_format(VK_FORMAT_D32_SFLOAT);
 
 	_pipeline = pipelineBuilder.build_pipeline(_device);
 
@@ -376,7 +383,7 @@ void Engine::setup_vertex_input() {
 	_attribueDescriptions = { {}, {} };
 	_attribueDescriptions[0].binding = 0;
 	_attribueDescriptions[0].location = 0;
-	_attribueDescriptions[0].format = VK_FORMAT_R32G32_SFLOAT;
+	_attribueDescriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
 	_attribueDescriptions[0].offset = offsetof(Vertex, Vertex::pos);
 
 	_attribueDescriptions[1].binding = 0;
@@ -413,8 +420,10 @@ void Engine::setup_descriptors() {
 		});
 	
 	UnifrormData* data = (UnifrormData*)_uniformData_buffer.allocation->GetMappedData();
-	data->color = glm::vec3(0.0, 0.5, 0.5);
-
+	data->model = glm::rotate(glm::mat4(1.0f), glm::radians(20.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+	data->view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+	data->proj = glm::perspective(glm::radians(45.0f), _swapchain.extent.width / (float)_swapchain.extent.height, 0.1f, 10.0f);
+	data->proj[1][1] *= -1;
 	//Create Descriptor Set Layout for Descriptors
 
 	VkDescriptorSetLayoutBinding uboLayoutBinding{};
@@ -429,10 +438,10 @@ void Engine::setup_descriptors() {
 	layoutInfo.bindingCount = 1;
 	layoutInfo.pBindings = &uboLayoutBinding;
 
-	VK_CHECK(vkCreateDescriptorSetLayout(_device, &layoutInfo, nullptr, &_uniform_descriptor.layout));
+	VK_CHECK(vkCreateDescriptorSetLayout(_device, &layoutInfo, nullptr, &_uniform_descriptor_set_layout));
 
 	_mainDeletionQueue.push_function([=, this]() {
-		vkDestroyDescriptorSetLayout(_device, _uniform_descriptor.layout, nullptr);
+		vkDestroyDescriptorSetLayout(_device, _uniform_descriptor_set_layout, nullptr);
 		});
 
 	//Create Descriptor Pool
@@ -460,7 +469,7 @@ void Engine::setup_descriptors() {
 	allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 	allocInfo.descriptorPool = _descriptorPool;
 	allocInfo.descriptorSetCount = 1;
-	allocInfo.pSetLayouts = &_uniform_descriptor.layout;
+	allocInfo.pSetLayouts = &_uniform_descriptor_set_layout;
 	
 	if (vkAllocateDescriptorSets(_device, &allocInfo, &_descriptorSet) != VK_SUCCESS)
 		throw std::runtime_error("Failed to allocate Descriptor Set");
@@ -482,6 +491,32 @@ void Engine::setup_descriptors() {
 	descriptorWrites.pBufferInfo = &bufferInfo;
 	
 	vkUpdateDescriptorSets(_device, 1, &descriptorWrites, 0, nullptr);
+}
+
+void Engine::setup_depthImage() {
+	_depthImage.format = VK_FORMAT_D32_SFLOAT;
+	VkExtent3D extent{};
+	extent.width = _swapchain.extent.width;
+	extent.height = _swapchain.extent.height;
+	extent.depth = 1;
+	_depthImage.extent = extent;
+
+	VkImageCreateInfo depth_image_info = vkutil::image_create_info(_depthImage.format, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, _depthImage.extent);
+	
+	VmaAllocationCreateInfo depth_image_alloc_info{};
+	depth_image_alloc_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+	depth_image_alloc_info.requiredFlags = VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+	vmaCreateImage(_allocator, &depth_image_info, &depth_image_alloc_info, &_depthImage.image, &_depthImage.allocation, nullptr);
+
+	VkImageViewCreateInfo depth_image_view_info = vkutil::imageview_create_info(_depthImage.format, _depthImage.image, VK_IMAGE_ASPECT_DEPTH_BIT);
+
+	VK_CHECK(vkCreateImageView(_device, &depth_image_view_info, nullptr, &_depthImage.imageView));
+
+	_mainDeletionQueue.push_function([=]() {
+		vkDestroyImageView(_device, _depthImage.imageView, nullptr);
+		vmaDestroyImage(_allocator, _depthImage.image, _depthImage.allocation);
+		});
 }
 
 void Engine::resize_swapchain() {

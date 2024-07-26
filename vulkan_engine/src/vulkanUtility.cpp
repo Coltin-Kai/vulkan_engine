@@ -136,6 +136,7 @@ VkImageViewCreateInfo vkutil::imageview_create_info(VkFormat format, VkImage ima
 	info.subresourceRange.baseMipLevel = 0;
 	info.subresourceRange.levelCount = 1;
 	info.subresourceRange.baseArrayLayer = 0;
+	info.subresourceRange.layerCount = 1;
 	info.subresourceRange.aspectMask = aspectFlags;
 	return info;
 }
@@ -211,6 +212,19 @@ VkRenderingAttachmentInfo vkutil::attachment_info(VkImageView view, VkClearValue
 		colorAttachment.clearValue = *clear;
 
 	return colorAttachment;
+}
+
+VkRenderingAttachmentInfo vkutil::depth_attachment_info(VkImageView view, VkImageLayout layout) {
+	VkRenderingAttachmentInfo depthAttachment{};
+	depthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+	depthAttachment.pNext = nullptr;
+	depthAttachment.imageView = view;
+	depthAttachment.imageLayout = layout;
+	depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+	depthAttachment.clearValue.depthStencil.depth = 0.0f;
+
+	return depthAttachment;
 }
 
 VkRenderingInfo vkutil::rendering_info(VkExtent2D renderExtent, VkRenderingAttachmentInfo* colorAttachment, VkRenderingAttachmentInfo* depthAttachment) {
