@@ -161,6 +161,8 @@ private:
 
 	void draw_geometry(VkCommandBuffer cmd, uint32_t swapchainImageIndex);
 
+	void draw_imgui(VkCommandBuffer cmd, VkImageView targetImageView);
+
 	void init_vulkan();
 
 	void init_swapchain();
@@ -170,6 +172,8 @@ private:
 	void init_sync_structures();
 
 	void init_graphics_pipeline();
+
+	void init_imgui();
 
 	void setup_depthImage();
 
