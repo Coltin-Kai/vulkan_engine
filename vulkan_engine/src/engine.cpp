@@ -3,7 +3,7 @@
 #include "VkBootstrap.h"
 #include "vulkan/vk_enum_string_helper.h"
 
-#define VMA_IMPLEMENTATION
+//#define VMA_IMPLEMENTATION
 #include "vk_mem_alloc.h"
 
 #include "gtc/matrix_transform.hpp"
@@ -14,6 +14,7 @@
 
 #include "checkVkResult.h"
 #include "vulkanUtility.h"
+#include "loader.h"
 
 #include <thread>
 #include <iostream>
@@ -327,6 +328,19 @@ void Engine::init_commands() {
 
 		VK_CHECK(vkAllocateCommandBuffers(_device, &cmdAllocInfo, &_frames[i].commandBuffer));
 	}
+
+	//Init Immediate Command Resources
+	VK_CHECK(vkCreateCommandPool(_device, &cmdPoolInfo, nullptr, &_immCommandPool));
+	VkCommandBufferAllocateInfo cmdAllocInfo{};
+	cmdAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	cmdAllocInfo.pNext = nullptr;
+	cmdAllocInfo.commandPool = _immCommandPool;
+	cmdAllocInfo.commandBufferCount = 1;
+	cmdAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+
+	_mainDeletionQueue.push_function([=]() {
+		vkDestroyCommandPool(_device, _immCommandPool, nullptr);
+		});
 }
 
 void Engine::init_sync_structures() {
@@ -344,6 +358,12 @@ void Engine::init_sync_structures() {
 		VK_CHECK(vkCreateSemaphore(_device, &semaphoreCreateInfo, nullptr, &_frames[i].swapchainSemaphore));
 		VK_CHECK(vkCreateSemaphore(_device, &semaphoreCreateInfo, nullptr, &_frames[i].renderSemaphore));
 	}
+
+	//Init Immediate Command Sync Structure
+	VK_CHECK(vkCreateFence(_device, &fenceCreateInfo, nullptr, &_immFence));
+	_mainDeletionQueue.push_function([=]() {
+		vkDestroyFence(_device, _immFence, nullptr);
+		});
 }
 
 void Engine::init_graphics_pipeline() {
@@ -446,11 +466,16 @@ void Engine::setup_descriptors() {
 		destroy_buffer(_uniformData_buffer);
 		});
 	
-	UnifrormData* data = (UnifrormData*)_uniformData_buffer.allocation->GetMappedData();
-	data->model = glm::rotate(glm::mat4(1.0f), glm::radians(20.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-	data->view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-	data->proj = glm::perspective(glm::radians(45.0f), _swapchain.extent.width / (float)_swapchain.extent.height, 0.1f, 50.0f);
-	data->proj[1][1] *= -1;
+	//UnifrormData* uniform_data = (UnifrormData*)_uniformData_buffer.allocation->GetMappedData(); Personal Warning: DO NOT DO THIS. TYPE VMAALLOCATION IS AN OPAQUE POINTER. WILL CAUSE ERROR
+	void* raw_data;
+	vmaMapMemory(_allocator, _uniformData_buffer.allocation, &raw_data);
+	UnifrormData* uniform_data = (UnifrormData*) raw_data;
+	uniform_data->model = glm::rotate(glm::mat4(1.0f), glm::radians(20.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+	uniform_data->view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+	uniform_data->proj = glm::perspective(glm::radians(45.0f), _swapchain.extent.width / (float)_swapchain.extent.height, 0.1f, 50.0f);
+	uniform_data->proj[1][1] *= -1;
+	vmaUnmapMemory(_allocator, _uniformData_buffer.allocation);
+
 	//Create Descriptor Set Layout for Descriptors
 
 	VkDescriptorSetLayoutBinding uboLayoutBinding{};
@@ -616,7 +641,7 @@ void Engine::init_imgui() {
 		});
 }
 
-Engine::AllocatedBuffer Engine::create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage) {
+	AllocatedBuffer Engine::create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage) {
 	VkBufferCreateInfo bufferInfo{};
 	bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
 	bufferInfo.pNext = nullptr;
@@ -635,5 +660,94 @@ Engine::AllocatedBuffer Engine::create_buffer(size_t allocSize, VkBufferUsageFla
 
 void Engine::destroy_buffer(const AllocatedBuffer& buffer) {
 	vmaDestroyBuffer(_allocator, buffer.buffer, buffer.allocation);
+}
+
+AllocatedImage Engine::create_image(void* data, VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped) {
+	//Staging Buffer Setup
+	size_t data_size = size.depth * size.width * size.height * 4;
+
+	AllocatedBuffer uploadBuffer = create_buffer(data_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_HOST);
+	void* mappedData;
+	vmaMapMemory(_allocator, uploadBuffer.allocation, &mappedData);
+	memcpy(mappedData, &data, data_size);
+	vmaUnmapMemory(_allocator, uploadBuffer.allocation);
+
+	//New Image Setup
+	AllocatedImage newImage;
+	newImage.format = format;
+	newImage.extent = size;
+
+	VkImageCreateInfo img_info = vkutil::image_create_info(format, usage, size);
+	if (mipmapped)
+		img_info.mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(size.width, size.height)))) + 1;
+
+	VmaAllocationCreateInfo allocInfo = {};
+	allocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+	allocInfo.requiredFlags = VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+	VK_CHECK(vmaCreateImage(_allocator, &img_info, &allocInfo, &newImage.image, &newImage.allocation, nullptr));
+
+	VkImageAspectFlags aspectFlag = VK_IMAGE_ASPECT_COLOR_BIT;
+	if (format == VK_FORMAT_D32_SFLOAT)
+		aspectFlag = VK_IMAGE_ASPECT_DEPTH_BIT;
+
+	VkImageViewCreateInfo view_info = vkutil::imageview_create_info(format, newImage.image, aspectFlag);
+	view_info.subresourceRange.levelCount = img_info.mipLevels;
+
+	VK_CHECK(vkCreateImageView(_device, &view_info, nullptr, &newImage.imageView));
+
+	//Copy Data to New Image
+	immediate_command_submit([&](VkCommandBuffer cmd) {
+		vkutil::transition_image(cmd, newImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+
+		VkBufferImageCopy copyRegion{};
+		copyRegion.bufferOffset = 0;
+		copyRegion.bufferRowLength = 0;
+		copyRegion.bufferImageHeight = 0;
+
+		copyRegion.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		copyRegion.imageSubresource.mipLevel = 0;
+		copyRegion.imageSubresource.baseArrayLayer = 0;
+		copyRegion.imageSubresource.layerCount = 1;
+		copyRegion.imageExtent = size;
+
+		vkCmdCopyBufferToImage(cmd, uploadBuffer.buffer, newImage.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
+
+		vkutil::transition_image(cmd, newImage.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+		});
+
+	destroy_buffer(uploadBuffer);
+
+	return newImage;
+}
+
+void Engine::immediate_command_submit(std::function<void(VkCommandBuffer cmd)>&& function) {
+	VK_CHECK(vkResetFences(_device, 1, &_immFence));
+	VK_CHECK(vkResetCommandBuffer(_immCommandBuffer, 0));
+
+	VkCommandBuffer cmd = _immCommandBuffer;
+	
+	VkCommandBufferBeginInfo cmdBeginInfo{};
+	cmdBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	cmdBeginInfo.pNext = nullptr;
+	cmdBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+	VK_CHECK(vkBeginCommandBuffer(cmd, &cmdBeginInfo));
+
+	function(cmd);
+
+	VK_CHECK(vkEndCommandBuffer(cmd));
+
+	VkCommandBufferSubmitInfo cmdInfo = vkutil::command_buffer_submit_info(cmd);
+	VkSubmitInfo2 submit = vkutil::submit_info(&cmdInfo, nullptr, nullptr);
+
+	VK_CHECK(vkQueueSubmit2(_graphicsQueue, 1, &submit, _immFence));
+
+	VK_CHECK(vkWaitForFences(_device, 1, &_immFence, true, 9999999999));
+}
+
+void Engine::destroy_image(const AllocatedImage& img) {
+	vkDestroyImageView(_device, img.imageView, nullptr);
+	vmaDestroyImage(_allocator, img.image, img.allocation);
 }
 

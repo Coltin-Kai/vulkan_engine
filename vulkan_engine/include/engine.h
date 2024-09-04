@@ -12,14 +12,31 @@
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include "glm.hpp"
-
 #include "vec3.hpp"
+
+#include "fastgltf/core.hpp"
 
 #include <deque>
 #include <functional>
+#include <filesystem>
 
 //Config
 constexpr unsigned int FRAMES_TOTAL = 2;
+
+//May MOve ALlocated Object Structs to own Header
+struct AllocatedImage {
+	VkImage image;
+	VkImageView imageView;
+	VmaAllocation allocation;
+	VkExtent3D extent;
+	VkFormat format;
+};
+
+struct AllocatedBuffer {
+	VkBuffer buffer;
+	VmaAllocation allocation;
+	VmaAllocationInfo info;
+};
 
 class Engine {
 public:
@@ -48,20 +65,6 @@ private:
 
 			deletors.clear();
 		}
-	};
-
-	struct AllocatedImage {
-		VkImage image;
-		VkImageView imageView;
-		VmaAllocation allocation;
-		VkExtent3D extent;
-		VkFormat format;
-	};
-
-	struct AllocatedBuffer {
-		VkBuffer buffer;
-		VmaAllocation allocation;
-		VmaAllocationInfo info;
 	};
 
 	struct Swapchain {
@@ -124,6 +127,11 @@ private:
 	int _frameNumber = 0;
 	Frame& get_current_frame() { return _frames[_frameNumber % FRAMES_TOTAL]; };
 
+	//Immediate Commands Resources
+	VkCommandPool _immCommandPool;
+	VkCommandBuffer _immCommandBuffer;
+	VkFence _immFence;
+
 	//Queues
 	VkQueue _graphicsQueue;
 	uint32_t _graphicsQueueFamily;
@@ -185,8 +193,19 @@ private:
 
 	void destroy_swapchain();
 
-	//Other Helper Functions
+public:
+	//Helper Functions
+	void immediate_command_submit(std::function<void(VkCommandBuffer cmd)>&& function);
+
 	AllocatedBuffer create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage);
 
 	void destroy_buffer(const AllocatedBuffer& buffer);
+
+	AllocatedImage create_image(void* data, VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped = false);
+
+	void destroy_image(const AllocatedImage& img);
+
+	//Friends
+	friend void loadGLTFFile(Engine&, std::filesystem::path);
+	friend std::optional<AllocatedImage> load_image(Engine&, fastgltf::Asset&, fastgltf::Image&);
 };

@@ -1,14 +1,20 @@
 #pragma once
 
 #include "vulkan/vulkan.h"
+#include "vk_mem_alloc.h"
+#include "engine.h"
 
 namespace vkutil {
+
+	//Command Functions
 	void transition_image(VkCommandBuffer cmd, VkImage image, VkImageLayout currentLayout, VkImageLayout newLayout);
 	
 	void copy_image_to_image(VkCommandBuffer cmd, VkImage source, VkImage destination, VkExtent2D srcSize, VkExtent2D dstSize);
 
+	//Shader Load Function
 	bool load_shader_module(const char* filePath, VkDevice device, VkShaderModule* outShaderModule);
 
+	//Image SubResource Function
 	VkImageSubresourceRange image_subresource_range(VkImageAspectFlags aspectMask);
 
 	//Create Info Functions

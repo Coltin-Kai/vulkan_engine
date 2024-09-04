@@ -34,6 +34,12 @@
     <Filter Include="Resource Files\shaders">
       <UniqueIdentifier>{36234b87-be4a-488c-8629-5520bb632a9c}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\ThirdParty\VMA">
+      <UniqueIdentifier>{e97e2ec7-0109-4ba3-9b31-d86b6ac6619b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\ThirdParty\stbImage">
+      <UniqueIdentifier>{4f42be0d-7b5d-48f7-b8c1-f8a22e9260c5}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\main.cpp">
@@ -74,6 +80,15 @@
     </ClCompile>
     <ClCompile Include="src\pipeline.cpp">
       <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\loader.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\vma.cpp">
+      <Filter>Source Files\ThirdParty\VMA</Filter>
+    </ClCompile>
+    <ClCompile Include="src\stbImage.cpp">
+      <Filter>Source Files\ThirdParty\stbImage</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -122,7 +137,7 @@
     <ClInclude Include="include\pipeline.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="include\vulkanFunctionPointers.h">
+    <ClInclude Include="include\loader.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
