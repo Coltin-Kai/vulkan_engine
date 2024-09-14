@@ -140,6 +140,9 @@
     <ClInclude Include="include\loader.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="include\graphic_data_types.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="shaders\default.vert">
