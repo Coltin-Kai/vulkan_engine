@@ -3,7 +3,6 @@
 #include "VkBootstrap.h"
 #include "vulkan/vk_enum_string_helper.h"
 
-//#define VMA_IMPLEMENTATION
 #include "vk_mem_alloc.h"
 
 #include "gtc/matrix_transform.hpp"

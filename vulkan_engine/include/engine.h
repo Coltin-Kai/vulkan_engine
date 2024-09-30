@@ -16,27 +16,15 @@
 
 #include "fastgltf/core.hpp"
 
+#include "vulkan_helper_types.h"
+#include "graphic_data_types.h"
+
 #include <deque>
 #include <functional>
 #include <filesystem>
 
 //Config
 constexpr unsigned int FRAMES_TOTAL = 2;
-
-//May MOve ALlocated Object Structs to own Header
-struct AllocatedImage {
-	VkImage image;
-	VkImageView imageView;
-	VmaAllocation allocation;
-	VkExtent3D extent;
-	VkFormat format;
-};
-
-struct AllocatedBuffer {
-	VkBuffer buffer;
-	VmaAllocation allocation;
-	VmaAllocationInfo info;
-};
 
 class Engine {
 public:
@@ -206,6 +194,6 @@ public:
 	void destroy_image(const AllocatedImage& img);
 
 	//Friends
-	friend void loadGLTFFile(Engine&, std::filesystem::path);
+	friend void loadGLTFFile(GraphicsDataPayload&, Engine&, std::filesystem::path);
 	friend std::optional<AllocatedImage> load_image(Engine&, fastgltf::Asset&, fastgltf::Image&);
 };

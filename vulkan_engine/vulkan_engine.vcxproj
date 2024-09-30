@@ -54,6 +54,7 @@
     <ClInclude Include="include\VkBootstrap.h" />
     <ClInclude Include="include\VkBootstrapDispatch.h" />
     <ClInclude Include="include\vulkanUtility.h" />
+    <ClInclude Include="include\vulkan_helper_types.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="shaders\compile.bat" />
