@@ -267,7 +267,7 @@ void Engine::init_vulkan() {
 	}
 	
 	vkb::PhysicalDevice physicalDevice = physical_device_selector_return.value();
-	
+
 	//Create Logical Device
 	vkb::DeviceBuilder deviceBuilder{ physicalDevice };
 	

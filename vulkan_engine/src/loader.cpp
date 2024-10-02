@@ -42,6 +42,8 @@ void loadGLTFFile(GraphicsDataPayload& dataPayload, Engine& engine, std::filesys
 		vkCreateSampler(engine._device, &samplerInfo, nullptr, temp_samplers[temp_samplers.size() - 1].get());
 	}
 
+	dataPayload.samplers.insert(dataPayload.samplers.end(), temp_samplers.begin(), temp_samplers.end()); //Add Sampelrs to Payload
+
 	//Load Images
 	std::vector<std::shared_ptr<AllocatedImage>> temp_images;
 	temp_images.reserve(asset.images.size());
@@ -58,6 +60,8 @@ void loadGLTFFile(GraphicsDataPayload& dataPayload, Engine& engine, std::filesys
 		}
 	}
 
+	dataPayload.images.insert(dataPayload.images.end(), temp_images.begin(), temp_images.end()); //Add Images to Payload
+
 	//Load Textures
 	std::vector<std::shared_ptr<Texture>> temp_textures;
 	temp_textures.reserve(asset.textures.size());
@@ -70,6 +74,8 @@ void loadGLTFFile(GraphicsDataPayload& dataPayload, Engine& engine, std::filesys
 		temp_textures[i]->image = temp_images[texture.imageIndex.value()]; //Gonna have to check and account for no value for these member elements
 		temp_textures[i]->sampler = temp_samplers[texture.samplerIndex.value()];
 	}
+
+	dataPayload.textures.insert(temp_textures.end(), temp_textures.begin(), temp_textures.end()); //Add Textures to Payload
 
 	//Load Materials
 	std::vector<std::shared_ptr<Material>> temp_materials;
@@ -107,6 +113,8 @@ void loadGLTFFile(GraphicsDataPayload& dataPayload, Engine& engine, std::filesys
 		temp_materials[i]->metallic_Factor = mat.pbrData.metallicFactor;
 		temp_materials[i]->roughness_Factor = mat.pbrData.roughnessFactor;
 	}
+
+	dataPayload.materials.insert(dataPayload.materials.end(), temp_materials.begin(), temp_materials.end());
 
 	//Load Mesh Data
 	std::vector<std::shared_ptr<Mesh>> temp_meshes;
@@ -166,18 +174,9 @@ void loadGLTFFile(GraphicsDataPayload& dataPayload, Engine& engine, std::filesys
 					});
 			}
 
-			//Figure out how many of each indexed attribute
-			int texAttribCount = 0;
-			int colorAttribCount = 0;
-			for (fastgltf::Attribute a : p.attributes) {
-				if (a.name.find("TEXCOORD") != -1)
-					texAttribCount++;
-				else if (a.name.find("COLOR") != -1)
-					colorAttribCount++;
-			}
-
 			//UV Coords
-			for (int i = 0; i < texAttribCount; i++) {
+			int i = 0;
+			while(true) {
 				std::string attribName = "TEXCOORD_" + std::to_string(i);
 				auto uv_attrib = p.findAttribute(attribName);
 				if (uv_attrib != p.attributes.end()) {
@@ -186,10 +185,15 @@ void loadGLTFFile(GraphicsDataPayload& dataPayload, Engine& engine, std::filesys
 							current_primitive.vertices[idx].uvs.push_back(uv);
 						});
 				}
+				else
+					break;
+
+				i++;
 			}
 
 			//Vertex Colors
-			for (int i = 0; i < colorAttribCount; i++) {
+			i = 0;
+			while (true) {
 				std::string attribName = "COLOR_" + std::to_string(i);
 				auto color_attrib = p.findAttribute(attribName);
 				if (color_attrib != p.attributes.end()) {
@@ -198,6 +202,10 @@ void loadGLTFFile(GraphicsDataPayload& dataPayload, Engine& engine, std::filesys
 							current_primitive.vertices[idx].colors.push_back(color);
 						});
 				}
+				else
+					break;
+
+				i++;
 			}
 		}
 	}
@@ -226,14 +234,22 @@ void loadGLTFFile(GraphicsDataPayload& dataPayload, Engine& engine, std::filesys
 			size_t node_index = DFS_node_index_stack.top();
 			DFS_node_index_stack.pop();
 
-			std::shared_ptr<Node> node = std::make_shared<Node>();
-			node->name = asset.nodes[node_index].name;
-			node->mesh = temp_meshes[asset.nodes[node_index].meshIndex.value()];
-			//node->local_transform = fastgltf::getTransformMatrix(asset.nodes[node_index]);
+			std::shared_ptr<Node> node;
+			if (asset.nodes[node_index].meshIndex.has_value()) { //Uf Node holds a Mesh, make it a MeshNode
+				std::shared_ptr<MeshNode> mesh_node = std::make_shared<MeshNode>();
+				mesh_node->mesh = temp_meshes[asset.nodes[node_index].meshIndex.value()];
+				node = mesh_node;
+			}
+			else
+				node = std::make_shared<Node>();
 
-			//Check if node has parent and assign it to parent's children
+			node->name = asset.nodes[node_index].name;
+
+			//Check if node has parent and if so establish relationship by pointers
 			if (!DFS_node_parent_stack.empty()) { 
 				DFS_node_parent_stack.top().first->child_nodes.push_back(node); 
+				node->parent_node = DFS_node_parent_stack.top().first;
+
 				DFS_node_parent_stack.top().second--;
 				if (DFS_node_parent_stack.top().second == 0) { //If count reaches 0, then parent has no more children to account for and can be popped off stack
 					DFS_node_parent_stack.pop();
@@ -242,6 +258,9 @@ void loadGLTFFile(GraphicsDataPayload& dataPayload, Engine& engine, std::filesys
 			else { //Indicates node is rootnode and should be added to scene's rootnodes list.
 				scene.root_nodes.push_back(node);
 			}
+
+			//Add Local Transform. Do it before adding children to prevent function from recursing
+			node->updateLocalTransform(translate_to_glm_mat4(fastgltf::getTransformMatrix(asset.nodes[node_index])));
 
 			//Check if node has children, thus adding children to DFS idnex stack and the node itself to parent stack
 			if (!asset.nodes[node_index].children.empty()) {
@@ -299,6 +318,12 @@ VkPrimitiveTopology extract_topology_type(fastgltf::PrimitiveType type) {
 	case fastgltf::PrimitiveType::TriangleFan:
 		return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN;
 	}
+}
+
+glm::mat4 translate_to_glm_mat4(fastgltf::math::fmat4x4 gltf_mat4) {
+	glm::mat4 result_transform;
+	memcpy(&result_transform, gltf_mat4.data(), sizeof(gltf_mat4));
+	return result_transform;
 }
 
 std::optional<AllocatedImage> load_image(Engine& engine, fastgltf::Asset& asset, fastgltf::Image& image) {

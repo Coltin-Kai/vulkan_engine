@@ -19,4 +19,6 @@ VkSamplerMipmapMode extract_mipmap_mode(fastgltf::Filter filter);
 //Converts GLTF Topology Type of a Primitive to Vulkan Types
 VkPrimitiveTopology extract_topology_type(fastgltf::PrimitiveType type);
 
+glm::mat4 translate_to_glm_mat4(fastgltf::math::fmat4x4 gltf_mat4);
+
 std::optional<AllocatedImage> load_image(Engine& engine, fastgltf::Asset& asset, fastgltf::Image& image);
