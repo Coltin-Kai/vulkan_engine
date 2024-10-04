@@ -71,8 +71,10 @@ void loadGLTFFile(GraphicsDataPayload& dataPayload, Engine& engine, std::filesys
 		int i = temp_textures.size() - 1;
 
 		temp_textures[i]->name = texture.name;
-		temp_textures[i]->image = temp_images[texture.imageIndex.value()]; //Gonna have to check and account for no value for these member elements
-		temp_textures[i]->sampler = temp_samplers[texture.samplerIndex.value()];
+		if (texture.imageIndex.has_value())
+			temp_textures[i]->image = temp_images[texture.imageIndex.value()]; //Gonna have to check and account for no value for these member elements
+		if (texture.samplerIndex.has_value())
+			temp_textures[i]->sampler = temp_samplers[texture.samplerIndex.value()];
 	}
 
 	dataPayload.textures.insert(temp_textures.end(), temp_textures.begin(), temp_textures.end()); //Add Textures to Payload
@@ -86,30 +88,40 @@ void loadGLTFFile(GraphicsDataPayload& dataPayload, Engine& engine, std::filesys
 		int i = temp_materials.size() - 1;
 
 		temp_materials[i]->name = mat.name;
+		
+		if (mat.normalTexture.has_value()) {
+			temp_materials[i]->normal_Texture = temp_textures[mat.normalTexture.value().textureIndex];
+			temp_materials[i]->normal_coord_index = mat.normalTexture.value().texCoordIndex;
+			temp_materials[i]->normal_scale = mat.normalTexture.value().scale;
+		}
 
-		temp_materials[i]->normal_Texture = temp_textures[mat.normalTexture.value().textureIndex];
-		temp_materials[i]->normal_coord_index = mat.normalTexture.value().texCoordIndex;
-		temp_materials[i]->normal_scale = mat.normalTexture.value().scale;
+		if (mat.occlusionTexture.has_value()) {
+			temp_materials[i]->occlusion_Texture = temp_textures[mat.occlusionTexture.value().textureIndex];
+			temp_materials[i]->occlusion_coord_index = mat.occlusionTexture.value().texCoordIndex;
+			temp_materials[i]->occlusion_strength = mat.occlusionTexture.value().strength;
+		}
 
-		temp_materials[i]->occlusion_Texture = temp_textures[mat.occlusionTexture.value().textureIndex];
-		temp_materials[i]->occlusion_coord_index = mat.occlusionTexture.value().texCoordIndex;
-		temp_materials[i]->occlusion_strength = mat.occlusionTexture.value().strength;
-
-		temp_materials[i]->emission_Texture = temp_textures[mat.emissiveTexture.value().textureIndex];
-		temp_materials[i]->emission_coord_index = mat.emissiveTexture.value().texCoordIndex;
+		if (mat.emissiveTexture.has_value()) {
+			temp_materials[i]->emission_Texture = temp_textures[mat.emissiveTexture.value().textureIndex];
+			temp_materials[i]->emission_coord_index = mat.emissiveTexture.value().texCoordIndex;
+		}
 		temp_materials[i]->emission_Factor.x = mat.emissiveFactor.x();
 		temp_materials[i]->emission_Factor.y = mat.emissiveFactor.y();
 		temp_materials[i]->emission_Factor.z = mat.emissiveFactor.z();
 
-		temp_materials[i]->baseColor_Texture = temp_textures[mat.pbrData.baseColorTexture.value().textureIndex];
-		temp_materials[i]->baseColor_coord_index = mat.pbrData.baseColorTexture.value().texCoordIndex;
+		if (mat.pbrData.baseColorTexture.has_value()) {
+			temp_materials[i]->baseColor_Texture = temp_textures[mat.pbrData.baseColorTexture.value().textureIndex];
+			temp_materials[i]->baseColor_coord_index = mat.pbrData.baseColorTexture.value().texCoordIndex;
+		}
 		temp_materials[i]->basrColor_Factor.x = mat.pbrData.baseColorFactor.x();
 		temp_materials[i]->basrColor_Factor.y = mat.pbrData.baseColorFactor.y();
 		temp_materials[i]->basrColor_Factor.z = mat.pbrData.baseColorFactor.z();
 		temp_materials[i]->basrColor_Factor.w = mat.pbrData.baseColorFactor.w();
 
-		temp_materials[i]->metal_rough_Texture = temp_textures[mat.pbrData.metallicRoughnessTexture.value().textureIndex];
-		temp_materials[i]->metal_rough_coord_index = mat.pbrData.metallicRoughnessTexture.value().texCoordIndex;
+		if (mat.pbrData.metallicRoughnessTexture.has_value()) {
+			temp_materials[i]->metal_rough_Texture = temp_textures[mat.pbrData.metallicRoughnessTexture.value().textureIndex];
+			temp_materials[i]->metal_rough_coord_index = mat.pbrData.metallicRoughnessTexture.value().texCoordIndex;
+		}
 		temp_materials[i]->metallic_Factor = mat.pbrData.metallicFactor;
 		temp_materials[i]->roughness_Factor = mat.pbrData.roughnessFactor;
 	}
@@ -135,26 +147,32 @@ void loadGLTFFile(GraphicsDataPayload& dataPayload, Engine& engine, std::filesys
 			current_primitive.topology = extract_topology_type(p.type);
 
 			//Material
-			current_primitive.material = temp_materials[p.materialIndex.value()];
+			if (p.materialIndex.has_value())
+				current_primitive.material = temp_materials[p.materialIndex.value()];
 
 			//Indices
-			fastgltf::Accessor& index_accessor = asset.accessors[p.indicesAccessor.value()];
-			current_primitive.indices.reserve(index_accessor.count);
+			if (p.indicesAccessor.has_value()) {
+				fastgltf::Accessor& index_accessor = asset.accessors[p.indicesAccessor.value()];
+				current_primitive.indices.reserve(index_accessor.count);
 
-			fastgltf::iterateAccessor<std::uint32_t>(asset, index_accessor,
-				[&](std::uint32_t idx) {
-					current_primitive.indices.push_back(idx);
-				});
+				fastgltf::iterateAccessor<std::uint32_t>(asset, index_accessor,
+					[&](std::uint32_t idx) {
+						current_primitive.indices.push_back(idx);
+					});
+			}
 
 			//Vertex Positions
-			fastgltf::Accessor& pos_accessor = asset.accessors[p.findAttribute("POSITION")->accessorIndex];
-			current_primitive.vertices.reserve(pos_accessor.count);
-
-			fastgltf::iterateAccessor<glm::vec3>(asset, pos_accessor,
-				[&](glm::vec3 pos) {
-					current_primitive.vertices.emplace_back();
-					current_primitive.vertices[current_primitive.vertices.size() - 1].position = pos;
-				});
+			auto position_attrib = p.findAttribute("POSITION");
+			if (position_attrib != p.attributes.end()) {
+				fastgltf::Accessor& pos_accessor = asset.accessors[position_attrib->accessorIndex];
+				
+				current_primitive.vertices.reserve(pos_accessor.count);
+				fastgltf::iterateAccessor<glm::vec3>(asset, pos_accessor,
+					[&](glm::vec3 pos) {
+						current_primitive.vertices.emplace_back();
+						current_primitive.vertices[current_primitive.vertices.size() - 1].position = pos;
+					});
+			}
 
 			//Vertex Normals
 			auto normals_attrib = p.findAttribute("NORMAL");
@@ -216,13 +234,13 @@ void loadGLTFFile(GraphicsDataPayload& dataPayload, Engine& engine, std::filesys
 		dataPayload.scenes.emplace_back();
 		Scene& scene = dataPayload.scenes[scenes_offset + i];
 		
-		if (i == asset.defaultScene.value()) { //Set Current/Default Scene
+		if (asset.defaultScene.has_value() && i == asset.defaultScene.value()) { //Set Current/Default Scene
 			dataPayload.current_scene = &scene;
 		}
 
 		scene.name = asset.scenes[i].name;
 
-		//Perform DFS to get all the nodes in the scene
+		//Load Nodes. Perform DFS to get all the nodes in the scene
 		std::stack<size_t> DFS_node_index_stack; //Maps the correct nodes to traverse for DFS
 		std::stack<std::pair<std::shared_ptr<Node>, int>> DFS_node_parent_stack; //Tracks the correct parent node of the current node when traversing. Also keeps track of how many times the parent node will be used before it can be popped
 		
@@ -235,7 +253,7 @@ void loadGLTFFile(GraphicsDataPayload& dataPayload, Engine& engine, std::filesys
 			DFS_node_index_stack.pop();
 
 			std::shared_ptr<Node> node;
-			if (asset.nodes[node_index].meshIndex.has_value()) { //Uf Node holds a Mesh, make it a MeshNode
+			if (asset.nodes[node_index].meshIndex.has_value()) { //If Node holds a Mesh, make it a MeshNode
 				std::shared_ptr<MeshNode> mesh_node = std::make_shared<MeshNode>();
 				mesh_node->mesh = temp_meshes[asset.nodes[node_index].meshIndex.value()];
 				node = mesh_node;

@@ -94,26 +94,26 @@ struct Material {
 	std::string name;
 
 	std::shared_ptr<Texture> normal_Texture;
-	int normal_coord_index; //Index of the specific Texture Coord in the Mesh
-	float normal_scale;
+	int normal_coord_index = -1; //Index of the specific Texture Coord in the Mesh
+	float normal_scale = 0.0f;
 
 	std::shared_ptr<Texture> occlusion_Texture;
-	int occlusion_coord_index;
-	float occlusion_strength;
+	int occlusion_coord_index = -1;
+	float occlusion_strength = 0.0f;
 
 	std::shared_ptr<Texture> emission_Texture;
-	int emission_coord_index;
+	int emission_coord_index = -1;
 	glm::vec3 emission_Factor;
 
 	//PBR Variables
 	std::shared_ptr<Texture> baseColor_Texture;
-	int baseColor_coord_index;
+	int baseColor_coord_index = -1;
 	glm::vec4 basrColor_Factor;
 
 	std::shared_ptr<Texture> metal_rough_Texture;
-	int metal_rough_coord_index;
-	float metallic_Factor;
-	float roughness_Factor;
+	int metal_rough_coord_index = -1;
+	float metallic_Factor = 0.0f;
+	float roughness_Factor = 0.0f;
 };
 
 struct Texture {
