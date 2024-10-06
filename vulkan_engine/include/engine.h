@@ -189,6 +189,8 @@ public:
 
 	void destroy_buffer(const AllocatedBuffer& buffer);
 
+	AllocatedImage create_image(VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped = false);
+
 	AllocatedImage create_image(void* data, VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped = false);
 
 	void destroy_image(const AllocatedImage& img);

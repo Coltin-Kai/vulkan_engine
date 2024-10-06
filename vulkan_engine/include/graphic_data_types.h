@@ -38,6 +38,8 @@ struct Node {
 	std::weak_ptr<Node> parent_node;
 	std::vector<std::shared_ptr<Node>> child_nodes{};
 
+	std::shared_ptr<Mesh> mesh;
+
 	//Updates the Local Transform as well as its World Transform
 	void updateLocalTransform(const glm::mat4& newTransform) {
 		local_transform = newTransform;
@@ -64,10 +66,6 @@ private:
 			child->updateWorldTransform(world_transform);
 		}
 	}
-};
-
-struct MeshNode : Node {
-	std::shared_ptr<Mesh> mesh;
 };
 
 struct Mesh { 

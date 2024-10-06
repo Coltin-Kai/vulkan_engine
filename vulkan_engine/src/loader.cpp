@@ -13,10 +13,11 @@ void loadGLTFFile(GraphicsDataPayload& dataPayload, Engine& engine, std::filesys
 	//Parser and GLTF LOading Code
 	fastgltf::Parser parser;
 
-	fastgltf::GltfDataBuffer data;
-	data.FromPath(filePath);
+	auto data = fastgltf::GltfDataBuffer::FromPath(filePath);
+	if (data.error() != fastgltf::Error::None)
+		throw std::runtime_error("Failed to load GLTFDataBuffer");
 
-	auto expected_asset = parser.loadGltf(data, filePath.parent_path());
+	auto expected_asset = parser.loadGltf(data.get(), filePath.parent_path(), fastgltf::Options::LoadExternalBuffers);
 	if (expected_asset.error() != fastgltf::Error::None) {
 		throw std::runtime_error("Failed to load GLTF file");
 	}
@@ -77,7 +78,7 @@ void loadGLTFFile(GraphicsDataPayload& dataPayload, Engine& engine, std::filesys
 			temp_textures[i]->sampler = temp_samplers[texture.samplerIndex.value()];
 	}
 
-	dataPayload.textures.insert(temp_textures.end(), temp_textures.begin(), temp_textures.end()); //Add Textures to Payload
+	dataPayload.textures.insert(dataPayload.textures.end(), temp_textures.begin(), temp_textures.end()); //Add Textures to Payload
 
 	//Load Materials
 	std::vector<std::shared_ptr<Material>> temp_materials;
@@ -252,16 +253,14 @@ void loadGLTFFile(GraphicsDataPayload& dataPayload, Engine& engine, std::filesys
 			size_t node_index = DFS_node_index_stack.top();
 			DFS_node_index_stack.pop();
 
-			std::shared_ptr<Node> node;
-			if (asset.nodes[node_index].meshIndex.has_value()) { //If Node holds a Mesh, make it a MeshNode
-				std::shared_ptr<MeshNode> mesh_node = std::make_shared<MeshNode>();
-				mesh_node->mesh = temp_meshes[asset.nodes[node_index].meshIndex.value()];
-				node = mesh_node;
-			}
-			else
-				node = std::make_shared<Node>();
+			//Consruct Node and Fill in member data
+
+			std::shared_ptr<Node> node = std::make_shared<Node>();
 
 			node->name = asset.nodes[node_index].name;
+
+			if (asset.nodes[node_index].meshIndex.has_value()) //If Node holds a Mesh, make it a MeshNode
+				node->mesh = temp_meshes[asset.nodes[node_index].meshIndex.value()];
 
 			//Check if node has parent and if so establish relationship by pointers
 			if (!DFS_node_parent_stack.empty()) { 
@@ -347,9 +346,11 @@ glm::mat4 translate_to_glm_mat4(fastgltf::math::fmat4x4 gltf_mat4) {
 std::optional<AllocatedImage> load_image(Engine& engine, fastgltf::Asset& asset, fastgltf::Image& image) {
 	AllocatedImage newImage{};
 	int width, height, nrChannels;
-
+	
 	std::visit(fastgltf::visitor{
-		[](auto& arg) {},
+		[](auto& arg) {
+			std::cout << "A load_images function encountered an unaccounted for DataSource type from its std::visit function." << std::endl;
+		},
 		[&](fastgltf::sources::URI& filePath) {
 			assert(filePath.fileByteOffset == 0);
 			assert(filePath.uri.isLocalPath());
@@ -365,6 +366,20 @@ std::optional<AllocatedImage> load_image(Engine& engine, fastgltf::Asset& asset,
 
 				newImage = engine.create_image(data, imageSize, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT, false);
 				
+				stbi_image_free(data);
+			}
+		},
+		[&](fastgltf::sources::Array& array) {
+			unsigned char* data = stbi_load_from_memory(reinterpret_cast<unsigned char*>(&(array.bytes[0])), static_cast<int>(array.bytes.size()), &width, &height, &nrChannels, 4);
+
+			if (data) {
+				VkExtent3D imageSize;
+				imageSize.width = width;
+				imageSize.height = height;
+				imageSize.depth = 1;
+
+				newImage = engine.create_image(data, imageSize, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT, false);
+
 				stbi_image_free(data);
 			}
 		},

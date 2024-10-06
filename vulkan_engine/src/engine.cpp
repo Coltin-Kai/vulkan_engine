@@ -36,6 +36,11 @@ void Engine::init() {
 	setup_descriptors();
 	init_graphics_pipeline();
 	init_imgui();
+
+	//DEBUG MODEL LOOADING
+	GraphicsDataPayload payload;
+	loadGLTFFile(payload, *this, "C:\\Github\\vulkan_engine\\vulkan_engine\\assets\\Sample_Models\\BoxTextured.gltf"); //Exception expected to be thrown since allocated data in payload is not released
+
 }
 
 void Engine::run() {
@@ -330,12 +335,15 @@ void Engine::init_commands() {
 
 	//Init Immediate Command Resources
 	VK_CHECK(vkCreateCommandPool(_device, &cmdPoolInfo, nullptr, &_immCommandPool));
+
 	VkCommandBufferAllocateInfo cmdAllocInfo{};
 	cmdAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
 	cmdAllocInfo.pNext = nullptr;
 	cmdAllocInfo.commandPool = _immCommandPool;
 	cmdAllocInfo.commandBufferCount = 1;
 	cmdAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+
+	VK_CHECK(vkAllocateCommandBuffers(_device, &cmdAllocInfo, &_immCommandBuffer));
 
 	_mainDeletionQueue.push_function([=]() {
 		vkDestroyCommandPool(_device, _immCommandPool, nullptr);
@@ -649,7 +657,7 @@ void Engine::init_imgui() {
 
 	VmaAllocationCreateInfo vmaAllocInfo = {};
 	vmaAllocInfo.usage = memoryUsage;
-	vmaAllocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+	vmaAllocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT; //Undecied on wheter to have buffer be persistently mapped with VMA_ALLOCATION_CREAETE_MAPPED_BIT flag.
 
 	AllocatedBuffer newBuffer;
 
@@ -661,30 +669,22 @@ void Engine::destroy_buffer(const AllocatedBuffer& buffer) {
 	vmaDestroyBuffer(_allocator, buffer.buffer, buffer.allocation);
 }
 
-AllocatedImage Engine::create_image(void* data, VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped) {
-	//Staging Buffer Setup
-	size_t data_size = size.depth * size.width * size.height * 4;
-
-	AllocatedBuffer uploadBuffer = create_buffer(data_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_HOST);
-	void* mappedData;
-	vmaMapMemory(_allocator, uploadBuffer.allocation, &mappedData);
-	memcpy(mappedData, &data, data_size);
-	vmaUnmapMemory(_allocator, uploadBuffer.allocation);
-
-	//New Image Setup
+AllocatedImage Engine::create_image(VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped) {
 	AllocatedImage newImage;
 	newImage.format = format;
 	newImage.extent = size;
 
 	VkImageCreateInfo img_info = vkutil::image_create_info(format, usage, size);
+
 	if (mipmapped)
 		img_info.mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(size.width, size.height)))) + 1;
+	
+	VmaAllocationCreateInfo alloc_info{};
+	alloc_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+	alloc_info.requiredFlags = VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
-	VmaAllocationCreateInfo allocInfo = {};
-	allocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
-	allocInfo.requiredFlags = VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
-	VK_CHECK(vmaCreateImage(_allocator, &img_info, &allocInfo, &newImage.image, &newImage.allocation, nullptr));
+	//Allocate and Create Image
+	VK_CHECK(vmaCreateImage(_allocator, &img_info, &alloc_info, &newImage.image, &newImage.allocation, nullptr));
 
 	VkImageAspectFlags aspectFlag = VK_IMAGE_ASPECT_COLOR_BIT;
 	if (format == VK_FORMAT_D32_SFLOAT)
@@ -694,6 +694,18 @@ AllocatedImage Engine::create_image(void* data, VkExtent3D size, VkFormat format
 	view_info.subresourceRange.levelCount = img_info.mipLevels;
 
 	VK_CHECK(vkCreateImageView(_device, &view_info, nullptr, &newImage.imageView));
+
+	return newImage;
+}
+
+AllocatedImage Engine::create_image(void* data, VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped) {
+	//Staging Buffer Setup
+	size_t data_size = size.depth * size.width * size.height * 4;
+
+	AllocatedBuffer uploadBuffer = create_buffer(data_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_HOST);
+	memcpy(uploadBuffer.info.pMappedData, data, data_size);
+
+	AllocatedImage newImage = create_image(size, format, usage | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, mipmapped);
 
 	//Copy Data to New Image
 	immediate_command_submit([&](VkCommandBuffer cmd) {
