@@ -73,7 +73,7 @@ struct Mesh {
 		struct Vertex {
 			glm::vec3 position;
 			glm::vec3 normal;
-			glm::vec3 tangent;
+			glm::vec4 tangent;
 			std::vector<glm::vec3> colors{};
 			std::vector<glm::vec2> uvs{}; //Represents Texcoord0, Texcoord1, ...
 		};

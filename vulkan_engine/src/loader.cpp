@@ -17,7 +17,7 @@ void loadGLTFFile(GraphicsDataPayload& dataPayload, Engine& engine, std::filesys
 	if (data.error() != fastgltf::Error::None)
 		throw std::runtime_error("Failed to load GLTFDataBuffer");
 
-	auto expected_asset = parser.loadGltf(data.get(), filePath.parent_path(), fastgltf::Options::LoadExternalBuffers);
+	auto expected_asset = parser.loadGltf(data.get(), filePath.parent_path(), fastgltf::Options::LoadExternalBuffers | fastgltf::Options::LoadExternalImages);
 	if (expected_asset.error() != fastgltf::Error::None) {
 		throw std::runtime_error("Failed to load GLTF file");
 	}
@@ -187,8 +187,8 @@ void loadGLTFFile(GraphicsDataPayload& dataPayload, Engine& engine, std::filesys
 			//Vertex Tangents
 			auto tangents_attrib = p.findAttribute("TANGENT");
 			if (tangents_attrib != p.attributes.end()) {
-				fastgltf::iterateAccessorWithIndex<glm::vec3>(asset, asset.accessors[tangents_attrib->accessorIndex],
-					[&](glm::vec3 tan, std::size_t idx) {
+				fastgltf::iterateAccessorWithIndex<glm::vec4>(asset, asset.accessors[tangents_attrib->accessorIndex],
+					[&](glm::vec4 tan, std::size_t idx) {
 						current_primitive.vertices[idx].tangent = tan;
 					});
 			}

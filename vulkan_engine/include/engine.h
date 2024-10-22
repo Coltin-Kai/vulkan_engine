@@ -26,6 +26,10 @@
 //Config
 constexpr unsigned int FRAMES_TOTAL = 2;
 
+//-Descriptor Settings
+constexpr unsigned int UNIFORM_BINDING = 0;
+constexpr unsigned int UNIFORM_DESCRIPTOR_COUNT = 500;
+
 class Engine {
 public:
 	//Initalize the Engine
@@ -148,9 +152,9 @@ private:
 	AllocatedBuffer _index_data_buffer;
 
 	//Descriptors
-	VkDescriptorSetLayout _uniform_descriptor_set_layout;
 	AllocatedBuffer _uniformData_buffer;
 	VkDescriptorPool _descriptorPool;
+	VkDescriptorSetLayout _descriptorSetLayout;
 	VkDescriptorSet _descriptorSet;
 
 	void draw();
@@ -175,7 +179,9 @@ private:
 
 	void setup_vertex_input();
 
-	void setup_descriptors();
+	void setup_descriptor_set();
+
+	void setup_descriptor_resources();
 
 	void resize_swapchain();
 

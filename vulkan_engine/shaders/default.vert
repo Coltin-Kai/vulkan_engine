@@ -9,9 +9,9 @@ layout (set = 0, binding = 0) uniform uniformBuffer {
 	mat4 model;
 	mat4 view;
 	mat4 proj;
-} ubo;
+} ubo[];
 
 void main() {
-	gl_Position = ubo.proj * ubo.view * ubo.model * vec4(inPosition, 1.0f);
+	gl_Position = ubo[0].proj * ubo[0].view * ubo[0].model * vec4(inPosition, 1.0f);
 	outColor = inColor;
 }

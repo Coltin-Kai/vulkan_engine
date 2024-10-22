@@ -33,13 +33,14 @@ void Engine::init() {
 	init_sync_structures();
 	setup_depthImage();
 	setup_vertex_input();
-	setup_descriptors();
+	setup_descriptor_set();
+	setup_descriptor_resources();
 	init_graphics_pipeline();
 	init_imgui();
 
 	//DEBUG MODEL LOOADING
 	GraphicsDataPayload payload;
-	loadGLTFFile(payload, *this, "C:\\Github\\vulkan_engine\\vulkan_engine\\assets\\Sample_Models\\BoxTextured.gltf"); //Exception expected to be thrown since allocated data in payload is not released
+	//loadGLTFFile(payload, *this, "C:\\Github\\vulkan_engine\\vulkan_engine\\assets\\Sample_Models\\BoomBox\\BoomBox.gltf"); //Exception expected to be thrown since allocated data in payload is not released
 
 }
 
@@ -139,7 +140,7 @@ void Engine::draw() {
 	vkutil::transition_image(cmd, _depthImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
 
 	//Clear Color
-	VkClearColorValue clearValue = { {0.0f, 1.0f, 0.0f, 1.0f} };
+	VkClearColorValue clearValue = { {0.5f, 0.5f, 0.5f, 0.5f} };
 
 	VkImageSubresourceRange clearRange = vkutil::image_subresource_range(VK_IMAGE_ASPECT_COLOR_BIT);
 
@@ -215,7 +216,7 @@ void Engine::draw_geometry(VkCommandBuffer cmd, uint32_t swapchainImageIndex) {
 	vkCmdBindVertexBuffers(cmd, 0, 1, &_vertex_data_buffer.buffer, offset);
 	vkCmdBindIndexBuffer(cmd, _index_data_buffer.buffer, 0, VK_INDEX_TYPE_UINT16);
 
-	//Set Descriptors
+	//Bind Descriptor Set
 	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _pipelineLayout, 0, 1, &_descriptorSet, 0, nullptr);
 
 	//Draw
@@ -242,7 +243,7 @@ void Engine::init_vulkan() {
 	//Create Surface
 	SDL_Vulkan_CreateSurface(_window, _instance, &_surface);
 
-	//Get Physical Device
+	//Get Physical Device and Features
 	VkPhysicalDeviceVulkan13Features features{};
 	features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
 	features.dynamicRendering = true;
@@ -250,12 +251,24 @@ void Engine::init_vulkan() {
 	
 	VkPhysicalDeviceVulkan12Features features2{};
 	features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+	
 	features2.bufferDeviceAddress = true;
-	//-Descriptor Indexing Features:
+
 	features2.descriptorIndexing = true;
-	features2.descriptorBindingPartiallyBound = true;
+
 	features2.shaderUniformBufferArrayNonUniformIndexing = true;
+	features2.shaderStorageBufferArrayNonUniformIndexing = true;
+	features2.shaderSampledImageArrayNonUniformIndexing = true;
+	features2.shaderStorageImageArrayNonUniformIndexing = true;
+
+	features2.descriptorBindingPartiallyBound = true;
+	
 	features2.descriptorBindingUniformBufferUpdateAfterBind = true;
+	features2.descriptorBindingStorageBufferUpdateAfterBind = true;
+	features2.descriptorBindingSampledImageUpdateAfterBind = true;
+	features2.descriptorBindingStorageImageUpdateAfterBind = true;
+
+	features2.descriptorBindingUpdateUnusedWhilePending = true;
 		
 	vkb::PhysicalDeviceSelector selector{ vkb_inst };
 	
@@ -374,6 +387,7 @@ void Engine::init_sync_structures() {
 }
 
 void Engine::init_graphics_pipeline() {
+	//Load SHaders
 	VkShaderModule vertexShader;
 	if (!vkutil::load_shader_module("shaders/default_vert.spv", _device, &vertexShader)) 
 		throw std::runtime_error("Error trying to create Vertex Shader Module");
@@ -386,12 +400,14 @@ void Engine::init_graphics_pipeline() {
 	else
 		std::cout << "Fragment Shader successfully loaded" << std::endl;
 
+	//Set Pipeline Layout - Descriptor Sets and Push Constants Layout
 	VkPipelineLayoutCreateInfo pipeline_layout_info = vkutil::pipeline_layout_create_info();
 	pipeline_layout_info.setLayoutCount = 1;
-	pipeline_layout_info.pSetLayouts = &_uniform_descriptor_set_layout;
+	pipeline_layout_info.pSetLayouts = &_descriptorSetLayout; 
 
 	VK_CHECK(vkCreatePipelineLayout(_device, &pipeline_layout_info, nullptr, &_pipelineLayout));
 
+	//Build Pipeline
 	PipelineBuilder pipelineBuilder;
 	pipelineBuilder._pipelineLayout = _pipelineLayout;
 	pipelineBuilder.set_shaders(vertexShader, fragShader);
@@ -465,55 +481,18 @@ void Engine::setup_vertex_input() {
 	vmaUnmapMemory(_allocator, _index_data_buffer.allocation);
 }
 
-void Engine::setup_descriptors() {
-	//Setup Uniform Data and a Buffer that holds it
-	_uniformData_buffer = create_buffer(sizeof(UnifrormData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
-	
-	_mainDeletionQueue.push_function([=, this]() {
-		destroy_buffer(_uniformData_buffer);
-		});
-	
-	//UnifrormData* uniform_data = (UnifrormData*)_uniformData_buffer.allocation->GetMappedData(); Personal Warning: DO NOT DO THIS. TYPE VMAALLOCATION IS AN OPAQUE POINTER. WILL CAUSE ERROR
-	void* raw_data;
-	vmaMapMemory(_allocator, _uniformData_buffer.allocation, &raw_data);
-	UnifrormData* uniform_data = (UnifrormData*) raw_data;
-	uniform_data->model = glm::rotate(glm::mat4(1.0f), glm::radians(20.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-	uniform_data->view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-	uniform_data->proj = glm::perspective(glm::radians(45.0f), _swapchain.extent.width / (float)_swapchain.extent.height, 0.1f, 50.0f);
-	uniform_data->proj[1][1] *= -1;
-	vmaUnmapMemory(_allocator, _uniformData_buffer.allocation);
-
-	//Create Descriptor Set Layout for Descriptors
-
-	VkDescriptorSetLayoutBinding uboLayoutBinding{};
-	uboLayoutBinding.binding = 0;
-	uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-	uboLayoutBinding.descriptorCount = 1;
-	uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-	uboLayoutBinding.pImmutableSamplers = nullptr;
-
-	VkDescriptorSetLayoutCreateInfo layoutInfo{};
-	layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-	layoutInfo.bindingCount = 1;
-	layoutInfo.pBindings = &uboLayoutBinding;
-
-	VK_CHECK(vkCreateDescriptorSetLayout(_device, &layoutInfo, nullptr, &_uniform_descriptor_set_layout));
-
-	_mainDeletionQueue.push_function([=, this]() {
-		vkDestroyDescriptorSetLayout(_device, _uniform_descriptor_set_layout, nullptr);
-		});
-
+void Engine::setup_descriptor_set() {
 	//Create Descriptor Pool
-
-	VkDescriptorPoolSize poolSize{};
-	poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-	poolSize.descriptorCount = 1;
+	std::vector<VkDescriptorPoolSize> poolSizes = {
+		{.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .descriptorCount = UNIFORM_DESCRIPTOR_COUNT}
+	};
 
 	VkDescriptorPoolCreateInfo poolInfo{};
 	poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-	poolInfo.poolSizeCount = 1;
-	poolInfo.pPoolSizes = &poolSize;
+	poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
+	poolInfo.pPoolSizes = poolSizes.data();
 	poolInfo.maxSets = 1;
+	poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
 
 	if (vkCreateDescriptorPool(_device, &poolInfo, nullptr, &_descriptorPool) != VK_SUCCESS)
 		throw std::runtime_error("Failed to create Descriptor Pool");
@@ -522,19 +501,67 @@ void Engine::setup_descriptors() {
 		vkDestroyDescriptorPool(_device, _descriptorPool, nullptr);
 		});
 
-	//Create Descriptor Set
+	//Create Descriptor Set Layout for Descriptors
+	//-Set Layout Bindings
+	std::vector<VkDescriptorSetLayoutBinding> layout_bindings = {
+		{ .binding = UNIFORM_BINDING, .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .descriptorCount = UNIFORM_DESCRIPTOR_COUNT,
+		.stageFlags = VK_SHADER_STAGE_ALL_GRAPHICS, .pImmutableSamplers = nullptr }
+	};
 
+	//-Set Binding Flags
+	std::vector<VkDescriptorBindingFlags> binding_flags = {
+		VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT | VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_UNUSED_WHILE_PENDING_BIT
+	};
+
+	VkDescriptorSetLayoutBindingFlagsCreateInfo set_binding_flags{};
+	set_binding_flags.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
+	set_binding_flags.bindingCount = static_cast<uint32_t>(layout_bindings.size());
+	set_binding_flags.pBindingFlags = binding_flags.data();
+
+	//-Now Create Descriptor Set Layout
+	VkDescriptorSetLayoutCreateInfo layoutInfo{};
+	layoutInfo.pNext = &set_binding_flags;
+	layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	layoutInfo.bindingCount = static_cast<uint32_t>(layout_bindings.size());
+	layoutInfo.pBindings = layout_bindings.data();
+	layoutInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
+
+	VK_CHECK(vkCreateDescriptorSetLayout(_device, &layoutInfo, nullptr, &_descriptorSetLayout));
+
+	_mainDeletionQueue.push_function([=, this]() {
+		vkDestroyDescriptorSetLayout(_device, _descriptorSetLayout, nullptr);
+		});
+
+	//Create Descriptor Set
 	VkDescriptorSetAllocateInfo allocInfo{};
 	allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 	allocInfo.descriptorPool = _descriptorPool;
 	allocInfo.descriptorSetCount = 1;
-	allocInfo.pSetLayouts = &_uniform_descriptor_set_layout;
+	allocInfo.pSetLayouts = &_descriptorSetLayout;
 	
 	if (vkAllocateDescriptorSets(_device, &allocInfo, &_descriptorSet) != VK_SUCCESS)
 		throw std::runtime_error("Failed to allocate Descriptor Set");
-	
-	//Configure Descriptor in Descriptor Set with our data
+}
 
+void Engine::setup_descriptor_resources() {
+	//Setup Uniform Data and a Buffer that holds it
+	_uniformData_buffer = create_buffer(sizeof(UnifrormData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+
+	_mainDeletionQueue.push_function([=, this]() {
+		destroy_buffer(_uniformData_buffer);
+		});
+
+	//UnifrormData* uniform_data = (UnifrormData*)_uniformData_buffer.allocation->GetMappedData(); Personal Warning: DO NOT DO THIS. TYPE VMAALLOCATION IS AN OPAQUE POINTER. WILL CAUSE ERROR
+	void* raw_data;
+	vmaMapMemory(_allocator, _uniformData_buffer.allocation, &raw_data);
+	UnifrormData* uniform_data = (UnifrormData*)raw_data;
+	uniform_data->model = glm::rotate(glm::mat4(1.0f), glm::radians(20.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+	uniform_data->view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+	uniform_data->proj = glm::perspective(glm::radians(45.0f), _swapchain.extent.width / (float)_swapchain.extent.height, 0.1f, 50.0f);
+	uniform_data->proj[1][1] *= -1;
+	vmaUnmapMemory(_allocator, _uniformData_buffer.allocation);
+
+	//Configure Descriptor in Descriptor Set with our data - Bind Resources
 	VkDescriptorBufferInfo bufferInfo{};
 	bufferInfo.buffer = _uniformData_buffer.buffer;
 	bufferInfo.offset = 0;
@@ -543,12 +570,12 @@ void Engine::setup_descriptors() {
 	VkWriteDescriptorSet descriptorWrites{};
 	descriptorWrites.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 	descriptorWrites.dstSet = _descriptorSet;
-	descriptorWrites.dstBinding = 0;
+	descriptorWrites.dstBinding = UNIFORM_BINDING;
 	descriptorWrites.dstArrayElement = 0;
 	descriptorWrites.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 	descriptorWrites.descriptorCount = 1;
 	descriptorWrites.pBufferInfo = &bufferInfo;
-	
+
 	vkUpdateDescriptorSets(_device, 1, &descriptorWrites, 0, nullptr);
 }
 
