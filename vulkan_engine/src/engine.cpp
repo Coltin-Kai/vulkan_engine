@@ -35,6 +35,7 @@ void Engine::init() {
 	setup_vertex_input();
 	setup_descriptor_set();
 	setup_descriptor_resources();
+	setup_indirect_resources();
 	init_graphics_pipeline();
 	init_imgui();
 
@@ -220,7 +221,8 @@ void Engine::draw_geometry(VkCommandBuffer cmd, uint32_t swapchainImageIndex) {
 	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _pipelineLayout, 0, 1, &_descriptorSet, 0, nullptr);
 
 	//Draw
-	vkCmdDrawIndexed(cmd, static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
+	//vkCmdDrawIndexed(cmd, static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
+	vkCmdDrawIndexedIndirect(cmd, _indirectDrawBuffer.buffer, 0, 1, 0);
 
 	vkCmdEndRendering(cmd);
 }
@@ -244,10 +246,10 @@ void Engine::init_vulkan() {
 	SDL_Vulkan_CreateSurface(_window, _instance, &_surface);
 
 	//Get Physical Device and Features
-	VkPhysicalDeviceVulkan13Features features{};
-	features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
-	features.dynamicRendering = true;
-	features.synchronization2 = true;
+	VkPhysicalDeviceVulkan13Features features3{};
+	features3.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
+	features3.dynamicRendering = true;
+	features3.synchronization2 = true;
 	
 	VkPhysicalDeviceVulkan12Features features2{};
 	features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
@@ -269,12 +271,15 @@ void Engine::init_vulkan() {
 	features2.descriptorBindingStorageImageUpdateAfterBind = true;
 
 	features2.descriptorBindingUpdateUnusedWhilePending = true;
-		
+
+	VkPhysicalDeviceFeatures features{};
+	features.multiDrawIndirect = true;
+
 	vkb::PhysicalDeviceSelector selector{ vkb_inst };
-	
 	selector.set_minimum_version(1, 3);
-	selector.set_required_features_13(features);
+	selector.set_required_features_13(features3);
 	selector.set_required_features_12(features2);
+	selector.set_required_features(features);
 	selector.set_surface(_surface);
 
 	auto physical_device_selector_return = selector.select();
@@ -599,9 +604,37 @@ void Engine::setup_depthImage() {
 
 	VK_CHECK(vkCreateImageView(_device, &depth_image_view_info, nullptr, &_depthImage.imageView));
 
-	_mainDeletionQueue.push_function([=]() {
-		vkDestroyImageView(_device, _depthImage.imageView, nullptr);
-		vmaDestroyImage(_allocator, _depthImage.image, _depthImage.allocation);
+	_mainDeletionQueue.push_function([=, this]() {
+		destroy_image(_depthImage);
+		});
+}
+
+void Engine::setup_indirect_resources() {
+	VkDrawIndexedIndirectCommand indirectCmd{};
+	indirectCmd.indexCount = static_cast<uint32_t>(indices.size());
+	indirectCmd.instanceCount = 1;
+	indirectCmd.firstIndex = 0;
+	indirectCmd.firstInstance = 0;
+	indirectCmd.vertexOffset = 0;
+
+	AllocatedBuffer staging_buffer = create_buffer(sizeof(indirectCmd), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_HOST);
+	memcpy(staging_buffer.info.pMappedData, (void*)&indirectCmd, sizeof(indirectCmd));
+	_indirectDrawBuffer = create_buffer(sizeof(indirectCmd), VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
+
+	//Copy Buffer to Buffer
+	immediate_command_submit([&](VkCommandBuffer cmd) {
+		VkBufferCopy buffercpy{};
+		buffercpy.srcOffset = 0;
+		buffercpy.dstOffset = 0;
+		buffercpy.size = staging_buffer.info.size;
+
+		vkCmdCopyBuffer(cmd, staging_buffer.buffer, _indirectDrawBuffer.buffer, 1, &buffercpy);
+		});
+
+	destroy_buffer(staging_buffer);
+
+	_mainDeletionQueue.push_function([=, this]() {
+		destroy_buffer(_indirectDrawBuffer);
 		});
 }
 

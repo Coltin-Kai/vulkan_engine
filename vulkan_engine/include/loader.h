@@ -4,7 +4,8 @@
 #include <filesystem>
 #include "vulkan/vulkan.h"
 #include "graphic_data_types.h"
-#include "engine.h" //Potential Circular Dependency Risk
+
+class Engine;
 
 //May make a struct to encapsulate to group these functions
 

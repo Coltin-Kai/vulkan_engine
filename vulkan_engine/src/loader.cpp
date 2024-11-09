@@ -9,6 +9,8 @@
 #include <iostream>
 #include <stack>
 
+#include "engine.h" //Potential Circular Dependency Risk
+
 void loadGLTFFile(GraphicsDataPayload& dataPayload, Engine& engine, std::filesystem::path filePath) {
 	//Parser and GLTF LOading Code
 	fastgltf::Parser parser;

@@ -157,6 +157,9 @@ private:
 	VkDescriptorSetLayout _descriptorSetLayout;
 	VkDescriptorSet _descriptorSet;
 
+	//Indrect Resources
+	AllocatedBuffer _indirectDrawBuffer;
+
 	void draw();
 
 	void draw_geometry(VkCommandBuffer cmd, uint32_t swapchainImageIndex);
@@ -182,6 +185,8 @@ private:
 	void setup_descriptor_set();
 
 	void setup_descriptor_resources();
+
+	void setup_indirect_resources();
 
 	void resize_swapchain();
 
