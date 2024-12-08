@@ -31,7 +31,7 @@ struct Scene {
 
 /*
 	Follows GLTF Node Hierarchy: A root node has no parent. A node hierarchy must not
-	conta ncycles. And each node must have zero or one parent node.
+	contain cycles. And each node must have zero or one parent node.
 */
 struct Node {
 	std::string name;

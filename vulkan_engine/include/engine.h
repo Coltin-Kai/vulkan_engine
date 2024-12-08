@@ -19,6 +19,8 @@
 #include "vulkan_helper_types.h"
 #include "graphic_data_types.h"
 
+#include "Camera.h"
+
 #include <deque>
 #include <functional>
 #include <filesystem>
@@ -77,7 +79,7 @@ private:
 		DeletionQueue deletionQueue; //Currently no resources to delete yet...
 	};
 
-	struct UnifrormData { 
+	struct UniformData { 
 		glm::mat4 model;
 		glm::mat4 view;
 		glm::mat4 proj;
@@ -153,12 +155,16 @@ private:
 
 	//Descriptors
 	AllocatedBuffer _uniformData_buffer;
+	UniformData _uniform_data;
 	VkDescriptorPool _descriptorPool;
 	VkDescriptorSetLayout _descriptorSetLayout;
 	VkDescriptorSet _descriptorSet;
 
 	//Indrect Resources
 	AllocatedBuffer _indirectDrawBuffer;
+
+	//Camera
+	Camera _camera;
 
 	void draw();
 

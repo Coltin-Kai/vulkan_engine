@@ -1,4 +1,4 @@
-#include "vulkanUtility.h"
+#include "vulkan_helper_functions.h"
 #include "checkVkResult.h"
 #include <fstream>
 #include <vector>

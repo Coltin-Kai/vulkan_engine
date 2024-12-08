@@ -72,7 +72,7 @@
     <ClCompile Include="src\VkBootstrap.cpp">
       <Filter>Source Files\ThirdParty\VkBootStrap</Filter>
     </ClCompile>
-    <ClCompile Include="src\vulkanUtility.cpp">
+    <ClCompile Include="src\vulkan_helper_functions.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="src\descriptor.cpp">
@@ -89,6 +89,9 @@
     </ClCompile>
     <ClCompile Include="src\stbImage.cpp">
       <Filter>Source Files\ThirdParty\stbImage</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Camera.cpp">
+      <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -128,7 +131,7 @@
     <ClInclude Include="include\checkVkResult.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="include\vulkanUtility.h">
+    <ClInclude Include="include\vulkan_helper_functions.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="include\descriptor.h">
@@ -144,6 +147,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="include\vulkan_helper_types.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Camera.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

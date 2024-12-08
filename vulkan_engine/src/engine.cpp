@@ -12,7 +12,7 @@
 #include "imgui_impl_vulkan.h"
 
 #include "checkVkResult.h"
-#include "vulkanUtility.h"
+#include "vulkan_helper_functions.h"
 #include "loader.h"
 
 #include <thread>
@@ -26,6 +26,7 @@ void Engine::init() {
 	SDL_Init(SDL_INIT_VIDEO);
 	SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
 	_window = SDL_CreateWindow("Engine", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, _windowExtent.width, _windowExtent.height, window_flags);
+	SDL_SetRelativeMouseMode(SDL_TRUE); //Traps Mouse and records relative mouse movement
 	
 	init_vulkan();
 	init_swapchain();
@@ -54,6 +55,7 @@ void Engine::run() {
 			if (e.type == SDL_QUIT)
 				quit = true;
 
+			//Window Events
 			if (e.window.event == SDL_WINDOWEVENT_MINIMIZED)
 				stop_rendering = true;
 			if (e.window.event == SDL_WINDOWEVENT_RESTORED)
@@ -61,6 +63,7 @@ void Engine::run() {
 			if (e.window.event == SDL_WINDOWEVENT_RESIZED)
 				windowResized = true;
 
+			//GUI Events
 			ImGui_ImplSDL2_ProcessEvent(&e);
 		}
 
@@ -72,13 +75,49 @@ void Engine::run() {
 		if (windowResized) {
 			resize_swapchain();
 		}
+		
+		//Input
+		const uint8_t* keys = SDL_GetKeyboardState(NULL); //Updates cause SDL_PollEvents implicitly called SDL_PumpEvents
+		
+		if (keys[SDL_SCANCODE_ESCAPE])
+			quit = true;
 
+		//-Camera Input
+		int rel_mouse_x, rel_mouse_y;
+		SDL_GetRelativeMouseState(&rel_mouse_x, &rel_mouse_y);
+
+		_camera.processInput(static_cast<uint32_t>(rel_mouse_x), static_cast<uint32_t>(rel_mouse_y), keys);
+
+		//Update Uniform - Debug
+		_camera.update_view_matrix();
+		std::cout << std::format("Camera Position: ({}, {}, {})\nCamera Yaw: {} Camera Pitch: {}", _camera.pos.x, _camera.pos.y, _camera.pos.z, _camera.yaw, _camera.pitch) << std::endl;
+
+		_uniform_data.view = _camera.get_view_matrix();
+		memcpy(_uniformData_buffer.info.pMappedData, &_uniform_data, sizeof(UniformData));
+		VkDescriptorBufferInfo bufferInfo{};
+		bufferInfo.buffer = _uniformData_buffer.buffer;
+		bufferInfo.offset = 0;
+		bufferInfo.range = sizeof(UniformData);
+
+		VkWriteDescriptorSet descriptorWrites{};
+		descriptorWrites.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		descriptorWrites.dstSet = _descriptorSet;
+		descriptorWrites.dstBinding = UNIFORM_BINDING;
+		descriptorWrites.dstArrayElement = 0;
+		descriptorWrites.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		descriptorWrites.descriptorCount = 1;
+		descriptorWrites.pBufferInfo = &bufferInfo;
+
+		vkUpdateDescriptorSets(_device, 1, &descriptorWrites, 0, nullptr);
+
+		//IMGUI Rendering
 		ImGui_ImplVulkan_NewFrame();
 		ImGui_ImplSDL2_NewFrame();
 		ImGui::NewFrame();
 		ImGui::ShowDemoWindow();
 		ImGui::Render();
 
+		//DRAW
 		draw();
 	}
 }
@@ -550,27 +589,29 @@ void Engine::setup_descriptor_set() {
 
 void Engine::setup_descriptor_resources() {
 	//Setup Uniform Data and a Buffer that holds it
-	_uniformData_buffer = create_buffer(sizeof(UnifrormData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+	_uniformData_buffer = create_buffer(sizeof(UniformData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
 	_mainDeletionQueue.push_function([=, this]() {
 		destroy_buffer(_uniformData_buffer);
 		});
 
-	//UnifrormData* uniform_data = (UnifrormData*)_uniformData_buffer.allocation->GetMappedData(); Personal Warning: DO NOT DO THIS. TYPE VMAALLOCATION IS AN OPAQUE POINTER. WILL CAUSE ERROR
-	void* raw_data;
-	vmaMapMemory(_allocator, _uniformData_buffer.allocation, &raw_data);
-	UnifrormData* uniform_data = (UnifrormData*)raw_data;
-	uniform_data->model = glm::rotate(glm::mat4(1.0f), glm::radians(20.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-	uniform_data->view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-	uniform_data->proj = glm::perspective(glm::radians(45.0f), _swapchain.extent.width / (float)_swapchain.extent.height, 0.1f, 50.0f);
-	uniform_data->proj[1][1] *= -1;
-	vmaUnmapMemory(_allocator, _uniformData_buffer.allocation);
+	//Setup Camera
+	_camera = Camera({ 0.0f, 0.0f, 2.0f });
+	_camera.update_view_matrix();
+
+	//UniformData* uniform_data = (UniformData*)_uniformData_buffer.allocation->GetMappedData(); Personal Warning: DO NOT DO THIS. TYPE VMAALLOCATION IS AN OPAQUE POINTER. WILL CAUSE ERROR. Here as a reminder
+
+	_uniform_data.model = glm::rotate(glm::mat4(1.0f), glm::radians(20.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+	_uniform_data.view = _camera.get_view_matrix();
+	_uniform_data.proj = glm::perspective(glm::radians(45.0f), _swapchain.extent.width / (float)_swapchain.extent.height, 0.1f, 50.0f);
+	_uniform_data.proj[1][1] *= -1;
+	memcpy(_uniformData_buffer.info.pMappedData, &_uniform_data, sizeof(UniformData));
 
 	//Configure Descriptor in Descriptor Set with our data - Bind Resources
 	VkDescriptorBufferInfo bufferInfo{};
 	bufferInfo.buffer = _uniformData_buffer.buffer;
 	bufferInfo.offset = 0;
-	bufferInfo.range = sizeof(UnifrormData);
+	bufferInfo.range = sizeof(UniformData);
 
 	VkWriteDescriptorSet descriptorWrites{};
 	descriptorWrites.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
