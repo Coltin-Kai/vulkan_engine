@@ -80,10 +80,10 @@ void PipelineBuilder::set_shaders(VkShaderModule vertexShader, VkShaderModule fr
     _shaderStages.push_back(vkutil::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, fragmentShader));
 }
 
-void PipelineBuilder::set_vertex_input(VkVertexInputBindingDescription& bindingDescription, std::vector<VkVertexInputAttributeDescription>& attributeDescriptions) {
-    _vertexInput.vertexBindingDescriptionCount = 1;
+void PipelineBuilder::set_vertex_input(std::vector<VkVertexInputBindingDescription>& bindingDescriptions, std::vector<VkVertexInputAttributeDescription>& attributeDescriptions) {
+    _vertexInput.vertexBindingDescriptionCount = static_cast<uint32_t>(bindingDescriptions.size());
     _vertexInput.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size());
-    _vertexInput.pVertexBindingDescriptions = &bindingDescription;
+    _vertexInput.pVertexBindingDescriptions = bindingDescriptions.data();
     _vertexInput.pVertexAttributeDescriptions = attributeDescriptions.data();
 }
 

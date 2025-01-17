@@ -14,11 +14,13 @@
 #include "checkVkResult.h"
 #include "vulkan_helper_functions.h"
 #include "loader.h"
+#include "pipeline.h"
+#include "shader_types.h"
 
 #include <thread>
 #include <iostream>
 #include <format>
-#include <pipeline.h>
+#include <stack>
 
 void Engine::init() {
 	//Initialize SDL Window
@@ -33,17 +35,22 @@ void Engine::init() {
 	init_commands();
 	init_sync_structures();
 	setup_depthImage();
+
+	//LAZY CODE STUFF
+	loadGLTFFile(_payload, *this, "C:\\Github\\vulkan_engine\\vulkan_engine\\assets\\Sample_Models\\Box.gltf"); //Exception expected to be thrown since allocated data in payload is not released
+	_mainDeletionQueue.push_function([&]() {
+		_payload.cleanup(_device, _allocator);
+		});
+	
+	_camera = Camera({ 0.0f, 0.0f, 2.0f });
+	_camera.update_view_matrix();
+	//----
+
+	setup_drawContexts();
 	setup_vertex_input();
 	setup_descriptor_set();
-	setup_descriptor_resources();
-	setup_indirect_resources();
 	init_graphics_pipeline();
 	init_imgui();
-
-	//DEBUG MODEL LOOADING
-	GraphicsDataPayload payload;
-	//loadGLTFFile(payload, *this, "C:\\Github\\vulkan_engine\\vulkan_engine\\assets\\Sample_Models\\BoomBox\\BoomBox.gltf"); //Exception expected to be thrown since allocated data in payload is not released
-
 }
 
 void Engine::run() {
@@ -90,25 +97,19 @@ void Engine::run() {
 
 		//Update Uniform - Debug
 		_camera.update_view_matrix();
-		std::cout << std::format("Camera Position: ({}, {}, {})\nCamera Yaw: {} Camera Pitch: {}", _camera.pos.x, _camera.pos.y, _camera.pos.z, _camera.yaw, _camera.pitch) << std::endl;
+		glm::mat4 view = _camera.get_view_matrix();
 
-		_uniform_data.view = _camera.get_view_matrix();
-		memcpy(_uniformData_buffer.info.pMappedData, &_uniform_data, sizeof(UniformData));
-		VkDescriptorBufferInfo bufferInfo{};
-		bufferInfo.buffer = _uniformData_buffer.buffer;
-		bufferInfo.offset = 0;
-		bufferInfo.range = sizeof(UniformData);
+		AllocatedBuffer view_stagingBuffer = create_buffer(sizeof(glm::mat4), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_HOST);
 
-		VkWriteDescriptorSet descriptorWrites{};
-		descriptorWrites.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		descriptorWrites.dstSet = _descriptorSet;
-		descriptorWrites.dstBinding = UNIFORM_BINDING;
-		descriptorWrites.dstArrayElement = 0;
-		descriptorWrites.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-		descriptorWrites.descriptorCount = 1;
-		descriptorWrites.pBufferInfo = &bufferInfo;
+		memcpy(view_stagingBuffer.info.pMappedData, &view, sizeof(glm::mat4));
 
-		vkUpdateDescriptorSets(_device, 1, &descriptorWrites, 0, nullptr);
+		//Copy data from Staging Buffers to BatchedData Buffers
+		immediate_command_submit([&](VkCommandBuffer cmd) {
+			VkBufferCopy transData_copy_info{ .srcOffset = 0, .dstOffset = 0, .size = sizeof(glm::mat4)};
+			vkCmdCopyBuffer(cmd, view_stagingBuffer.buffer, get_current_frame().drawContext.viewprojMatrixBuffer.buffer, 1, &transData_copy_info);
+			});
+
+		destroy_buffer(view_stagingBuffer);
 
 		//IMGUI Rendering
 		ImGui_ImplVulkan_NewFrame();
@@ -251,17 +252,34 @@ void Engine::draw_geometry(VkCommandBuffer cmd, uint32_t swapchainImageIndex) {
 
 	vkCmdSetScissor(cmd, 0, 1, &scissor);
 
-	//Set Vertex Input Buffers
-	VkDeviceSize offset[] = { 0 };
-	vkCmdBindVertexBuffers(cmd, 0, 1, &_vertex_data_buffer.buffer, offset);
-	vkCmdBindIndexBuffer(cmd, _index_data_buffer.buffer, 0, VK_INDEX_TYPE_UINT16);
-
 	//Bind Descriptor Set
 	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _pipelineLayout, 0, 1, &_descriptorSet, 0, nullptr);
 
+	//Bind Vertex Input Buffers
+	VkDeviceSize vertexOffset = 0;
+	vkCmdBindVertexBuffers(cmd, 0, 1, &get_current_frame().drawContext.vertex_buffer.buffer, &vertexOffset);
+	vkCmdBindIndexBuffer(cmd, get_current_frame().drawContext.index_buffer.buffer, 0, VK_INDEX_TYPE_UINT32);
+
+	//Push Constants
+	RenderShader::PushConstants pushconstants{ .primitiveInfosBufferAddress = get_current_frame().drawContext.primitiveInfosBufferAddress, .viewProjMatrixBufferAddress = get_current_frame().drawContext.viewprojMatrixBufferAddress, .modelMatricesBufferAddress = get_current_frame().drawContext.modelMatricesBufferAddress,.materialsBufferAddress = get_current_frame().drawContext.materialsBufferAddress};
+	vkCmdPushConstants(cmd, _pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(RenderShader::PushConstants), &pushconstants);
+
 	//Draw
-	//vkCmdDrawIndexed(cmd, static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
-	vkCmdDrawIndexedIndirect(cmd, _indirectDrawBuffer.buffer, 0, 1, 0);
+	vkCmdDrawIndexedIndirect(cmd, get_current_frame().drawContext.indirectDrawCommandsBuffer.buffer, 0, get_current_frame().drawContext.drawCount, sizeof(VkDrawIndexedIndirectCommand));
+
+	//Set up each Mesh Vertex and Uniform Data and Draw them
+	VkDeviceSize offset[] = { 0 };
+	for (MeshNodeDrawData& meshNodeDrawData : _mesh_node_draw_datas) {
+		if (meshNodeDrawData.topologyToBatchedDatas.contains(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)) {
+			for (MeshNodeDrawData::BatchedData batchedData : meshNodeDrawData.topologyToBatchedDatas[VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST]) {
+				vkCmdBindVertexBuffers(cmd, 0, 1, &batchedData.pos_buffer.buffer, offset);
+				vkCmdBindIndexBuffer(cmd, batchedData.index_buffer.buffer, 0, VK_INDEX_TYPE_UINT32);
+
+				//Draw
+				vkCmdDrawIndexedIndirect(cmd, batchedData.indirect_draw_buffer.buffer, 0, 1, 0);
+			}
+		}
+	}
 
 	vkCmdEndRendering(cmd);
 }
@@ -296,11 +314,12 @@ void Engine::init_vulkan() {
 	features2.bufferDeviceAddress = true;
 
 	features2.descriptorIndexing = true;
-
 	features2.shaderUniformBufferArrayNonUniformIndexing = true;
 	features2.shaderStorageBufferArrayNonUniformIndexing = true;
 	features2.shaderSampledImageArrayNonUniformIndexing = true;
 	features2.shaderStorageImageArrayNonUniformIndexing = true;
+
+	features2.descriptorBindingVariableDescriptorCount = true;
 
 	features2.descriptorBindingPartiallyBound = true;
 	
@@ -310,14 +329,18 @@ void Engine::init_vulkan() {
 	features2.descriptorBindingStorageImageUpdateAfterBind = true;
 
 	features2.descriptorBindingUpdateUnusedWhilePending = true;
+	
+	VkPhysicalDeviceVulkan11Features features1{};
+	features1.shaderDrawParameters = true;
 
 	VkPhysicalDeviceFeatures features{};
 	features.multiDrawIndirect = true;
-
+	
 	vkb::PhysicalDeviceSelector selector{ vkb_inst };
 	selector.set_minimum_version(1, 3);
 	selector.set_required_features_13(features3);
 	selector.set_required_features_12(features2);
+	selector.set_required_features_11(features1);
 	selector.set_required_features(features);
 	selector.set_surface(_surface);
 
@@ -329,6 +352,15 @@ void Engine::init_vulkan() {
 	}
 	
 	vkb::PhysicalDevice physicalDevice = physical_device_selector_return.value();
+
+	//Display Limits - DEBUG
+	VkPhysicalDeviceLimits& limits = physicalDevice.properties.limits;
+	std::cout << "Limits:\n" << std::format("maxVertexInputBindings: {}\nmaxVertexInputAttribues: {}\n"
+				 "maxDescriptorSetUniformBuffers: {}\nmaxPerStageDescriptorUnifomrBuffers: {}\n"
+				 "maxDescriptorSetStorageBuffers: {}\nmaxPerStageDescriptorStorageBuffers: {}", 
+		limits.maxVertexInputBindings, limits.maxVertexInputAttributes,
+		limits.maxDescriptorSetUniformBuffers, limits.maxPerStageDescriptorUniformBuffers,
+		limits.maxDescriptorSetStorageBuffers, limits.maxPerStageDescriptorStorageBuffers) << std::endl;
 
 	//Create Logical Device
 	vkb::DeviceBuilder deviceBuilder{ physicalDevice };
@@ -445,9 +477,16 @@ void Engine::init_graphics_pipeline() {
 		std::cout << "Fragment Shader successfully loaded" << std::endl;
 
 	//Set Pipeline Layout - Descriptor Sets and Push Constants Layout
+	VkPushConstantRange range{};
+	range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+	range.offset = 0;
+	range.size = 32;
+
 	VkPipelineLayoutCreateInfo pipeline_layout_info = vkutil::pipeline_layout_create_info();
 	pipeline_layout_info.setLayoutCount = 1;
 	pipeline_layout_info.pSetLayouts = &_descriptorSetLayout; 
+	pipeline_layout_info.pushConstantRangeCount = 1;
+	pipeline_layout_info.pPushConstantRanges = &range;
 
 	VK_CHECK(vkCreatePipelineLayout(_device, &pipeline_layout_info, nullptr, &_pipelineLayout));
 
@@ -455,7 +494,7 @@ void Engine::init_graphics_pipeline() {
 	PipelineBuilder pipelineBuilder;
 	pipelineBuilder._pipelineLayout = _pipelineLayout;
 	pipelineBuilder.set_shaders(vertexShader, fragShader);
-	pipelineBuilder.set_vertex_input(_bindingDescription, _attribueDescriptions);
+	pipelineBuilder.set_vertex_input(_bindingDescriptions, _attribueDescriptions);
 	pipelineBuilder.set_input_topology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
 	pipelineBuilder.set_polygon_mode(VK_POLYGON_MODE_FILL);
 	pipelineBuilder.set_cull_mode(VK_CULL_MODE_NONE, VK_FRONT_FACE_CLOCKWISE);
@@ -489,46 +528,27 @@ void Engine::draw_imgui(VkCommandBuffer cmd, VkImageView targetImageView) {
 
 void Engine::setup_vertex_input() {
 	//Set up Vertex Input Descriptions
-	_bindingDescription = {};
-	_bindingDescription.binding = 0;
-	_bindingDescription.stride = sizeof(Vertex);
-	_bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+	_bindingDescriptions = { {} };
 
-	_attribueDescriptions = { {}, {} };
+	//Vertex Buffer
+	_bindingDescriptions[0].binding = 0;
+	_bindingDescriptions[0].stride = sizeof(glm::vec3);
+	_bindingDescriptions[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+	_attribueDescriptions = { {} };
+
+	//Position Data
 	_attribueDescriptions[0].binding = 0;
 	_attribueDescriptions[0].location = 0;
 	_attribueDescriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-	_attribueDescriptions[0].offset = offsetof(Vertex, Vertex::pos);
+	_attribueDescriptions[0].offset = 0;
 
-	_attribueDescriptions[1].binding = 0;
-	_attribueDescriptions[1].location = 1;
-	_attribueDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
-	_attribueDescriptions[1].offset = offsetof(Vertex, Vertex::color);
-
-	//Set up Vertex Input Data Buffer
-	_vertex_data_buffer = create_buffer(sizeof(Vertex) * vertices.size(), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
-	_index_data_buffer = create_buffer(sizeof(uint32_t) * indices.size(), VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
-
-
-	_mainDeletionQueue.push_function([=, this]() {
-		destroy_buffer(_vertex_data_buffer);
-		destroy_buffer(_index_data_buffer);
-		});
-
-	void* mappedData;
-	vmaMapMemory(_allocator, _vertex_data_buffer.allocation, &mappedData);
-	memcpy(mappedData, vertices.data(), sizeof(Vertex) * vertices.size());
-	vmaUnmapMemory(_allocator, _vertex_data_buffer.allocation);
-
-	vmaMapMemory(_allocator, _index_data_buffer.allocation, &mappedData);
-	memcpy(mappedData, indices.data(), sizeof(uint16_t) * indices.size());
-	vmaUnmapMemory(_allocator, _index_data_buffer.allocation);
 }
 
 void Engine::setup_descriptor_set() {
 	//Create Descriptor Pool
 	std::vector<VkDescriptorPoolSize> poolSizes = {
-		{.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .descriptorCount = UNIFORM_DESCRIPTOR_COUNT}
+		{.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = COMBINED_IMAGE_SAMPLER_COUNT}
 	};
 
 	VkDescriptorPoolCreateInfo poolInfo{};
@@ -548,13 +568,13 @@ void Engine::setup_descriptor_set() {
 	//Create Descriptor Set Layout for Descriptors
 	//-Set Layout Bindings
 	std::vector<VkDescriptorSetLayoutBinding> layout_bindings = {
-		{ .binding = UNIFORM_BINDING, .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .descriptorCount = UNIFORM_DESCRIPTOR_COUNT,
+		{ .binding = 0, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = COMBINED_IMAGE_SAMPLER_COUNT,
 		.stageFlags = VK_SHADER_STAGE_ALL_GRAPHICS, .pImmutableSamplers = nullptr }
 	};
 
 	//-Set Binding Flags
 	std::vector<VkDescriptorBindingFlags> binding_flags = {
-		VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT | VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_UNUSED_WHILE_PENDING_BIT
+		VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT | VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_UNUSED_WHILE_PENDING_BIT | VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT
 	};
 
 	VkDescriptorSetLayoutBindingFlagsCreateInfo set_binding_flags{};
@@ -585,44 +605,27 @@ void Engine::setup_descriptor_set() {
 	
 	if (vkAllocateDescriptorSets(_device, &allocInfo, &_descriptorSet) != VK_SUCCESS)
 		throw std::runtime_error("Failed to allocate Descriptor Set");
-}
-
-void Engine::setup_descriptor_resources() {
-	//Setup Uniform Data and a Buffer that holds it
-	_uniformData_buffer = create_buffer(sizeof(UniformData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
-
-	_mainDeletionQueue.push_function([=, this]() {
-		destroy_buffer(_uniformData_buffer);
-		});
-
-	//Setup Camera
-	_camera = Camera({ 0.0f, 0.0f, 2.0f });
-	_camera.update_view_matrix();
-
-	//UniformData* uniform_data = (UniformData*)_uniformData_buffer.allocation->GetMappedData(); Personal Warning: DO NOT DO THIS. TYPE VMAALLOCATION IS AN OPAQUE POINTER. WILL CAUSE ERROR. Here as a reminder
-
-	_uniform_data.model = glm::rotate(glm::mat4(1.0f), glm::radians(20.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-	_uniform_data.view = _camera.get_view_matrix();
-	_uniform_data.proj = glm::perspective(glm::radians(45.0f), _swapchain.extent.width / (float)_swapchain.extent.height, 0.1f, 50.0f);
-	_uniform_data.proj[1][1] *= -1;
-	memcpy(_uniformData_buffer.info.pMappedData, &_uniform_data, sizeof(UniformData));
-
-	//Configure Descriptor in Descriptor Set with our data - Bind Resources
-	VkDescriptorBufferInfo bufferInfo{};
-	bufferInfo.buffer = _uniformData_buffer.buffer;
-	bufferInfo.offset = 0;
-	bufferInfo.range = sizeof(UniformData);
+	/*
+	//Configure Descriptor in Descriptor Set with our data - Point to Buffers and Images
+	std::vector<VkDescriptorImageInfo> imgInfos; 
+	for (auto texture : _payload.textures) { //Unsure how to handle textures and its relationship in drawContext and payload. So just dump textures straight from payload
+		VkDescriptorImageInfo imgInfo{};
+		imgInfo.imageLayout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL;
+		imgInfo.imageView = texture->image->imageView;
+		imgInfo.sampler = *texture->sampler;
+	}
 
 	VkWriteDescriptorSet descriptorWrites{};
 	descriptorWrites.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 	descriptorWrites.dstSet = _descriptorSet;
-	descriptorWrites.dstBinding = UNIFORM_BINDING;
+	descriptorWrites.dstBinding = 0;
 	descriptorWrites.dstArrayElement = 0;
-	descriptorWrites.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	descriptorWrites.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 	descriptorWrites.descriptorCount = 1;
-	descriptorWrites.pBufferInfo = &bufferInfo;
+	descriptorWrites.pImageInfo = imgInfos.data();
 
 	vkUpdateDescriptorSets(_device, 1, &descriptorWrites, 0, nullptr);
+	*/
 }
 
 void Engine::setup_depthImage() {
@@ -650,33 +653,147 @@ void Engine::setup_depthImage() {
 		});
 }
 
-void Engine::setup_indirect_resources() {
-	VkDrawIndexedIndirectCommand indirectCmd{};
-	indirectCmd.indexCount = static_cast<uint32_t>(indices.size());
-	indirectCmd.instanceCount = 1;
-	indirectCmd.firstIndex = 0;
-	indirectCmd.firstInstance = 0;
-	indirectCmd.vertexOffset = 0;
+void Engine::setup_drawContexts() {
+	//Holds all the data for one drawContext
+	std::vector<VkDrawIndexedIndirectCommand> indirect_commands;
+	uint32_t drawCount = 0;
+	std::vector<glm::vec3> positions;
+	std::vector<uint32_t> indices;
+	RenderShader::ViewProj viewproj;
+	viewproj.view = _camera.get_view_matrix();
+	viewproj.proj = glm::perspective(glm::radians(45.0f), _swapchain.extent.width / (float)_swapchain.extent.height, 50.0f, 0.1f);
+	viewproj.proj[1][1] *= -1;
+	std::vector<glm::mat4> model_matrices; //Also contains view and proj at start
+	std::vector<RenderShader::PrimitiveInfo> primitiveInfos;
 
-	AllocatedBuffer staging_buffer = create_buffer(sizeof(indirectCmd), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_HOST);
-	memcpy(staging_buffer.info.pMappedData, (void*)&indirectCmd, sizeof(indirectCmd));
-	_indirectDrawBuffer = create_buffer(sizeof(indirectCmd), VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
+	//Navigate Node Tree for Mesh Nodes and get Primitive Data
+	//-Add all root nodes in current scene to Sack
+	std::stack<std::shared_ptr<Node>> dfs_node_stack;
+	for (auto root_node : _payload.current_scene->root_nodes) {
+		dfs_node_stack.push(root_node);
+	}
+	//-Perform DFS, traverse all Nodes
+	while (!dfs_node_stack.empty()) {
+		std::shared_ptr<Node> currentNode = dfs_node_stack.top();
+		dfs_node_stack.pop();
 
-	//Copy Buffer to Buffer
-	immediate_command_submit([&](VkCommandBuffer cmd) {
-		VkBufferCopy buffercpy{};
-		buffercpy.srcOffset = 0;
-		buffercpy.dstOffset = 0;
-		buffercpy.size = staging_buffer.info.size;
+		//Add currentNode's children to Stack
+		for (std::shared_ptr<Node> child_node : currentNode->child_nodes) {
+			dfs_node_stack.push(child_node);
+		}
 
-		vkCmdCopyBuffer(cmd, staging_buffer.buffer, _indirectDrawBuffer.buffer, 1, &buffercpy);
-		});
+		//Check if Node represents Mesh
+		if (currentNode->mesh != nullptr) {
+			std::shared_ptr<Mesh>& currentMesh = currentNode->mesh;
 
-	destroy_buffer(staging_buffer);
+			int model_id = model_matrices.size();
+			model_matrices.push_back(currentNode->get_WorldTransform()); //DEBUGGED
 
-	_mainDeletionQueue.push_function([=, this]() {
-		destroy_buffer(_indirectDrawBuffer);
-		});
+			//Iterate through it's primitives and add their data to 
+			for (Mesh::Primitive primitive : currentMesh->primitives) {
+				//Indirect Draw Command
+				VkDrawIndexedIndirectCommand indirect_command{};
+				indirect_command.firstIndex = indices.size();
+				indirect_command.indexCount = primitive.indices.size();
+				indirect_command.vertexOffset = positions.size();
+				indirect_command.firstInstance = 0;
+				indirect_command.instanceCount = 1;;
+				indirect_commands.push_back(indirect_command);
+
+				drawCount++;
+
+				//Position and other Vertex Attributes
+				for (Mesh::Primitive::Vertex vertex : primitive.vertices) {
+					positions.push_back(vertex.position);
+				}
+
+				//Indices
+				indices.insert(indices.end(), primitive.indices.begin(), primitive.indices.end());
+
+				//PrimitiveInfo
+				RenderShader::PrimitiveInfo prmInfo{};
+				prmInfo.mat_id = 0;
+				prmInfo.model_matrix_id = model_id;
+				primitiveInfos.push_back(prmInfo);
+			}
+		}
+	}
+
+	//Add Data to DrawContexts 
+	size_t alloc_vert_size = sizeof(glm::vec3) * positions.size();
+	size_t alloc_index_size = sizeof(uint32_t) * indices.size();
+	size_t alloc_indirect_size = sizeof(VkDrawIndexedIndirectCommand) * indirect_commands.size();
+	size_t alloc_viewprojMatrix_size = sizeof(glm::mat4) * 2;
+	size_t alloc_modelMatrices_size = sizeof(glm::mat4) * model_matrices.size();
+	size_t alloc_primInfo_size = sizeof(RenderShader::PrimitiveInfo) * primitiveInfos.size();
+
+	for (Frame& frame : _frames) {
+		frame.drawContext.drawCount = drawCount;
+
+		//Draw Coommand and Vertex Input Buffers
+		frame.drawContext.indirectDrawCommandsBuffer = create_buffer(alloc_indirect_size, VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
+		frame.drawContext.vertex_buffer = create_buffer(alloc_vert_size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
+		frame.drawContext.index_buffer = create_buffer(alloc_index_size, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
+		//BDA Buffers
+		frame.drawContext.viewprojMatrixBuffer = create_buffer(alloc_viewprojMatrix_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
+		frame.drawContext.modelMatricesBuffer = create_buffer(alloc_modelMatrices_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
+		frame.drawContext.primitiveInfosBuffer = create_buffer(alloc_primInfo_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
+		VkBufferDeviceAddressInfo address_info{ .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO };
+		address_info.buffer = frame.drawContext.viewprojMatrixBuffer.buffer;
+		frame.drawContext.viewprojMatrixBufferAddress = vkGetBufferDeviceAddress(_device, &address_info);
+		address_info.buffer = frame.drawContext.modelMatricesBuffer.buffer;
+		frame.drawContext.modelMatricesBufferAddress = vkGetBufferDeviceAddress(_device, &address_info);
+		address_info.buffer = frame.drawContext.primitiveInfosBuffer.buffer;
+		frame.drawContext.primitiveInfosBufferAddress = vkGetBufferDeviceAddress(_device, &address_info);
+
+		AllocatedBuffer indirect_stagingBuffer = create_buffer(alloc_indirect_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_HOST);
+		AllocatedBuffer pos_stagingBuffer = create_buffer(alloc_vert_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_HOST);
+		AllocatedBuffer index_stagingBuffer = create_buffer(alloc_index_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_HOST);
+		AllocatedBuffer viewprojMatrix_stagingBuffer = create_buffer(alloc_viewprojMatrix_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_HOST);
+		AllocatedBuffer modelMatrices_stagingBuffer = create_buffer(alloc_modelMatrices_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_HOST);
+		AllocatedBuffer primInfo_stagingBuffer = create_buffer(alloc_primInfo_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_HOST);
+
+		memcpy(indirect_stagingBuffer.info.pMappedData, indirect_commands.data(), alloc_indirect_size);
+		memcpy(pos_stagingBuffer.info.pMappedData, positions.data(), alloc_vert_size);
+		memcpy(index_stagingBuffer.info.pMappedData, indices.data(), alloc_index_size);
+		memcpy(viewprojMatrix_stagingBuffer.info.pMappedData, &viewproj, alloc_viewprojMatrix_size);
+		memcpy(modelMatrices_stagingBuffer.info.pMappedData, model_matrices.data(), alloc_modelMatrices_size);
+		memcpy(primInfo_stagingBuffer.info.pMappedData, primitiveInfos.data(), alloc_primInfo_size);
+
+		//Copy data from Staging Buffers to BatchedData Buffers
+		immediate_command_submit([&](VkCommandBuffer cmd) {
+			VkBufferCopy indirect_copy_info{ .srcOffset = 0, .dstOffset = 0, .size = alloc_indirect_size };
+			VkBufferCopy pos_copy_info{ .srcOffset = 0, .dstOffset = 0, .size = alloc_vert_size };
+			VkBufferCopy index_copy_info{ .srcOffset = 0, .dstOffset = 0, .size = alloc_index_size };
+			VkBufferCopy viewprojMatrix_copy_info{ .srcOffset = 0, .dstOffset = 0, .size = alloc_viewprojMatrix_size };
+			VkBufferCopy modelMatrices_copy_info{ .srcOffset = 0, .dstOffset = 0, .size = alloc_modelMatrices_size };
+			VkBufferCopy primInfo_copy_info{ .srcOffset = 0, .dstOffset = 0, .size = alloc_primInfo_size };
+
+			vkCmdCopyBuffer(cmd, indirect_stagingBuffer.buffer, frame.drawContext.indirectDrawCommandsBuffer.buffer, 1, &indirect_copy_info);
+			vkCmdCopyBuffer(cmd, pos_stagingBuffer.buffer, frame.drawContext.vertex_buffer.buffer, 1, &pos_copy_info);
+			vkCmdCopyBuffer(cmd, index_stagingBuffer.buffer, frame.drawContext.index_buffer.buffer, 1, &index_copy_info);
+			vkCmdCopyBuffer(cmd, viewprojMatrix_stagingBuffer.buffer, frame.drawContext.viewprojMatrixBuffer.buffer, 1, &viewprojMatrix_copy_info);
+			vkCmdCopyBuffer(cmd, modelMatrices_stagingBuffer.buffer, frame.drawContext.modelMatricesBuffer.buffer, 1, &modelMatrices_copy_info);
+			vkCmdCopyBuffer(cmd, primInfo_stagingBuffer.buffer, frame.drawContext.primitiveInfosBuffer.buffer, 1, &primInfo_copy_info);
+			});
+
+		destroy_buffer(indirect_stagingBuffer);
+		destroy_buffer(pos_stagingBuffer);
+		destroy_buffer(index_stagingBuffer);
+		destroy_buffer(viewprojMatrix_stagingBuffer);
+		destroy_buffer(modelMatrices_stagingBuffer);
+		destroy_buffer(primInfo_stagingBuffer);
+
+		//Put Buffers in Deletion Queueu
+		_mainDeletionQueue.push_function([=, this]() {
+			destroy_buffer(frame.drawContext.indirectDrawCommandsBuffer);
+			destroy_buffer(frame.drawContext.vertex_buffer);
+			destroy_buffer(frame.drawContext.index_buffer);
+			destroy_buffer(frame.drawContext.viewprojMatrixBuffer);
+			destroy_buffer(frame.drawContext.modelMatricesBuffer);
+			destroy_buffer(frame.drawContext.primitiveInfosBuffer);
+			});
+	}
 }
 
 void Engine::resize_swapchain() {
@@ -758,8 +875,7 @@ void Engine::init_imgui() {
 
 	VmaAllocationCreateInfo vmaAllocInfo = {};
 	vmaAllocInfo.usage = memoryUsage;
-	vmaAllocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT; //Undecied on wheter to have buffer be persistently mapped with VMA_ALLOCATION_CREAETE_MAPPED_BIT flag.
-
+	vmaAllocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT; 
 	AllocatedBuffer newBuffer;
 
 	VK_CHECK(vmaCreateBuffer(_allocator, &bufferInfo, &vmaAllocInfo, &newBuffer.buffer, &newBuffer.allocation, &newBuffer.info));

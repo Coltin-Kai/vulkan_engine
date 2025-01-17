@@ -218,8 +218,8 @@ void loadGLTFFile(GraphicsDataPayload& dataPayload, Engine& engine, std::filesys
 				std::string attribName = "COLOR_" + std::to_string(i);
 				auto color_attrib = p.findAttribute(attribName);
 				if (color_attrib != p.attributes.end()) {
-					fastgltf::iterateAccessorWithIndex<glm::vec4>(asset, asset.accessors[color_attrib->accessorIndex],
-						[&](glm::vec4 color, size_t idx) {
+					fastgltf::iterateAccessorWithIndex<glm::vec3>(asset, asset.accessors[color_attrib->accessorIndex],
+						[&](glm::vec3 color, size_t idx) {
 							current_primitive.vertices[idx].colors.push_back(color);
 						});
 				}

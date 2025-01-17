@@ -4,7 +4,7 @@
 
 #include <vector>
 
-//Considering refactoring toto a better design. Not used yet.
+//Considering not using this as we only need on set
 
 struct UberDescriptorSetManager {
 	struct PoolSizeCounts {

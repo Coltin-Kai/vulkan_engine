@@ -25,7 +25,7 @@ public:
     VkPipeline build_pipeline(VkDevice device);
 
     void set_shaders(VkShaderModule vertexShader, VkShaderModule fragmentShader);
-    void set_vertex_input(VkVertexInputBindingDescription& bindingDescription, std::vector<VkVertexInputAttributeDescription>& attributeDescriptions);
+    void set_vertex_input(std::vector<VkVertexInputBindingDescription>& bindingDescriptions, std::vector<VkVertexInputAttributeDescription>& attributeDescriptions);
     void set_input_topology(VkPrimitiveTopology topology);
     void set_polygon_mode(VkPolygonMode mode);
     void set_cull_mode(VkCullModeFlags cullMode, VkFrontFace frontFace);

@@ -53,6 +53,7 @@
     <ClInclude Include="include\imstb_truetype.h" />
     <ClInclude Include="include\loader.h" />
     <ClInclude Include="include\pipeline.h" />
+    <ClInclude Include="include\shader_types.h" />
     <ClInclude Include="include\VkBootstrap.h" />
     <ClInclude Include="include\VkBootstrapDispatch.h" />
     <ClInclude Include="include\vulkan_helper_functions.h" />
