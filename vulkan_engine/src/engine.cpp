@@ -37,7 +37,38 @@ void Engine::init() {
 	setup_depthImage();
 
 	//LAZY CODE STUFF
-	loadGLTFFile(_payload, *this, "C:\\Github\\vulkan_engine\\vulkan_engine\\assets\\Sample_Models\\Box.gltf"); //Exception expected to be thrown since allocated data in payload is not released
+	//-Load Default Data
+	uint32_t default_data = glm::packUnorm4x8(glm::vec4(1, 1, 1, 1));
+	VkExtent3D extent{};
+	extent.width = 1;
+	extent.height = 1;
+	extent.depth = 1;
+	AllocatedImage default_image = create_image((void*)&default_data, extent, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT);
+	_payload.images.push_back(std::make_unique<AllocatedImage>(default_image));
+
+	VkSampler default_sampler;
+	VkSamplerCreateInfo sampler_info{};
+	sampler_info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+	sampler_info.maxLod = VK_LOD_CLAMP_NONE;
+	sampler_info.minLod = 0;
+	sampler_info.magFilter = VK_FILTER_LINEAR;
+	sampler_info.minFilter = VK_FILTER_LINEAR;
+	sampler_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+	vkCreateSampler(_device, &sampler_info, nullptr, &default_sampler);
+	_payload.samplers.push_back(std::make_unique<VkSampler>(default_sampler));
+
+	Texture default_texture{};
+	default_texture.name = "default";
+	default_texture.image_index = 0;
+	default_texture.sampler_index = 0;
+	_payload.textures.push_back(std::make_unique<Texture>(default_texture));
+
+	Material default_material{};
+	default_material.name = "default";
+	_payload.materials.push_back(std::make_unique<Material>(default_material));
+
+	//-Load File Data
+	loadGLTFFile(_payload, *this, "C:\\Github\\vulkan_engine\\vulkan_engine\\assets\\Sample_Models\\BoomBox\\BoomBox.gltf"); //Exception expected to be thrown since allocated data in payload is not released
 	_mainDeletionQueue.push_function([&]() {
 		_payload.cleanup(_device, _allocator);
 		});
@@ -256,30 +287,24 @@ void Engine::draw_geometry(VkCommandBuffer cmd, uint32_t swapchainImageIndex) {
 	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _pipelineLayout, 0, 1, &_descriptorSet, 0, nullptr);
 
 	//Bind Vertex Input Buffers
-	VkDeviceSize vertexOffset = 0;
-	vkCmdBindVertexBuffers(cmd, 0, 1, &get_current_frame().drawContext.vertex_buffer.buffer, &vertexOffset);
-	vkCmdBindIndexBuffer(cmd, get_current_frame().drawContext.index_buffer.buffer, 0, VK_INDEX_TYPE_UINT32);
+	DrawContext& current_drawContext = get_current_frame().drawContext;
+	std::vector<VkBuffer> vertexBuffers = { current_drawContext.vertexPosBuffer.buffer, current_drawContext.vertexOtherAttribBuffer.buffer }; //Jank Debug code will move vector to drawContext structure itself
+	std::vector<VkDeviceSize> vertexOffsets = { 0, 0 };
+	vkCmdBindVertexBuffers(cmd, 0, vertexBuffers.size(), vertexBuffers.data(), vertexOffsets.data());
+	vkCmdBindIndexBuffer(cmd,current_drawContext.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
 
 	//Push Constants
-	RenderShader::PushConstants pushconstants{ .primitiveInfosBufferAddress = get_current_frame().drawContext.primitiveInfosBufferAddress, .viewProjMatrixBufferAddress = get_current_frame().drawContext.viewprojMatrixBufferAddress, .modelMatricesBufferAddress = get_current_frame().drawContext.modelMatricesBufferAddress,.materialsBufferAddress = get_current_frame().drawContext.materialsBufferAddress};
-	vkCmdPushConstants(cmd, _pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(RenderShader::PushConstants), &pushconstants);
+	RenderShader::PushConstants pushconstants{};
+	pushconstants.primitiveInfosBufferAddress = current_drawContext.primitiveInfosBufferAddress;
+	pushconstants.viewProjMatrixBufferAddress = current_drawContext.viewprojMatrixBufferAddress;
+	pushconstants.modelMatricesBufferAddress = current_drawContext.modelMatricesBufferAddress;
+	pushconstants.materialsBufferAddress = current_drawContext.materialsBufferAddress;
+	pushconstants.texturesBufferAddress = current_drawContext.texturesBufferAddress;
+
+	vkCmdPushConstants(cmd, _pipelineLayout, VK_SHADER_STAGE_ALL_GRAPHICS, 0, sizeof(RenderShader::PushConstants), &pushconstants);
 
 	//Draw
-	vkCmdDrawIndexedIndirect(cmd, get_current_frame().drawContext.indirectDrawCommandsBuffer.buffer, 0, get_current_frame().drawContext.drawCount, sizeof(VkDrawIndexedIndirectCommand));
-
-	//Set up each Mesh Vertex and Uniform Data and Draw them
-	VkDeviceSize offset[] = { 0 };
-	for (MeshNodeDrawData& meshNodeDrawData : _mesh_node_draw_datas) {
-		if (meshNodeDrawData.topologyToBatchedDatas.contains(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)) {
-			for (MeshNodeDrawData::BatchedData batchedData : meshNodeDrawData.topologyToBatchedDatas[VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST]) {
-				vkCmdBindVertexBuffers(cmd, 0, 1, &batchedData.pos_buffer.buffer, offset);
-				vkCmdBindIndexBuffer(cmd, batchedData.index_buffer.buffer, 0, VK_INDEX_TYPE_UINT32);
-
-				//Draw
-				vkCmdDrawIndexedIndirect(cmd, batchedData.indirect_draw_buffer.buffer, 0, 1, 0);
-			}
-		}
-	}
+	vkCmdDrawIndexedIndirect(cmd, current_drawContext.indirectDrawCommandsBuffer.buffer, 0, current_drawContext.drawCount, sizeof(VkDrawIndexedIndirectCommand));
 
 	vkCmdEndRendering(cmd);
 }
@@ -311,6 +336,8 @@ void Engine::init_vulkan() {
 	VkPhysicalDeviceVulkan12Features features2{};
 	features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
 	
+	features2.scalarBlockLayout = true;
+
 	features2.bufferDeviceAddress = true;
 
 	features2.descriptorIndexing = true;
@@ -320,6 +347,7 @@ void Engine::init_vulkan() {
 	features2.shaderStorageImageArrayNonUniformIndexing = true;
 
 	features2.descriptorBindingVariableDescriptorCount = true;
+	features2.runtimeDescriptorArray = true;
 
 	features2.descriptorBindingPartiallyBound = true;
 	
@@ -478,9 +506,9 @@ void Engine::init_graphics_pipeline() {
 
 	//Set Pipeline Layout - Descriptor Sets and Push Constants Layout
 	VkPushConstantRange range{};
-	range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+	range.stageFlags = VK_SHADER_STAGE_ALL_GRAPHICS;
 	range.offset = 0;
-	range.size = 32;
+	range.size = 40;
 
 	VkPipelineLayoutCreateInfo pipeline_layout_info = vkutil::pipeline_layout_create_info();
 	pipeline_layout_info.setLayoutCount = 1;
@@ -527,30 +555,63 @@ void Engine::draw_imgui(VkCommandBuffer cmd, VkImageView targetImageView) {
 }
 
 void Engine::setup_vertex_input() {
-	//Set up Vertex Input Descriptions
-	_bindingDescriptions = { {} };
+	//Vertex Buffer Format
+	//VB1: [pos1, pos2, ...]
+	//VB2: [(norm1, tan1, ...), (norm2, tan2, ...), ...] where each () corresponds to a vertex
 
-	//Vertex Buffer
+	//Set up Vertex Input Descriptions
+	_bindingDescriptions = { {},{} };
+
+	//Vertex Position Buffer
 	_bindingDescriptions[0].binding = 0;
 	_bindingDescriptions[0].stride = sizeof(glm::vec3);
 	_bindingDescriptions[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-	_attribueDescriptions = { {} };
+	//Vertex Other Attributes Buffer
+	_bindingDescriptions[1].binding = 1;
+	_bindingDescriptions[1].stride = sizeof(RenderShader::VertexAttributes);
+	_bindingDescriptions[1].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-	//Position Data
+	_attribueDescriptions = { {}, {}, {}, {}, {} };
+
+	//Position
 	_attribueDescriptions[0].binding = 0;
 	_attribueDescriptions[0].location = 0;
 	_attribueDescriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
 	_attribueDescriptions[0].offset = 0;
 
+	//Normal
+	_attribueDescriptions[1].binding = 1;
+	_attribueDescriptions[1].location = 1;
+	_attribueDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
+	_attribueDescriptions[1].offset = 0;
+
+	//Tangent
+	_attribueDescriptions[2].binding = 1;
+	_attribueDescriptions[2].location = 2;
+	_attribueDescriptions[2].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+	_attribueDescriptions[2].offset = offsetof(RenderShader::VertexAttributes, RenderShader::VertexAttributes::tangent);
+
+	//Color_0
+	_attribueDescriptions[3].binding = 1;
+	_attribueDescriptions[3].location = 3;
+	_attribueDescriptions[3].format = VK_FORMAT_R32G32B32_SFLOAT;
+	_attribueDescriptions[3].offset = offsetof(RenderShader::VertexAttributes, RenderShader::VertexAttributes::color);
+
+	//UV_0
+	_attribueDescriptions[4].binding = 1;
+	_attribueDescriptions[4].location = 4;
+	_attribueDescriptions[4].format = VK_FORMAT_R32G32_SFLOAT;
+	_attribueDescriptions[4].offset = offsetof(RenderShader::VertexAttributes, RenderShader::VertexAttributes::uv);
 }
 
 void Engine::setup_descriptor_set() {
 	//Create Descriptor Pool
 	std::vector<VkDescriptorPoolSize> poolSizes = {
-		{.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = COMBINED_IMAGE_SAMPLER_COUNT}
+		{.type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, .descriptorCount = MAX_SAMPLED_IMAGE_COUNT },
+		{.type = VK_DESCRIPTOR_TYPE_SAMPLER, .descriptorCount = MAX_SAMPLER_COUNT }
 	};
-
+	
 	VkDescriptorPoolCreateInfo poolInfo{};
 	poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
 	poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
@@ -568,29 +629,33 @@ void Engine::setup_descriptor_set() {
 	//Create Descriptor Set Layout for Descriptors
 	//-Set Layout Bindings
 	std::vector<VkDescriptorSetLayoutBinding> layout_bindings = {
-		{ .binding = 0, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = COMBINED_IMAGE_SAMPLER_COUNT,
-		.stageFlags = VK_SHADER_STAGE_ALL_GRAPHICS, .pImmutableSamplers = nullptr }
+		{ .binding = 0, .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, .descriptorCount = MAX_SAMPLED_IMAGE_COUNT,
+		.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT, .pImmutableSamplers = nullptr },
+		{ .binding = 1, .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER, .descriptorCount = MAX_SAMPLER_COUNT, 
+		.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT, .pImmutableSamplers = nullptr }
 	};
 
 	//-Set Binding Flags
 	std::vector<VkDescriptorBindingFlags> binding_flags = {
-		VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT | VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_UNUSED_WHILE_PENDING_BIT | VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT
+		VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT | VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_UNUSED_WHILE_PENDING_BIT,
+		VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT | VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_UNUSED_WHILE_PENDING_BIT
 	};
 
 	VkDescriptorSetLayoutBindingFlagsCreateInfo set_binding_flags{};
 	set_binding_flags.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
-	set_binding_flags.bindingCount = static_cast<uint32_t>(layout_bindings.size());
+	set_binding_flags.bindingCount = static_cast<uint32_t>(binding_flags.size());
 	set_binding_flags.pBindingFlags = binding_flags.data();
 
 	//-Now Create Descriptor Set Layout
 	VkDescriptorSetLayoutCreateInfo layoutInfo{};
-	layoutInfo.pNext = &set_binding_flags;
 	layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	layoutInfo.pNext = &set_binding_flags;
 	layoutInfo.bindingCount = static_cast<uint32_t>(layout_bindings.size());
 	layoutInfo.pBindings = layout_bindings.data();
 	layoutInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
 
-	VK_CHECK(vkCreateDescriptorSetLayout(_device, &layoutInfo, nullptr, &_descriptorSetLayout));
+	if (vkCreateDescriptorSetLayout(_device, &layoutInfo, nullptr, &_descriptorSetLayout) != VK_SUCCESS)
+		throw std::runtime_error("Failed to Create Descriptor Set Layout");
 
 	_mainDeletionQueue.push_function([=, this]() {
 		vkDestroyDescriptorSetLayout(_device, _descriptorSetLayout, nullptr);
@@ -605,27 +670,42 @@ void Engine::setup_descriptor_set() {
 	
 	if (vkAllocateDescriptorSets(_device, &allocInfo, &_descriptorSet) != VK_SUCCESS)
 		throw std::runtime_error("Failed to allocate Descriptor Set");
-	/*
+
 	//Configure Descriptor in Descriptor Set with our data - Point to Buffers and Images
-	std::vector<VkDescriptorImageInfo> imgInfos; 
-	for (auto texture : _payload.textures) { //Unsure how to handle textures and its relationship in drawContext and payload. So just dump textures straight from payload
+	std::vector<VkWriteDescriptorSet> descriptorWrites(2);
+
+	std::vector<VkDescriptorImageInfo> sampledImages_imgInfos; 
+	for (auto& image : _payload.images) {
 		VkDescriptorImageInfo imgInfo{};
 		imgInfo.imageLayout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL;
-		imgInfo.imageView = texture->image->imageView;
-		imgInfo.sampler = *texture->sampler;
+		imgInfo.imageView = image->imageView;
+		sampledImages_imgInfos.push_back(imgInfo);
+	}
+;
+	descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	descriptorWrites[0].dstSet = _descriptorSet;
+	descriptorWrites[0].dstBinding = 0;
+	descriptorWrites[0].dstArrayElement = 0;
+	descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+	descriptorWrites[0].descriptorCount = sampledImages_imgInfos.size();
+	descriptorWrites[0].pImageInfo = sampledImages_imgInfos.data();
+
+	std::vector<VkDescriptorImageInfo> sampler_imgInfos;
+	for (auto& sampler : _payload.samplers) {
+		VkDescriptorImageInfo imgInfo{};
+		imgInfo.sampler = *sampler;
+		sampler_imgInfos.push_back(imgInfo);
 	}
 
-	VkWriteDescriptorSet descriptorWrites{};
-	descriptorWrites.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-	descriptorWrites.dstSet = _descriptorSet;
-	descriptorWrites.dstBinding = 0;
-	descriptorWrites.dstArrayElement = 0;
-	descriptorWrites.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-	descriptorWrites.descriptorCount = 1;
-	descriptorWrites.pImageInfo = imgInfos.data();
+	descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	descriptorWrites[1].dstSet = _descriptorSet;
+	descriptorWrites[1].dstBinding = 1;
+	descriptorWrites[1].dstArrayElement = 0;
+	descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
+	descriptorWrites[1].descriptorCount = sampler_imgInfos.size();
+	descriptorWrites[1].pImageInfo = sampler_imgInfos.data();
 
-	vkUpdateDescriptorSets(_device, 1, &descriptorWrites, 0, nullptr);
-	*/
+	vkUpdateDescriptorSets(_device, descriptorWrites.size(), descriptorWrites.data(), 0, nullptr);
 }
 
 void Engine::setup_depthImage() {
@@ -633,7 +713,7 @@ void Engine::setup_depthImage() {
 	VkExtent3D extent{};
 	extent.width = _swapchain.extent.width;
 	extent.height = _swapchain.extent.height;
-	extent.depth = 1;
+	extent.depth = 1; 
 	_depthImage.extent = extent;
 
 	VkImageCreateInfo depth_image_info = vkutil::image_create_info(_depthImage.format, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, _depthImage.extent);
@@ -658,6 +738,7 @@ void Engine::setup_drawContexts() {
 	std::vector<VkDrawIndexedIndirectCommand> indirect_commands;
 	uint32_t drawCount = 0;
 	std::vector<glm::vec3> positions;
+	std::vector<RenderShader::VertexAttributes> attributes;
 	std::vector<uint32_t> indices;
 	RenderShader::ViewProj viewproj;
 	viewproj.view = _camera.get_view_matrix();
@@ -665,14 +746,17 @@ void Engine::setup_drawContexts() {
 	viewproj.proj[1][1] *= -1;
 	std::vector<glm::mat4> model_matrices; //Also contains view and proj at start
 	std::vector<RenderShader::PrimitiveInfo> primitiveInfos;
+	std::vector<RenderShader::Material> materials;
+	std::vector<RenderShader::Texture> textures;
 
-	//Navigate Node Tree for Mesh Nodes and get Primitive Data
-	//-Add all root nodes in current scene to Sack
+	//Get Our Data from Host
+	//-Navigate Node Tree for Mesh Nodes and Get Primitive Data
+	//--Add all root nodes in current scene to Sack
 	std::stack<std::shared_ptr<Node>> dfs_node_stack;
 	for (auto root_node : _payload.current_scene->root_nodes) {
 		dfs_node_stack.push(root_node);
 	}
-	//-Perform DFS, traverse all Nodes
+	//--Perform DFS, traverse all Nodes
 	while (!dfs_node_stack.empty()) {
 		std::shared_ptr<Node> currentNode = dfs_node_stack.top();
 		dfs_node_stack.pop();
@@ -702,9 +786,22 @@ void Engine::setup_drawContexts() {
 
 				drawCount++;
 
-				//Position and other Vertex Attributes
+				//Vertex's Position and other Vertex Attributes
 				for (Mesh::Primitive::Vertex vertex : primitive.vertices) {
+					RenderShader::VertexAttributes attribute;
+					attribute.normal = vertex.normal;
+					attribute.tangent = vertex.tangent;
+					if (vertex.colors.empty())
+						attribute.color = glm::vec3(1.0f, 1.0f, 1.0f);
+					else
+						attribute.color = vertex.colors[0]; //Get Color_0
+					if (vertex.uvs.empty())
+						attribute.uv = glm::vec2(-1.0f, -1.0f);
+					else
+						attribute.uv = vertex.uvs[0]; //Get TexCoord_0
+
 					positions.push_back(vertex.position);
+					attributes.push_back(attribute);
 				}
 
 				//Indices
@@ -712,86 +809,100 @@ void Engine::setup_drawContexts() {
 
 				//PrimitiveInfo
 				RenderShader::PrimitiveInfo prmInfo{};
-				prmInfo.mat_id = 0;
+				prmInfo.mat_id = primitive.material_id;
 				prmInfo.model_matrix_id = model_id;
 				primitiveInfos.push_back(prmInfo);
 			}
 		}
 	}
 
-	//Add Data to DrawContexts 
-	size_t alloc_vert_size = sizeof(glm::vec3) * positions.size();
+	//-Get Materials
+	for (std::unique_ptr<Material>& material : _payload.materials) {
+		RenderShader::Material mat{};
+		mat.baseColor_texture_id = material->baseColor_texture_id;
+		mat.baseColor_texCoord_id = material->baseColor_coord_index;
+		mat.baseColor_factor = material->baseColor_Factor;
+		materials.push_back(mat);
+	}
+
+	//-Get Textures
+	for (auto& texture : _payload.textures) {
+		RenderShader::Texture tex{};
+		tex.textureImage_id = texture->image_index;
+		tex.sampler_id = texture->sampler_index;
+		textures.push_back(tex);
+	}
+
+	//Add Data to DrawContexts
+	size_t alloc_vertPos_size = sizeof(glm::vec3) * positions.size();
+	size_t alloc_vertAttrib_size = sizeof(RenderShader::VertexAttributes) * attributes.size();
 	size_t alloc_index_size = sizeof(uint32_t) * indices.size();
 	size_t alloc_indirect_size = sizeof(VkDrawIndexedIndirectCommand) * indirect_commands.size();
 	size_t alloc_viewprojMatrix_size = sizeof(glm::mat4) * 2;
 	size_t alloc_modelMatrices_size = sizeof(glm::mat4) * model_matrices.size();
 	size_t alloc_primInfo_size = sizeof(RenderShader::PrimitiveInfo) * primitiveInfos.size();
+	size_t alloc_materials_size = sizeof(RenderShader::Material) * materials.size();
+	size_t alloc_textures_size = sizeof(RenderShader::Texture) * textures.size();
 
 	for (Frame& frame : _frames) {
-		frame.drawContext.drawCount = drawCount;
+		DrawContext& currentDrawContext = frame.drawContext;
+		currentDrawContext.drawCount = drawCount;
 
 		//Draw Coommand and Vertex Input Buffers
-		frame.drawContext.indirectDrawCommandsBuffer = create_buffer(alloc_indirect_size, VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
-		frame.drawContext.vertex_buffer = create_buffer(alloc_vert_size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
-		frame.drawContext.index_buffer = create_buffer(alloc_index_size, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
+		currentDrawContext.indirectDrawCommandsBuffer = create_buffer(alloc_indirect_size, VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
+		currentDrawContext.vertexPosBuffer = create_buffer(alloc_vertPos_size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
+		currentDrawContext.vertexOtherAttribBuffer = create_buffer(alloc_vertAttrib_size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
+		currentDrawContext.indexBuffer = create_buffer(alloc_index_size, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
 		//BDA Buffers
-		frame.drawContext.viewprojMatrixBuffer = create_buffer(alloc_viewprojMatrix_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
-		frame.drawContext.modelMatricesBuffer = create_buffer(alloc_modelMatrices_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
-		frame.drawContext.primitiveInfosBuffer = create_buffer(alloc_primInfo_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
+		currentDrawContext.viewprojMatrixBuffer = create_buffer(alloc_viewprojMatrix_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE); //Careful as if the alloc size is 0. Will cause errors
+		currentDrawContext.modelMatricesBuffer = create_buffer(alloc_modelMatrices_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
+		currentDrawContext.primitiveInfosBuffer = create_buffer(alloc_primInfo_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
+		currentDrawContext.materialsBuffer = create_buffer(alloc_materials_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
+		currentDrawContext.texturesBuffer = create_buffer(alloc_textures_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
 		VkBufferDeviceAddressInfo address_info{ .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO };
-		address_info.buffer = frame.drawContext.viewprojMatrixBuffer.buffer;
-		frame.drawContext.viewprojMatrixBufferAddress = vkGetBufferDeviceAddress(_device, &address_info);
-		address_info.buffer = frame.drawContext.modelMatricesBuffer.buffer;
-		frame.drawContext.modelMatricesBufferAddress = vkGetBufferDeviceAddress(_device, &address_info);
-		address_info.buffer = frame.drawContext.primitiveInfosBuffer.buffer;
-		frame.drawContext.primitiveInfosBufferAddress = vkGetBufferDeviceAddress(_device, &address_info);
+		address_info.buffer = currentDrawContext.viewprojMatrixBuffer.buffer;
+		currentDrawContext.viewprojMatrixBufferAddress = vkGetBufferDeviceAddress(_device, &address_info);
+		address_info.buffer = currentDrawContext.modelMatricesBuffer.buffer;
+		currentDrawContext.modelMatricesBufferAddress = vkGetBufferDeviceAddress(_device, &address_info);
+		address_info.buffer = currentDrawContext.primitiveInfosBuffer.buffer;
+		currentDrawContext.primitiveInfosBufferAddress = vkGetBufferDeviceAddress(_device, &address_info);
+		address_info.buffer = currentDrawContext.materialsBuffer.buffer;
+		currentDrawContext.materialsBufferAddress = vkGetBufferDeviceAddress(_device, &address_info);
+		address_info.buffer = currentDrawContext.texturesBuffer.buffer;
+		currentDrawContext.texturesBufferAddress = vkGetBufferDeviceAddress(_device, &address_info);
 
-		AllocatedBuffer indirect_stagingBuffer = create_buffer(alloc_indirect_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_HOST);
-		AllocatedBuffer pos_stagingBuffer = create_buffer(alloc_vert_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_HOST);
-		AllocatedBuffer index_stagingBuffer = create_buffer(alloc_index_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_HOST);
-		AllocatedBuffer viewprojMatrix_stagingBuffer = create_buffer(alloc_viewprojMatrix_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_HOST);
-		AllocatedBuffer modelMatrices_stagingBuffer = create_buffer(alloc_modelMatrices_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_HOST);
-		AllocatedBuffer primInfo_stagingBuffer = create_buffer(alloc_primInfo_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_HOST);
+		//Copy Data to the Buffers
+		VkBufferCopy indirect_copy_info{ .srcOffset = 0, .dstOffset = 0, .size = alloc_indirect_size };
+		VkBufferCopy pos_copy_info{ .srcOffset = 0, .dstOffset = 0, .size = alloc_vertPos_size };
+		VkBufferCopy attrib_copy_info{ .srcOffset = 0, .dstOffset = 0, .size = alloc_vertAttrib_size };
+		VkBufferCopy index_copy_info{ .srcOffset = 0, .dstOffset = 0, .size = alloc_index_size };
+		VkBufferCopy viewprojMatrix_copy_info{ .srcOffset = 0, .dstOffset = 0, .size = alloc_viewprojMatrix_size };
+		VkBufferCopy modelMatrices_copy_info{ .srcOffset = 0, .dstOffset = 0, .size = alloc_modelMatrices_size };
+		VkBufferCopy primInfo_copy_info{ .srcOffset = 0, .dstOffset = 0, .size = alloc_primInfo_size };
+		VkBufferCopy material_copy_info{ .srcOffset = 0, .dstOffset = 0, .size = alloc_materials_size };
+		VkBufferCopy texture_copy_info{ .srcOffset = 0, .dstOffset = 0, .size = alloc_textures_size };
 
-		memcpy(indirect_stagingBuffer.info.pMappedData, indirect_commands.data(), alloc_indirect_size);
-		memcpy(pos_stagingBuffer.info.pMappedData, positions.data(), alloc_vert_size);
-		memcpy(index_stagingBuffer.info.pMappedData, indices.data(), alloc_index_size);
-		memcpy(viewprojMatrix_stagingBuffer.info.pMappedData, &viewproj, alloc_viewprojMatrix_size);
-		memcpy(modelMatrices_stagingBuffer.info.pMappedData, model_matrices.data(), alloc_modelMatrices_size);
-		memcpy(primInfo_stagingBuffer.info.pMappedData, primitiveInfos.data(), alloc_primInfo_size);
-
-		//Copy data from Staging Buffers to BatchedData Buffers
-		immediate_command_submit([&](VkCommandBuffer cmd) {
-			VkBufferCopy indirect_copy_info{ .srcOffset = 0, .dstOffset = 0, .size = alloc_indirect_size };
-			VkBufferCopy pos_copy_info{ .srcOffset = 0, .dstOffset = 0, .size = alloc_vert_size };
-			VkBufferCopy index_copy_info{ .srcOffset = 0, .dstOffset = 0, .size = alloc_index_size };
-			VkBufferCopy viewprojMatrix_copy_info{ .srcOffset = 0, .dstOffset = 0, .size = alloc_viewprojMatrix_size };
-			VkBufferCopy modelMatrices_copy_info{ .srcOffset = 0, .dstOffset = 0, .size = alloc_modelMatrices_size };
-			VkBufferCopy primInfo_copy_info{ .srcOffset = 0, .dstOffset = 0, .size = alloc_primInfo_size };
-
-			vkCmdCopyBuffer(cmd, indirect_stagingBuffer.buffer, frame.drawContext.indirectDrawCommandsBuffer.buffer, 1, &indirect_copy_info);
-			vkCmdCopyBuffer(cmd, pos_stagingBuffer.buffer, frame.drawContext.vertex_buffer.buffer, 1, &pos_copy_info);
-			vkCmdCopyBuffer(cmd, index_stagingBuffer.buffer, frame.drawContext.index_buffer.buffer, 1, &index_copy_info);
-			vkCmdCopyBuffer(cmd, viewprojMatrix_stagingBuffer.buffer, frame.drawContext.viewprojMatrixBuffer.buffer, 1, &viewprojMatrix_copy_info);
-			vkCmdCopyBuffer(cmd, modelMatrices_stagingBuffer.buffer, frame.drawContext.modelMatricesBuffer.buffer, 1, &modelMatrices_copy_info);
-			vkCmdCopyBuffer(cmd, primInfo_stagingBuffer.buffer, frame.drawContext.primitiveInfosBuffer.buffer, 1, &primInfo_copy_info);
-			});
-
-		destroy_buffer(indirect_stagingBuffer);
-		destroy_buffer(pos_stagingBuffer);
-		destroy_buffer(index_stagingBuffer);
-		destroy_buffer(viewprojMatrix_stagingBuffer);
-		destroy_buffer(modelMatrices_stagingBuffer);
-		destroy_buffer(primInfo_stagingBuffer);
+		copy_to_device_buffer(currentDrawContext.indirectDrawCommandsBuffer, indirect_commands.data(), alloc_indirect_size, indirect_copy_info, 1);
+		copy_to_device_buffer(currentDrawContext.vertexPosBuffer, positions.data(), alloc_vertPos_size, pos_copy_info, 1);
+		copy_to_device_buffer(currentDrawContext.vertexOtherAttribBuffer, attributes.data(), alloc_vertAttrib_size, attrib_copy_info, 1);
+		copy_to_device_buffer(currentDrawContext.indexBuffer, indices.data(), alloc_index_size, index_copy_info, 1);
+		copy_to_device_buffer(currentDrawContext.viewprojMatrixBuffer, &viewproj, alloc_viewprojMatrix_size, viewprojMatrix_copy_info, 1);
+		copy_to_device_buffer(currentDrawContext.modelMatricesBuffer, model_matrices.data(), alloc_modelMatrices_size, modelMatrices_copy_info, 1);
+		copy_to_device_buffer(currentDrawContext.primitiveInfosBuffer, primitiveInfos.data(), alloc_primInfo_size, primInfo_copy_info, 1);
+		copy_to_device_buffer(currentDrawContext.materialsBuffer, materials.data(), alloc_materials_size, material_copy_info, 1);
+		copy_to_device_buffer(currentDrawContext.texturesBuffer, textures.data(), alloc_textures_size, texture_copy_info, 1);
 
 		//Put Buffers in Deletion Queueu
 		_mainDeletionQueue.push_function([=, this]() {
-			destroy_buffer(frame.drawContext.indirectDrawCommandsBuffer);
-			destroy_buffer(frame.drawContext.vertex_buffer);
-			destroy_buffer(frame.drawContext.index_buffer);
-			destroy_buffer(frame.drawContext.viewprojMatrixBuffer);
-			destroy_buffer(frame.drawContext.modelMatricesBuffer);
-			destroy_buffer(frame.drawContext.primitiveInfosBuffer);
+			destroy_buffer(currentDrawContext.indirectDrawCommandsBuffer);
+			destroy_buffer(currentDrawContext.vertexPosBuffer);
+			destroy_buffer(currentDrawContext.vertexOtherAttribBuffer);
+			destroy_buffer(currentDrawContext.indexBuffer);
+			destroy_buffer(currentDrawContext.viewprojMatrixBuffer);
+			destroy_buffer(currentDrawContext.modelMatricesBuffer);
+			destroy_buffer(currentDrawContext.primitiveInfosBuffer);
+			destroy_buffer(currentDrawContext.materialsBuffer);
+			destroy_buffer(currentDrawContext.texturesBuffer);
 			});
 	}
 }
@@ -978,4 +1089,17 @@ void Engine::destroy_image(const AllocatedImage& img) {
 	vkDestroyImageView(_device, img.imageView, nullptr);
 	vmaDestroyImage(_allocator, img.image, img.allocation);
 }
+
+void Engine::copy_to_device_buffer(AllocatedBuffer& dstBuffer, void* data, size_t dataSize, const VkBufferCopy& vkBufferCopy, uint32_t bufferCopiesCount) {
+	AllocatedBuffer stagingBuffer = create_buffer(dataSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_HOST);
+	memcpy(stagingBuffer.info.pMappedData, data, dataSize);
+
+	immediate_command_submit([&](VkCommandBuffer cmd) {
+		vkCmdCopyBuffer(cmd, stagingBuffer.buffer, dstBuffer.buffer, bufferCopiesCount, &vkBufferCopy);
+		});
+
+	destroy_buffer(stagingBuffer);
+}
+
+
 

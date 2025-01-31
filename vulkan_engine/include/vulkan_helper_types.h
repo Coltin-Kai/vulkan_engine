@@ -28,4 +28,5 @@ struct DynamicAllocatedBuffer {
 	AllocatedBuffer alloc_buffer;
 };
 
-
+//Just a wrapper to allow descructor calling the VkDestroySampler
+//struct Sampler

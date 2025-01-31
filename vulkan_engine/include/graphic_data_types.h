@@ -23,19 +23,20 @@ struct Texture;
 struct GraphicsDataPayload{
 	Scene* current_scene = nullptr; //The scene to load
 	std::vector<Scene> scenes{};
-	std::vector<std::shared_ptr<VkSampler>> samplers{};
-	std::vector<std::shared_ptr<AllocatedImage>> images{}; //Global Images accessible by Textures
-	std::vector<std::shared_ptr<Texture>> textures{};
-	std::vector<std::shared_ptr<Material>> materials{};
+	//Default Data resides in index 0 for all these resources
+	std::vector<std::unique_ptr<VkSampler>> samplers{}; //Global Samplers. 
+	std::vector<std::unique_ptr<AllocatedImage>> images{}; //Global Images accessible by Textures
+	std::vector<std::unique_ptr<Texture>> textures{}; //Global Textures
+	std::vector<std::unique_ptr<Material>> materials{}; //Global Materials
 
-	//Clean up any resources that require manual deltion/cleanup
+	//Clean up any vulkan resources that require manual deltion/cleanup
 	void cleanup(const VkDevice& device, const VmaAllocator& allocator) {
-		for (std::shared_ptr<VkSampler> sampler : samplers) {
+		for (std::unique_ptr<VkSampler>& sampler : samplers) {
 			vkDestroySampler(device, *sampler, nullptr);
 		}
 		samplers.clear();
 
-		for (std::shared_ptr<AllocatedImage> image : images) {
+		for (std::unique_ptr<AllocatedImage>& image : images) {
 			vkDestroyImageView(device, image->imageView, nullptr);
 			vmaDestroyImage(allocator, image->image, image->allocation);
 		}
@@ -106,7 +107,7 @@ struct Mesh {
 		VkPrimitiveTopology topology;
 		std::vector<Vertex> vertices{};
 		std::vector<uint32_t> indices{};
-		std::shared_ptr<Material> material; //May turn this into an index into the global materials in payload to make the copying to drawContex easier. Same with textures in materials
+		int material_id = 0;
 	};
 
 	std::string name;
@@ -116,24 +117,29 @@ struct Mesh {
 struct Material {
 	std::string name;
 
-	std::shared_ptr<Texture> normal_Texture;
+	//std::shared_ptr<Texture> normal_Texture;
+	int normal_texture_id = 0;
 	int normal_coord_index = -1; //Index of the specific Texture Coord in the Mesh
 	float normal_scale = 0.0f;
 
-	std::shared_ptr<Texture> occlusion_Texture;
+	//std::shared_ptr<Texture> occlusion_Texture;
+	int occlusiong_texture_id = 0;
 	int occlusion_coord_index = -1;
 	float occlusion_strength = 0.0f;
 
-	std::shared_ptr<Texture> emission_Texture;
+	//std::shared_ptr<Texture> emission_Texture;
+	int emission_texture_id = 0;
 	int emission_coord_index = -1;
-	glm::vec3 emission_Factor;
+	glm::vec3 emission_Factor = glm::vec3(0.0f, 0.0f, 0.0f);
 
 	//PBR Variables
-	std::shared_ptr<Texture> baseColor_Texture;
+	//std::shared_ptr<Texture> baseColor_Texture;
+	int baseColor_texture_id = 0;
 	int baseColor_coord_index = -1;
-	glm::vec4 basrColor_Factor;
+	glm::vec4 baseColor_Factor = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
 
-	std::shared_ptr<Texture> metal_rough_Texture;
+	//std::shared_ptr<Texture> metal_rough_Texture;
+	int metal_rough_texture_id = 0;
 	int metal_rough_coord_index = -1;
 	float metallic_Factor = 0.0f;
 	float roughness_Factor = 0.0f;
@@ -141,6 +147,8 @@ struct Material {
 
 struct Texture {
 	std::string name;
-	std::shared_ptr<AllocatedImage> image;
-	std::shared_ptr<VkSampler> sampler;
+	//std::shared_ptr<AllocatedImage> image; remove
+	int image_index = 0;
+	//std::shared_ptr<VkSampler> sampler;
+	int sampler_index = 0;
 };
