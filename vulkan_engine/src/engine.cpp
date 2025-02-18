@@ -75,6 +75,17 @@ void Engine::init() {
 	
 	_camera = Camera({ 0.0f, 0.0f, 2.0f });
 	_camera.update_view_matrix();
+
+	//-Initiliaze Device Data Update Tracker
+	_deviceDataUpdateTracker.add_deviceBufferType(DeviceBufferType::IndirectDraw);
+	_deviceDataUpdateTracker.add_deviceBufferType(DeviceBufferType::Vertex);
+	_deviceDataUpdateTracker.add_deviceBufferType(DeviceBufferType::Attributes);
+	_deviceDataUpdateTracker.add_deviceBufferType(DeviceBufferType::Index);
+	_deviceDataUpdateTracker.add_deviceBufferType(DeviceBufferType::PrimitiveInfo);
+	_deviceDataUpdateTracker.add_deviceBufferType(DeviceBufferType::ViewProjMatrix);
+	_deviceDataUpdateTracker.add_deviceBufferType(DeviceBufferType::ModelMatrix);
+	_deviceDataUpdateTracker.add_deviceBufferType(DeviceBufferType::Material);
+	_deviceDataUpdateTracker.add_deviceBufferType(DeviceBufferType::Texture);
 	//----
 
 	setup_drawContexts();
@@ -100,6 +111,14 @@ void Engine::run() {
 				stop_rendering = false;
 			if (e.window.event == SDL_WINDOWEVENT_RESIZED)
 				windowResized = true;
+			
+			//Input - Event Type
+			if (e.key.keysym.scancode == SDL_SCANCODE_ESCAPE)
+				quit = true;
+
+			if (e.key.keysym.scancode == SDL_SCANCODE_Z)
+				if (e.key.type == SDL_KEYDOWN)
+					SDL_SetRelativeMouseMode(SDL_GetRelativeMouseMode() == SDL_FALSE ? SDL_TRUE : SDL_FALSE);
 
 			//GUI Events
 			ImGui_ImplSDL2_ProcessEvent(&e);
@@ -114,33 +133,25 @@ void Engine::run() {
 			resize_swapchain();
 		}
 		
-		//Input
+		//Input - State Type
 		const uint8_t* keys = SDL_GetKeyboardState(NULL); //Updates cause SDL_PollEvents implicitly called SDL_PumpEvents
-		
-		if (keys[SDL_SCANCODE_ESCAPE])
-			quit = true;
 
 		//-Camera Input
 		int rel_mouse_x, rel_mouse_y;
 		SDL_GetRelativeMouseState(&rel_mouse_x, &rel_mouse_y);
+		if (_camera.processInput(static_cast<uint32_t>(rel_mouse_x), static_cast<uint32_t>(rel_mouse_y), keys)) { //If camera received input/change in input
+			_camera.update_view_matrix();
+			_deviceDataUpdateTracker.signal_to_update(DeviceBufferType::ViewProjMatrix);
+		}
 
-		_camera.processInput(static_cast<uint32_t>(rel_mouse_x), static_cast<uint32_t>(rel_mouse_y), keys);
-
-		//Update Uniform - Debug
-		_camera.update_view_matrix();
-		glm::mat4 view = _camera.get_view_matrix();
-
-		AllocatedBuffer view_stagingBuffer = create_buffer(sizeof(glm::mat4), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_HOST);
-
-		memcpy(view_stagingBuffer.info.pMappedData, &view, sizeof(glm::mat4));
-
-		//Copy data from Staging Buffers to BatchedData Buffers
-		immediate_command_submit([&](VkCommandBuffer cmd) {
-			VkBufferCopy transData_copy_info{ .srcOffset = 0, .dstOffset = 0, .size = sizeof(glm::mat4)};
-			vkCmdCopyBuffer(cmd, view_stagingBuffer.buffer, get_current_frame().drawContext.viewprojMatrixBuffer.buffer, 1, &transData_copy_info);
-			});
-
-		destroy_buffer(view_stagingBuffer);
+		//Device Data Updates
+		if (_deviceDataUpdateTracker.is_updatable(DeviceBufferType::ViewProjMatrix)) {
+			_deviceDataUpdateTracker.acknowledge_update(DeviceBufferType::ViewProjMatrix);
+			glm::mat4 view = _camera.get_view_matrix();
+			size_t viewProjSize = sizeof(glm::mat4);
+			VkBufferCopy copyInfo{ .srcOffset = 0, .dstOffset = 0, .size = viewProjSize };
+			copy_to_device_buffer(get_current_frame().drawContext.viewprojMatrixBuffer, &view, viewProjSize, copyInfo, 1);
+		}
 
 		//IMGUI Rendering
 		ImGui_ImplVulkan_NewFrame();
@@ -389,7 +400,7 @@ void Engine::init_vulkan() {
 		limits.maxVertexInputBindings, limits.maxVertexInputAttributes,
 		limits.maxDescriptorSetUniformBuffers, limits.maxPerStageDescriptorUniformBuffers,
 		limits.maxDescriptorSetStorageBuffers, limits.maxPerStageDescriptorStorageBuffers) << std::endl;
-
+	
 	//Create Logical Device
 	vkb::DeviceBuilder deviceBuilder{ physicalDevice };
 	
@@ -1090,7 +1101,7 @@ void Engine::destroy_image(const AllocatedImage& img) {
 	vmaDestroyImage(_allocator, img.image, img.allocation);
 }
 
-void Engine::copy_to_device_buffer(AllocatedBuffer& dstBuffer, void* data, size_t dataSize, const VkBufferCopy& vkBufferCopy, uint32_t bufferCopiesCount) {
+void Engine::copy_to_device_buffer(const AllocatedBuffer& dstBuffer, void* data, size_t dataSize, const VkBufferCopy& vkBufferCopy, uint32_t bufferCopiesCount) {
 	AllocatedBuffer stagingBuffer = create_buffer(dataSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_HOST);
 	memcpy(stagingBuffer.info.pMappedData, data, dataSize);
 

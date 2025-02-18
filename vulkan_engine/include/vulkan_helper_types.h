@@ -2,6 +2,7 @@
 
 #include "vulkan/vulkan.h"
 #include "vk_mem_alloc.h"
+#include <unordered_set>
 
 struct AllocatedImage {
 	VkImage image;

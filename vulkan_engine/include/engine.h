@@ -104,6 +104,45 @@ private:
 		DeletionQueue deletionQueue; //Currently no resources to delete yet...
 	};
 
+	//Used by DeviceDataUpdater primarily
+	enum class DeviceBufferType {
+		IndirectDraw,
+		Vertex,
+		Attributes,
+		Index,
+		PrimitiveInfo,
+		ViewProjMatrix,
+		ModelMatrix,
+		Material,
+		Texture
+	};
+
+	//DEBUG - Tracks what device buffers need and when to be updated (Will figure out a better structure to handle this task)
+	struct DeviceDataUpdateTracker { 
+	private:
+		std::unordered_map<DeviceBufferType, int> deviceBufferTypeToFrameCount; //Tracks the device buffer type and their frameCount (how many times these types of buffers should be updated with respect to frames in flight
+	public:
+		void add_deviceBufferType(DeviceBufferType bufferType) {
+			deviceBufferTypeToFrameCount[bufferType] = 0;
+		}
+
+		void signal_to_update(DeviceBufferType bufferType) {
+			deviceBufferTypeToFrameCount[bufferType] = FRAMES_TOTAL;
+		}
+
+		bool is_updatable(DeviceBufferType bufferType) {
+			if (deviceBufferTypeToFrameCount[bufferType] > 0)
+				return true;
+			else
+				return false;
+		}
+
+		void acknowledge_update(DeviceBufferType bufferType) { //Decrements the frameCount of the specific buffer type to indicate that update has consumed it
+			if (deviceBufferTypeToFrameCount[bufferType] > 0)
+				deviceBufferTypeToFrameCount[bufferType]--;
+		}
+	};
+
 	bool stop_rendering = false;
 
 	//SDL Window
@@ -140,10 +179,11 @@ private:
 	VkCommandBuffer _immCommandBuffer;
 	VkFence _immFence;
 
-	//Queues
+	//Command Queues
 	VkQueue _graphicsQueue;
 	uint32_t _graphicsQueueFamily;
 
+	//Pipeline
 	VkPipelineLayout _pipelineLayout;
 	VkPipeline _pipeline;
 
@@ -151,7 +191,7 @@ private:
 	std::vector<VkVertexInputBindingDescription> _bindingDescriptions;
 	std::vector<VkVertexInputAttributeDescription>_attribueDescriptions;
 
-	//Descriptors
+	//Descriptors - Primarily used for SampledImages and Samplers
 	VkDescriptorPool _descriptorPool;
 	VkDescriptorSetLayout _descriptorSetLayout;
 	VkDescriptorSet _descriptorSet;
@@ -161,6 +201,9 @@ private:
 
 	//Payload
 	GraphicsDataPayload _payload;
+
+	//Data Update Stuff
+	DeviceDataUpdateTracker _deviceDataUpdateTracker;
 
 	void draw();
 
@@ -204,7 +247,7 @@ public:
 
 	AllocatedImage create_image(void* data, VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped = false);
 
-	void copy_to_device_buffer(AllocatedBuffer& dstBuffer, void* data, size_t dataSize, const VkBufferCopy& vkBufferCopy, uint32_t bufferCopiesCount);
+	void copy_to_device_buffer(const AllocatedBuffer& dstBuffer, void* data, size_t dataSize, const VkBufferCopy& vkBufferCopy, uint32_t bufferCopiesCount);
 
 	void destroy_image(const AllocatedImage& img);
 

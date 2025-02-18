@@ -82,7 +82,7 @@ struct Node {
 		return world_transform;
 	}
 private:
-	glm::mat4 local_transform; //Local to its paren Node
+	glm::mat4 local_transform; //Local relative to its parent Node
 	glm::mat4 world_transform; //Local_Transform * Parent's World Transform. If Root Node, Local_Transform * Identity_Matrix. Should be updated when local_transform us updated.
 
 	void updateWorldTransform(const glm::mat4& parentTransform) {

@@ -16,7 +16,7 @@ public:
 	Camera(glm::vec3 pos = {0.0f, 0.0f, 1.0f}, float yaw = -90.0f, float pitch = 0.0f);
 	void update_view_matrix();
 	glm::mat4 get_view_matrix();
-	void processInput(int32_t rel_mouse_x, int32_t rel_mouse_y, const uint8_t* keys);
+	bool processInput(int32_t rel_mouse_x, int32_t rel_mouse_y, const uint8_t* keys); //Returns true if it detected input/change in input variables
 private:
 	uint64_t lastFrameTime;
 	glm::mat4 view;

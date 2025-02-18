@@ -13,7 +13,8 @@ glm::mat4 Camera::get_view_matrix() {
 	return this->view;
 }
 
-void Camera::processInput(int32_t rel_mouse_x, int32_t rel_mouse_y, const uint8_t* keys) {
+bool Camera::processInput(int32_t rel_mouse_x, int32_t rel_mouse_y, const uint8_t* keys) {
+	bool inputChangeDetected = true;
 	const glm::vec3 worldSpace_up = glm::vec3(0.0f, 1.0f, 0.0f);
 
 	//May or may not move deltaTime calculations up to Engine class
@@ -22,30 +23,43 @@ void Camera::processInput(int32_t rel_mouse_x, int32_t rel_mouse_y, const uint8_
 	lastFrameTime = currentFrameTime;
 
 	//Look Around
-	const float mouseSensitivity = 0.05f;
+	if (rel_mouse_x != 0 || rel_mouse_y != 0) { //If mouse has been moved
+		inputChangeDetected = true;
+		const float mouseSensitivity = 0.05f;
 
-	yaw += mouseSensitivity * static_cast<float>(rel_mouse_x);
-	pitch += mouseSensitivity * static_cast<float>(-rel_mouse_y);
+		yaw += mouseSensitivity * static_cast<float>(rel_mouse_x);
+		pitch += mouseSensitivity * static_cast<float>(-rel_mouse_y);
 
-	if (pitch > 89.0f)
-		pitch = 89.0f;
-	if (pitch < -89.0f)
-		pitch = -89.0f;
+		if (pitch > 89.0f)
+			pitch = 89.0f;
+		if (pitch < -89.0f)
+			pitch = -89.0f;
 
-	this->cameraDirection.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
-	this->cameraDirection.y = sin(glm::radians(pitch));
-	this->cameraDirection.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
-	this->cameraDirection = glm::normalize(this->cameraDirection);
+		this->cameraDirection.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
+		this->cameraDirection.y = sin(glm::radians(pitch));
+		this->cameraDirection.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
+		this->cameraDirection = glm::normalize(this->cameraDirection);
+	}
 
 	//Walk Around
 	const float movementSpeed = 0.005f * static_cast<float>(deltaFrameTime);
-
-	if (keys[SDL_SCANCODE_W])
+	
+	if (keys[SDL_SCANCODE_W]) {
+		inputChangeDetected = true;
 		this->pos += movementSpeed * this->cameraDirection;
-	if (keys[SDL_SCANCODE_S])
+	}
+	if (keys[SDL_SCANCODE_S]) {
+		inputChangeDetected = true;
 		this->pos -= movementSpeed * this->cameraDirection;
-	if (keys[SDL_SCANCODE_A])
+	}
+	if (keys[SDL_SCANCODE_A]) {
+		inputChangeDetected = true;
 		this->pos -= movementSpeed * glm::normalize(glm::cross(this->cameraDirection, worldSpace_up));
-	if (keys[SDL_SCANCODE_D])
+	}
+	if (keys[SDL_SCANCODE_D]) {
+		inputChangeDetected = true;
 		this->pos += movementSpeed * glm::normalize(glm::cross(this->cameraDirection, worldSpace_up));
+	}
+
+	return inputChangeDetected;
 }
