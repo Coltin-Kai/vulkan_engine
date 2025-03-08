@@ -24,6 +24,7 @@
 #include <deque>
 #include <functional>
 #include <filesystem>
+#include <map>
 
 //Config
 constexpr unsigned int FRAMES_TOTAL = 2;
@@ -69,7 +70,7 @@ private:
 		std::vector<VkImageView> imageViews;
 		VkExtent2D extent;
 	};
-	
+
 	//Big Structure that enxapsulates all data neccesary for one draw. Vertex and Index, UBO, SBO, etc. Maybe Represents the Current Scene
 	struct DrawContext {
 		//Draw Resources
@@ -77,7 +78,7 @@ private:
 		uint32_t drawCount; //How many draws total in the commands buffer
 		AllocatedBuffer vertexPosBuffer; //Global Buffer containing every vertex's position for the draw
 		AllocatedBuffer vertexOtherAttribBuffer; //Global Buffer containing every vertex's other attributes besides position, uvs, vertex_colors.
-		AllocatedBuffer indexBuffer;
+		AllocatedBuffer indexBuffer;		
 
 		//Buffer Ressources
 		AllocatedBuffer primitiveInfosBuffer;
@@ -104,7 +105,7 @@ private:
 		DeletionQueue deletionQueue; //Currently no resources to delete yet...
 	};
 
-	//Used by DeviceDataUpdater primarily
+	//DEBUG - Used for buffer updating stuff
 	enum class DeviceBufferType {
 		IndirectDraw,
 		Vertex,
@@ -115,6 +116,17 @@ private:
 		ModelMatrix,
 		Material,
 		Texture
+	};
+
+	//May combine the device data mapper and tracker to a whole class/struct that manages the relationship between host and device data
+	//DEBUG - Maps host data to respective buffer regions via their id.
+	struct DeviceDataMapper {
+		std::unordered_map<uint32_t,DataRegion> PrimitiveID_to_PrimitivePositionsRegions; //Each region of position data in buffer for each primtive. Mapped to Primitive IDs.
+		std::unordered_map<uint32_t,DataRegion> PrimitiveID_to_PrimitiveAttributesRegions; //Each region of attrib data in buffer for each primitive. Mapped to Primitive IDs.
+		std::unordered_map<uint32_t,DataRegion> PrimitiveID_to_PrimitiveIndicesRegions; //Each region of index data in buffer for each primitive. Mapped to Primitive IDs.
+		//Vectors to keep track of Region order in buffer. Use the containing IDs to access Regions in Maps.
+		std::vector<uint32_t> primitiveVerticeRegions; //Ordered array of the regions of vertex data in the buffer by containing their PrimitiveID
+		std::vector<uint32_t> primitiveIndicesRegions; //Ordered array of the regions of index data in the buffer by containing their PrimitiveiD.
 	};
 
 	//DEBUG - Tracks what device buffers need and when to be updated (Will figure out a better structure to handle this task)
@@ -203,6 +215,7 @@ private:
 	GraphicsDataPayload _payload;
 
 	//Data Update Stuff
+	DeviceDataMapper _deviceDataMapper;
 	DeviceDataUpdateTracker _deviceDataUpdateTracker;
 
 	void draw();
@@ -247,7 +260,7 @@ public:
 
 	AllocatedImage create_image(void* data, VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped = false);
 
-	void copy_to_device_buffer(const AllocatedBuffer& dstBuffer, void* data, size_t dataSize, const VkBufferCopy& vkBufferCopy, uint32_t bufferCopiesCount);
+	void copy_to_device_buffer(const AllocatedBuffer& dstBuffer, void* data, size_t dataSize, const VkBufferCopy* vkBufferCopy, uint32_t bufferCopiesCount);
 
 	void destroy_image(const AllocatedImage& img);
 

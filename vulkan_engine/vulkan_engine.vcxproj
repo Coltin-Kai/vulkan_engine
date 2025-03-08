@@ -20,7 +20,6 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\Camera.cpp" />
-    <ClCompile Include="src\descriptor.cpp" />
     <ClCompile Include="src\engine.cpp" />
     <ClCompile Include="src\imgui.cpp" />
     <ClCompile Include="src\imgui_demo.cpp" />
@@ -40,7 +39,6 @@
   <ItemGroup>
     <ClInclude Include="include\Camera.h" />
     <ClInclude Include="include\checkVkResult.h" />
-    <ClInclude Include="include\descriptor.h" />
     <ClInclude Include="include\engine.h" />
     <ClInclude Include="include\graphic_data_types.h" />
     <ClInclude Include="include\imconfig.h" />

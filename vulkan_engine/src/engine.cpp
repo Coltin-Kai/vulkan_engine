@@ -44,7 +44,7 @@ void Engine::init() {
 	extent.height = 1;
 	extent.depth = 1;
 	AllocatedImage default_image = create_image((void*)&default_data, extent, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT);
-	_payload.images.push_back(std::make_unique<AllocatedImage>(default_image));
+	_payload.images.push_back(default_image);
 
 	VkSampler default_sampler;
 	VkSamplerCreateInfo sampler_info{};
@@ -55,17 +55,17 @@ void Engine::init() {
 	sampler_info.minFilter = VK_FILTER_LINEAR;
 	sampler_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
 	vkCreateSampler(_device, &sampler_info, nullptr, &default_sampler);
-	_payload.samplers.push_back(std::make_unique<VkSampler>(default_sampler));
+	_payload.samplers.push_back(default_sampler);
 
 	Texture default_texture{};
 	default_texture.name = "default";
 	default_texture.image_index = 0;
 	default_texture.sampler_index = 0;
-	_payload.textures.push_back(std::make_unique<Texture>(default_texture));
+	_payload.textures.push_back(std::make_shared<Texture>(default_texture));
 
 	Material default_material{};
 	default_material.name = "default";
-	_payload.materials.push_back(std::make_unique<Material>(default_material));
+	_payload.materials.push_back(std::make_shared<Material>(default_material));
 
 	//-Load File Data
 	loadGLTFFile(_payload, *this, "C:\\Github\\vulkan_engine\\vulkan_engine\\assets\\Sample_Models\\BoomBox\\BoomBox.gltf"); //Exception expected to be thrown since allocated data in payload is not released
@@ -150,7 +150,7 @@ void Engine::run() {
 			glm::mat4 view = _camera.get_view_matrix();
 			size_t viewProjSize = sizeof(glm::mat4);
 			VkBufferCopy copyInfo{ .srcOffset = 0, .dstOffset = 0, .size = viewProjSize };
-			copy_to_device_buffer(get_current_frame().drawContext.viewprojMatrixBuffer, &view, viewProjSize, copyInfo, 1);
+			copy_to_device_buffer(get_current_frame().drawContext.viewprojMatrixBuffer, &view, viewProjSize, &copyInfo, 1);
 		}
 
 		//IMGUI Rendering
@@ -689,7 +689,7 @@ void Engine::setup_descriptor_set() {
 	for (auto& image : _payload.images) {
 		VkDescriptorImageInfo imgInfo{};
 		imgInfo.imageLayout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL;
-		imgInfo.imageView = image->imageView;
+		imgInfo.imageView = image.imageView;
 		sampledImages_imgInfos.push_back(imgInfo);
 	}
 ;
@@ -704,7 +704,7 @@ void Engine::setup_descriptor_set() {
 	std::vector<VkDescriptorImageInfo> sampler_imgInfos;
 	for (auto& sampler : _payload.samplers) {
 		VkDescriptorImageInfo imgInfo{};
-		imgInfo.sampler = *sampler;
+		imgInfo.sampler = sampler;
 		sampler_imgInfos.push_back(imgInfo);
 	}
 
@@ -760,6 +760,17 @@ void Engine::setup_drawContexts() {
 	std::vector<RenderShader::Material> materials;
 	std::vector<RenderShader::Texture> textures;
 
+	//VkBufferCopies to correctly copy data to respective regions in buffer in accordance to their ids
+	VkBufferCopy viewprojMatrix_copy_info{ .srcOffset = 0, .dstOffset = 0, .size = sizeof(glm::mat4) * 2 };
+	VkBufferCopy pos_copy_info;
+	VkBufferCopy attrib_copy_info;
+	VkBufferCopy index_copy_info;
+	std::vector<VkBufferCopy> modelMatrices_copy_infos;
+	std::vector<VkBufferCopy> indirect_copy_infos;
+	std::vector<VkBufferCopy> primInfo_copy_infos;
+	std::vector<VkBufferCopy> material_copy_infos;
+	std::vector<VkBufferCopy> texture_copy_infos;
+
 	//Get Our Data from Host
 	//-Navigate Node Tree for Mesh Nodes and Get Primitive Data
 	//--Add all root nodes in current scene to Sack
@@ -777,16 +788,17 @@ void Engine::setup_drawContexts() {
 			dfs_node_stack.push(child_node);
 		}
 
+		modelMatrices_copy_infos.push_back({ .srcOffset = model_matrices.size() * sizeof(glm::mat4), .dstOffset = currentNode->getID() * sizeof(glm::mat4), .size = sizeof(glm::mat4) });
+		model_matrices.push_back(currentNode->get_WorldTransform());
+
 		//Check if Node represents Mesh
 		if (currentNode->mesh != nullptr) {
 			std::shared_ptr<Mesh>& currentMesh = currentNode->mesh;
 
-			int model_id = model_matrices.size();
-			model_matrices.push_back(currentNode->get_WorldTransform()); //DEBUGGED
-
 			//Iterate through it's primitives and add their data to 
 			for (Mesh::Primitive primitive : currentMesh->primitives) {
 				//Indirect Draw Command
+				indirect_copy_infos.push_back({ .srcOffset = indirect_commands.size() * sizeof(VkDrawIndexedIndirectCommand), .dstOffset = primitive.getID() * sizeof(VkDrawIndexedIndirectCommand), .size = sizeof(VkDrawIndexedIndirectCommand) });
 				VkDrawIndexedIndirectCommand indirect_command{};
 				indirect_command.firstIndex = indices.size();
 				indirect_command.indexCount = primitive.indices.size();
@@ -797,6 +809,30 @@ void Engine::setup_drawContexts() {
 
 				drawCount++;
 
+				//-Construct The Primitive's DataRegions and push them back onto our array of regions.
+				DataRegion last_vertex_region;
+				if (_deviceDataMapper.primitiveVerticeRegions.size() > 0) { //Check if there is a region to designate as the last. If not just set a 0 offset 0 size one.
+					uint32_t last_vertex_region_ID = _deviceDataMapper.primitiveVerticeRegions.back();
+					last_vertex_region = _deviceDataMapper.PrimitiveID_to_PrimitivePositionsRegions[last_vertex_region_ID];
+				}
+				else
+					last_vertex_region = { .offset = 0, .size = 0 };
+
+				_deviceDataMapper.PrimitiveID_to_PrimitivePositionsRegions[primitive.getID()] = { .offset = last_vertex_region.offset + last_vertex_region.size, .size = sizeof(glm::vec3) * primitive.vertices.size() };
+				_deviceDataMapper.PrimitiveID_to_PrimitiveAttributesRegions[primitive.getID()] = { .offset = last_vertex_region.offset + last_vertex_region.size, .size = sizeof(RenderShader::VertexAttributes) * primitive.vertices.size() };
+				_deviceDataMapper.primitiveVerticeRegions.push_back(primitive.getID());
+				
+				DataRegion last_index_region;
+				if (_deviceDataMapper.primitiveIndicesRegions.size() > 0) { //Check if there is a region to designate as the last. If not just set a 0 offset 0 size one.
+					uint32_t last_index_region_ID = _deviceDataMapper.primitiveIndicesRegions.back();
+					last_index_region = _deviceDataMapper.PrimitiveID_to_PrimitiveIndicesRegions[last_index_region_ID];
+				}
+				else
+					last_index_region = { .offset = 0, .size = 0 };
+
+				_deviceDataMapper.PrimitiveID_to_PrimitiveIndicesRegions[primitive.getID()] = { .offset = last_index_region.offset + last_index_region.size, .size = sizeof(uint32_t) * primitive.indices.size() };
+				_deviceDataMapper.primitiveIndicesRegions.push_back(primitive.getID());
+				
 				//Vertex's Position and other Vertex Attributes
 				for (Mesh::Primitive::Vertex vertex : primitive.vertices) {
 					RenderShader::VertexAttributes attribute;
@@ -819,18 +855,29 @@ void Engine::setup_drawContexts() {
 				indices.insert(indices.end(), primitive.indices.begin(), primitive.indices.end());
 
 				//PrimitiveInfo
+				primInfo_copy_infos.push_back({ .srcOffset = primitiveInfos.size() * sizeof(RenderShader::PrimitiveInfo), .dstOffset = primitive.getID() * sizeof(RenderShader::PrimitiveInfo), .size = sizeof(RenderShader::PrimitiveInfo) });
 				RenderShader::PrimitiveInfo prmInfo{};
-				prmInfo.mat_id = primitive.material_id;
-				prmInfo.model_matrix_id = model_id;
+				if (primitive.material.expired() != true)
+					prmInfo.mat_id = primitive.material.lock()->getID();
+				else
+					prmInfo.mat_id = 0;
+				prmInfo.model_matrix_id = currentNode->getID();
 				primitiveInfos.push_back(prmInfo);
 			}
 		}
 	}
+	pos_copy_info = { .srcOffset = 0, .dstOffset = 0, .size = sizeof(glm::vec3) * positions.size() };
+	attrib_copy_info = { .srcOffset = 0, .dstOffset = 0, .size = sizeof(RenderShader::VertexAttributes) * attributes.size() };
+	index_copy_info = { .srcOffset = 0, .dstOffset = 0, .size = sizeof(uint32_t) * indices.size() };
 
 	//-Get Materials
-	for (std::unique_ptr<Material>& material : _payload.materials) {
+	for (std::shared_ptr<Material>& material : _payload.materials) {
+		material_copy_infos.push_back({ .srcOffset = materials.size() * sizeof(RenderShader::Material), .dstOffset = material->getID() * sizeof(RenderShader::Material), .size = sizeof(RenderShader::Material) });
 		RenderShader::Material mat{};
-		mat.baseColor_texture_id = material->baseColor_texture_id;
+		if (material->baseColor_texture.expired() != true)
+			mat.baseColor_texture_id = material->baseColor_texture.lock()->getID();
+		else
+			mat.baseColor_texture_id = 0;
 		mat.baseColor_texCoord_id = material->baseColor_coord_index;
 		mat.baseColor_factor = material->baseColor_Factor;
 		materials.push_back(mat);
@@ -838,6 +885,7 @@ void Engine::setup_drawContexts() {
 
 	//-Get Textures
 	for (auto& texture : _payload.textures) {
+		texture_copy_infos.push_back({ .srcOffset = textures.size() * sizeof(RenderShader::Texture), .dstOffset = texture->getID() * sizeof(RenderShader::Texture), .size = sizeof(RenderShader::Texture) });
 		RenderShader::Texture tex{};
 		tex.textureImage_id = texture->image_index;
 		tex.sampler_id = texture->sampler_index;
@@ -883,25 +931,15 @@ void Engine::setup_drawContexts() {
 		currentDrawContext.texturesBufferAddress = vkGetBufferDeviceAddress(_device, &address_info);
 
 		//Copy Data to the Buffers
-		VkBufferCopy indirect_copy_info{ .srcOffset = 0, .dstOffset = 0, .size = alloc_indirect_size };
-		VkBufferCopy pos_copy_info{ .srcOffset = 0, .dstOffset = 0, .size = alloc_vertPos_size };
-		VkBufferCopy attrib_copy_info{ .srcOffset = 0, .dstOffset = 0, .size = alloc_vertAttrib_size };
-		VkBufferCopy index_copy_info{ .srcOffset = 0, .dstOffset = 0, .size = alloc_index_size };
-		VkBufferCopy viewprojMatrix_copy_info{ .srcOffset = 0, .dstOffset = 0, .size = alloc_viewprojMatrix_size };
-		VkBufferCopy modelMatrices_copy_info{ .srcOffset = 0, .dstOffset = 0, .size = alloc_modelMatrices_size };
-		VkBufferCopy primInfo_copy_info{ .srcOffset = 0, .dstOffset = 0, .size = alloc_primInfo_size };
-		VkBufferCopy material_copy_info{ .srcOffset = 0, .dstOffset = 0, .size = alloc_materials_size };
-		VkBufferCopy texture_copy_info{ .srcOffset = 0, .dstOffset = 0, .size = alloc_textures_size };
-
-		copy_to_device_buffer(currentDrawContext.indirectDrawCommandsBuffer, indirect_commands.data(), alloc_indirect_size, indirect_copy_info, 1);
-		copy_to_device_buffer(currentDrawContext.vertexPosBuffer, positions.data(), alloc_vertPos_size, pos_copy_info, 1);
-		copy_to_device_buffer(currentDrawContext.vertexOtherAttribBuffer, attributes.data(), alloc_vertAttrib_size, attrib_copy_info, 1);
-		copy_to_device_buffer(currentDrawContext.indexBuffer, indices.data(), alloc_index_size, index_copy_info, 1);
-		copy_to_device_buffer(currentDrawContext.viewprojMatrixBuffer, &viewproj, alloc_viewprojMatrix_size, viewprojMatrix_copy_info, 1);
-		copy_to_device_buffer(currentDrawContext.modelMatricesBuffer, model_matrices.data(), alloc_modelMatrices_size, modelMatrices_copy_info, 1);
-		copy_to_device_buffer(currentDrawContext.primitiveInfosBuffer, primitiveInfos.data(), alloc_primInfo_size, primInfo_copy_info, 1);
-		copy_to_device_buffer(currentDrawContext.materialsBuffer, materials.data(), alloc_materials_size, material_copy_info, 1);
-		copy_to_device_buffer(currentDrawContext.texturesBuffer, textures.data(), alloc_textures_size, texture_copy_info, 1);
+		copy_to_device_buffer(currentDrawContext.indirectDrawCommandsBuffer, indirect_commands.data(), alloc_indirect_size, indirect_copy_infos.data(), indirect_copy_infos.size());
+		copy_to_device_buffer(currentDrawContext.vertexPosBuffer, positions.data(), alloc_vertPos_size, &pos_copy_info, 1);
+		copy_to_device_buffer(currentDrawContext.vertexOtherAttribBuffer, attributes.data(), alloc_vertAttrib_size, &attrib_copy_info, 1);
+		copy_to_device_buffer(currentDrawContext.indexBuffer, indices.data(), alloc_index_size, &index_copy_info, 1);
+		copy_to_device_buffer(currentDrawContext.viewprojMatrixBuffer, &viewproj, alloc_viewprojMatrix_size, &viewprojMatrix_copy_info, 1);
+		copy_to_device_buffer(currentDrawContext.modelMatricesBuffer, model_matrices.data(), alloc_modelMatrices_size, modelMatrices_copy_infos.data(), modelMatrices_copy_infos.size());
+		copy_to_device_buffer(currentDrawContext.primitiveInfosBuffer, primitiveInfos.data(), alloc_primInfo_size, primInfo_copy_infos.data(), primInfo_copy_infos.size());
+		copy_to_device_buffer(currentDrawContext.materialsBuffer, materials.data(), alloc_materials_size, material_copy_infos.data(), material_copy_infos.size());
+		copy_to_device_buffer(currentDrawContext.texturesBuffer, textures.data(), alloc_textures_size, texture_copy_infos.data(), texture_copy_infos.size());
 
 		//Put Buffers in Deletion Queueu
 		_mainDeletionQueue.push_function([=, this]() {
@@ -1101,12 +1139,12 @@ void Engine::destroy_image(const AllocatedImage& img) {
 	vmaDestroyImage(_allocator, img.image, img.allocation);
 }
 
-void Engine::copy_to_device_buffer(const AllocatedBuffer& dstBuffer, void* data, size_t dataSize, const VkBufferCopy& vkBufferCopy, uint32_t bufferCopiesCount) {
+void Engine::copy_to_device_buffer(const AllocatedBuffer& dstBuffer, void* data, size_t dataSize, const VkBufferCopy* vkBufferCopy, uint32_t bufferCopiesCount) {
 	AllocatedBuffer stagingBuffer = create_buffer(dataSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_HOST);
 	memcpy(stagingBuffer.info.pMappedData, data, dataSize);
 
 	immediate_command_submit([&](VkCommandBuffer cmd) {
-		vkCmdCopyBuffer(cmd, stagingBuffer.buffer, dstBuffer.buffer, bufferCopiesCount, &vkBufferCopy);
+		vkCmdCopyBuffer(cmd, stagingBuffer.buffer, dstBuffer.buffer, bufferCopiesCount, vkBufferCopy);
 		});
 
 	destroy_buffer(stagingBuffer);

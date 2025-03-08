@@ -33,11 +33,11 @@ void loadGLTFFile(GraphicsDataPayload& dataPayload, Engine& engine, std::filesys
 	size_t material_index_offset = dataPayload.materials.size();
 
 	//Load Texture Samplers
-	std::vector<std::unique_ptr<VkSampler>> temp_samplers; //Temp vectors used to correctly point other elements members according to index from GLTF file.
+	std::vector<VkSampler> temp_samplers; //Temp vectors used to correctly point other element's members according to index from GLTF file.
 	temp_samplers.reserve(asset.samplers.size());
 
 	for (fastgltf::Sampler& sampler : asset.samplers) {
-		temp_samplers.push_back(std::make_unique<VkSampler>());
+		temp_samplers.emplace_back();
 
 		VkSamplerCreateInfo samplerInfo{};
 		samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
@@ -48,20 +48,20 @@ void loadGLTFFile(GraphicsDataPayload& dataPayload, Engine& engine, std::filesys
 		samplerInfo.minFilter = extract_filter(sampler.minFilter.value_or(fastgltf::Filter::Nearest));
 		samplerInfo.mipmapMode = extract_mipmap_mode(sampler.minFilter.value_or(fastgltf::Filter::Nearest));
 		
-		vkCreateSampler(engine._device, &samplerInfo, nullptr, temp_samplers[temp_samplers.size() - 1].get());
+		vkCreateSampler(engine._device, &samplerInfo, nullptr, &temp_samplers[temp_samplers.size() - 1]);
 	}
 
-	dataPayload.samplers.insert(dataPayload.samplers.end(), std::make_move_iterator(temp_samplers.begin()), std::make_move_iterator(temp_samplers.end())); //Add Sampelrs to Payload
+	dataPayload.samplers.insert(dataPayload.samplers.end(), temp_samplers.begin(), temp_samplers.end()); //Add Sampelrs to Payload
 
 	//Load Images
-	std::vector<std::unique_ptr<AllocatedImage>> temp_images;
+	std::vector<AllocatedImage> temp_images;
 	temp_images.reserve(asset.images.size());
 
 	for (fastgltf::Image& image : asset.images) {
 		std::optional<AllocatedImage> img = load_image(engine, asset, image);
 
 		if (img.has_value()) {
-			temp_images.push_back(std::make_unique<AllocatedImage>(img.value()));
+			temp_images.push_back(img.value());
 		}
 		else {
 			//Failed to Load Image, Store Error
@@ -69,14 +69,14 @@ void loadGLTFFile(GraphicsDataPayload& dataPayload, Engine& engine, std::filesys
 		}
 	}
 
-	dataPayload.images.insert(dataPayload.images.end(), std::make_move_iterator(temp_images.begin()), std::make_move_iterator(temp_images.end())); //Add Images to Payload
+	dataPayload.images.insert(dataPayload.images.end(), temp_images.begin(), temp_images.end()); //Add Images to Payload
 
 	//Load Textures
-	std::vector<std::unique_ptr<Texture>> temp_textures;
+	std::vector<std::shared_ptr<Texture>> temp_textures;
 	temp_textures.reserve(asset.textures.size());
 
 	for (fastgltf::Texture& texture : asset.textures) {
-		temp_textures.push_back(std::make_unique<Texture>());
+		temp_textures.push_back(std::make_shared<Texture>());
 		int i = temp_textures.size() - 1;
 
 		temp_textures[i]->name = texture.name;
@@ -86,32 +86,32 @@ void loadGLTFFile(GraphicsDataPayload& dataPayload, Engine& engine, std::filesys
 			temp_textures[i]->sampler_index = texture.samplerIndex.value() + samplers_index_offset;
 	}
 
-	dataPayload.textures.insert(dataPayload.textures.end(), std::make_move_iterator(temp_textures.begin()), std::make_move_iterator(temp_textures.end())); //Add Textures to Payload
+	dataPayload.textures.insert(dataPayload.textures.end(), temp_textures.begin(), temp_textures.end()); //Add Textures to Payload
 
 	//Load Materials
-	std::vector<std::unique_ptr<Material>> temp_materials;
+	std::vector<std::shared_ptr<Material>> temp_materials;
 	temp_materials.reserve(asset.materials.size());
 
 	for (fastgltf::Material& mat : asset.materials) {
-		temp_materials.push_back(std::make_unique<Material>());
+		temp_materials.push_back(std::make_shared<Material>());
 		int i = temp_materials.size() - 1;
 
 		temp_materials[i]->name = mat.name;
 		
 		if (mat.normalTexture.has_value()) {
-			temp_materials[i]->normal_texture_id = mat.normalTexture.value().textureIndex + texture_index_offset;
+			temp_materials[i]->normal_texture = temp_textures[mat.normalTexture.value().textureIndex];
 			temp_materials[i]->normal_coord_index = mat.normalTexture.value().texCoordIndex;
 			temp_materials[i]->normal_scale = mat.normalTexture.value().scale;
 		}
 
 		if (mat.occlusionTexture.has_value()) {
-			temp_materials[i]->occlusiong_texture_id = mat.occlusionTexture.value().textureIndex + texture_index_offset;
+			temp_materials[i]->occlusion_texture = temp_textures[mat.occlusionTexture.value().textureIndex];
 			temp_materials[i]->occlusion_coord_index = mat.occlusionTexture.value().texCoordIndex;
 			temp_materials[i]->occlusion_strength = mat.occlusionTexture.value().strength;
 		}
 
 		if (mat.emissiveTexture.has_value()) {
-			temp_materials[i]->emission_texture_id = mat.emissiveTexture.value().textureIndex + texture_index_offset;
+			temp_materials[i]->emission_texture = temp_textures[mat.emissiveTexture.value().textureIndex];
 			temp_materials[i]->emission_coord_index = mat.emissiveTexture.value().texCoordIndex;
 		}
 		temp_materials[i]->emission_Factor.x = mat.emissiveFactor.x();
@@ -119,7 +119,7 @@ void loadGLTFFile(GraphicsDataPayload& dataPayload, Engine& engine, std::filesys
 		temp_materials[i]->emission_Factor.z = mat.emissiveFactor.z();
 
 		if (mat.pbrData.baseColorTexture.has_value()) {
-			temp_materials[i]->baseColor_texture_id = mat.pbrData.baseColorTexture.value().textureIndex + texture_index_offset;
+			temp_materials[i]->baseColor_texture = temp_textures[mat.pbrData.baseColorTexture.value().textureIndex];
 			temp_materials[i]->baseColor_coord_index = mat.pbrData.baseColorTexture.value().texCoordIndex;
 		}
 		temp_materials[i]->baseColor_Factor.x = mat.pbrData.baseColorFactor.x();
@@ -128,14 +128,14 @@ void loadGLTFFile(GraphicsDataPayload& dataPayload, Engine& engine, std::filesys
 		temp_materials[i]->baseColor_Factor.w = mat.pbrData.baseColorFactor.w();
 
 		if (mat.pbrData.metallicRoughnessTexture.has_value()) {
-			temp_materials[i]->metal_rough_texture_id = mat.pbrData.metallicRoughnessTexture.value().textureIndex + texture_index_offset;
+			temp_materials[i]->metal_rough_texture = temp_textures[mat.pbrData.metallicRoughnessTexture.value().textureIndex];
 			temp_materials[i]->metal_rough_coord_index = mat.pbrData.metallicRoughnessTexture.value().texCoordIndex;
 		}
 		temp_materials[i]->metallic_Factor = mat.pbrData.metallicFactor;
 		temp_materials[i]->roughness_Factor = mat.pbrData.roughnessFactor;
 	}
 
-	dataPayload.materials.insert(dataPayload.materials.end(), std::make_move_iterator(temp_materials.begin()), std::make_move_iterator(temp_materials.end()));
+	dataPayload.materials.insert(dataPayload.materials.end(), temp_materials.begin(), temp_materials.end());
 
 	//Load Mesh Data
 	std::vector<std::shared_ptr<Mesh>> temp_meshes;
@@ -157,7 +157,7 @@ void loadGLTFFile(GraphicsDataPayload& dataPayload, Engine& engine, std::filesys
 
 			//Material
 			if (p.materialIndex.has_value())
-				current_primitive.material_id = p.materialIndex.value() + material_index_offset;
+				current_primitive.material = temp_materials[p.materialIndex.value()];
 
 			//Indices
 			if (p.indicesAccessor.has_value()) {
@@ -262,7 +262,6 @@ void loadGLTFFile(GraphicsDataPayload& dataPayload, Engine& engine, std::filesys
 			DFS_node_index_stack.pop();
 
 			//Consruct Node and Fill in member data
-
 			std::shared_ptr<Node> node = std::make_shared<Node>();
 
 			node->name = asset.nodes[node_index].name;

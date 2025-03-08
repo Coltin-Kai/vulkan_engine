@@ -23,22 +23,23 @@ struct Texture;
 struct GraphicsDataPayload{
 	Scene* current_scene = nullptr; //The scene to load
 	std::vector<Scene> scenes{};
-	//Default Data resides in index 0 for all these resources
-	std::vector<std::unique_ptr<VkSampler>> samplers{}; //Global Samplers. 
-	std::vector<std::unique_ptr<AllocatedImage>> images{}; //Global Images accessible by Textures
-	std::vector<std::unique_ptr<Texture>> textures{}; //Global Textures
-	std::vector<std::unique_ptr<Material>> materials{}; //Global Materials
+	//Default Data resides in index 0 for all these resources.
+	//Note order and location should be preserved for images and samplers as maps directly to GPU memory and textures use location index to point to respective one.
+	std::vector<VkSampler> samplers{}; //Global Samplers. 
+	std::vector<AllocatedImage> images{}; //Global Images accessible by Textures
+	std::vector<std::shared_ptr<Texture>> textures{}; //Global Textures
+	std::vector<std::shared_ptr<Material>> materials{}; //Global Materials
 
 	//Clean up any vulkan resources that require manual deltion/cleanup
 	void cleanup(const VkDevice& device, const VmaAllocator& allocator) {
-		for (std::unique_ptr<VkSampler>& sampler : samplers) {
-			vkDestroySampler(device, *sampler, nullptr);
+		for (VkSampler& sampler : samplers) {
+			vkDestroySampler(device, sampler, nullptr);
 		}
 		samplers.clear();
 
-		for (std::unique_ptr<AllocatedImage>& image : images) {
-			vkDestroyImageView(device, image->imageView, nullptr);
-			vmaDestroyImage(allocator, image->image, image->allocation);
+		for (AllocatedImage& image : images) {
+			vkDestroyImageView(device, image.imageView, nullptr);
+			vmaDestroyImage(allocator, image.image, image.allocation);
 		}
 		images.clear();
 
@@ -57,10 +58,19 @@ struct Scene {
 */
 struct Node {
 	std::string name;
+
 	std::weak_ptr<Node> parent_node;
 	std::vector<std::shared_ptr<Node>> child_nodes{};
 
 	std::shared_ptr<Mesh> mesh;
+
+	Node() : id(available_id++) {
+
+	}
+
+	uint32_t getID() {
+		return id;
+	}
 
 	//Updates the Local Transform as well as its World Transform based on parent
 	void updateLocalTransform(const glm::mat4& newTransform) {
@@ -82,6 +92,8 @@ struct Node {
 		return world_transform;
 	}
 private:
+	inline static uint32_t available_id = 0;
+	uint32_t id;
 	glm::mat4 local_transform; //Local relative to its parent Node
 	glm::mat4 world_transform; //Local_Transform * Parent's World Transform. If Root Node, Local_Transform * Identity_Matrix. Should be updated when local_transform us updated.
 
@@ -107,7 +119,19 @@ struct Mesh {
 		VkPrimitiveTopology topology;
 		std::vector<Vertex> vertices{};
 		std::vector<uint32_t> indices{};
-		int material_id = 0;
+		std::weak_ptr<Material> material;
+
+		Primitive() : id(available_id++) {
+
+		}
+
+		uint32_t getID() {
+			return id;
+		}
+
+	private:
+		inline static uint32_t available_id = 0;
+		uint32_t id;
 	};
 
 	std::string name;
@@ -117,38 +141,55 @@ struct Mesh {
 struct Material {
 	std::string name;
 
-	//std::shared_ptr<Texture> normal_Texture;
-	int normal_texture_id = 0;
+	Material() : id(available_id++) {
+
+	}
+
+	uint32_t getID() {
+		return id;
+	}
+
+	std::weak_ptr<Texture> normal_texture;
 	int normal_coord_index = -1; //Index of the specific Texture Coord in the Mesh
 	float normal_scale = 0.0f;
 
-	//std::shared_ptr<Texture> occlusion_Texture;
-	int occlusiong_texture_id = 0;
+	std::weak_ptr<Texture> occlusion_texture;
 	int occlusion_coord_index = -1;
 	float occlusion_strength = 0.0f;
 
-	//std::shared_ptr<Texture> emission_Texture;
-	int emission_texture_id = 0;
+	std::weak_ptr<Texture> emission_texture;
 	int emission_coord_index = -1;
 	glm::vec3 emission_Factor = glm::vec3(0.0f, 0.0f, 0.0f);
 
 	//PBR Variables
-	//std::shared_ptr<Texture> baseColor_Texture;
-	int baseColor_texture_id = 0;
+	std::weak_ptr<Texture> baseColor_texture;
 	int baseColor_coord_index = -1;
 	glm::vec4 baseColor_Factor = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
 
-	//std::shared_ptr<Texture> metal_rough_Texture;
-	int metal_rough_texture_id = 0;
+	std::weak_ptr<Texture> metal_rough_texture;
 	int metal_rough_coord_index = -1;
 	float metallic_Factor = 0.0f;
 	float roughness_Factor = 0.0f;
+
+private:
+	inline static uint32_t available_id = 0;
+	uint32_t id;
 };
 
 struct Texture {
+	Texture() : id(available_id++) {
+
+	}
+
+	uint32_t getID() {
+		return id;
+	}
+
 	std::string name;
-	//std::shared_ptr<AllocatedImage> image; remove
 	int image_index = 0;
-	//std::shared_ptr<VkSampler> sampler;
 	int sampler_index = 0;
+
+private:
+	inline static uint32_t available_id = 0;
+	uint32_t id;
 };
