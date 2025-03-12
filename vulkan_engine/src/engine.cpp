@@ -35,38 +35,8 @@ void Engine::init() {
 	init_commands();
 	init_sync_structures();
 	setup_depthImage();
-
+	setup_default_data();
 	//LAZY CODE STUFF
-	//-Load Default Data
-	uint32_t default_data = glm::packUnorm4x8(glm::vec4(1, 1, 1, 1));
-	VkExtent3D extent{};
-	extent.width = 1;
-	extent.height = 1;
-	extent.depth = 1;
-	AllocatedImage default_image = create_image((void*)&default_data, extent, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT);
-	_payload.images.push_back(default_image);
-
-	VkSampler default_sampler;
-	VkSamplerCreateInfo sampler_info{};
-	sampler_info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-	sampler_info.maxLod = VK_LOD_CLAMP_NONE;
-	sampler_info.minLod = 0;
-	sampler_info.magFilter = VK_FILTER_LINEAR;
-	sampler_info.minFilter = VK_FILTER_LINEAR;
-	sampler_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-	vkCreateSampler(_device, &sampler_info, nullptr, &default_sampler);
-	_payload.samplers.push_back(default_sampler);
-
-	Texture default_texture{};
-	default_texture.name = "default";
-	default_texture.image_index = 0;
-	default_texture.sampler_index = 0;
-	_payload.textures.push_back(std::make_shared<Texture>(default_texture));
-
-	Material default_material{};
-	default_material.name = "default";
-	_payload.materials.push_back(std::make_shared<Material>(default_material));
-
 	//-Load File Data
 	loadGLTFFile(_payload, *this, "C:\\Github\\vulkan_engine\\vulkan_engine\\assets\\Sample_Models\\BoomBox\\BoomBox.gltf"); //Exception expected to be thrown since allocated data in payload is not released
 	_mainDeletionQueue.push_function([&]() {
@@ -86,7 +56,6 @@ void Engine::init() {
 	_deviceDataUpdateTracker.add_deviceBufferType(DeviceBufferType::ModelMatrix);
 	_deviceDataUpdateTracker.add_deviceBufferType(DeviceBufferType::Material);
 	_deviceDataUpdateTracker.add_deviceBufferType(DeviceBufferType::Texture);
-	//----
 
 	setup_drawContexts();
 	setup_vertex_input();
@@ -742,6 +711,37 @@ void Engine::setup_depthImage() {
 	_mainDeletionQueue.push_function([=, this]() {
 		destroy_image(_depthImage);
 		});
+}
+
+void Engine::setup_default_data() {
+	uint32_t default_data = glm::packUnorm4x8(glm::vec4(1, 1, 1, 1));
+	VkExtent3D extent{};
+	extent.width = 1;
+	extent.height = 1;
+	extent.depth = 1;
+	AllocatedImage default_image = create_image((void*)&default_data, extent, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT);
+	_payload.images.push_back(default_image);
+
+	VkSampler default_sampler;
+	VkSamplerCreateInfo sampler_info{};
+	sampler_info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+	sampler_info.maxLod = VK_LOD_CLAMP_NONE;
+	sampler_info.minLod = 0;
+	sampler_info.magFilter = VK_FILTER_LINEAR;
+	sampler_info.minFilter = VK_FILTER_LINEAR;
+	sampler_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+	vkCreateSampler(_device, &sampler_info, nullptr, &default_sampler);
+	_payload.samplers.push_back(default_sampler);
+
+	Texture default_texture{};
+	default_texture.name = "default";
+	default_texture.image_index = 0;
+	default_texture.sampler_index = 0;
+	_payload.textures.push_back(std::make_shared<Texture>(default_texture));
+
+	Material default_material{};
+	default_material.name = "default";
+	_payload.materials.push_back(std::make_shared<Material>(default_material));
 }
 
 void Engine::setup_drawContexts() {

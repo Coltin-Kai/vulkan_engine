@@ -155,6 +155,10 @@ private:
 		}
 	};
 
+	//Combines above two structures ^
+	struct DeviceDataManager {
+	};
+
 	bool stop_rendering = false;
 
 	//SDL Window
@@ -238,6 +242,8 @@ private:
 
 	void setup_depthImage();
 
+	void setup_default_data();
+
 	void setup_drawContexts();
 
 	void setup_vertex_input(); //Set up layout of vertex input
@@ -264,7 +270,7 @@ public:
 
 	void destroy_image(const AllocatedImage& img);
 
-	//Friends
+	//Friends - Code Smell
 	friend void loadGLTFFile(GraphicsDataPayload&, Engine&, std::filesystem::path);
 	friend std::optional<AllocatedImage> load_image(Engine&, fastgltf::Asset&, fastgltf::Image&);
 };
