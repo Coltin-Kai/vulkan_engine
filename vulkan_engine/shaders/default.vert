@@ -22,8 +22,12 @@ struct Texture {
 	int sampler_id;
 };
 
+layout(scalar, buffer_reference, buffer_reference_align = 4) buffer PrimitiveIdsBuffer { 
+	int prim_ids[]; //Index with glDrawID
+};
+
 layout(scalar, buffer_reference, buffer_reference_align = 4) buffer PrimitiveInfosBuffer { //Unsure what buffer_reference_align should be
-	PrimitiveInfo primitiveInfos[]; //Index with gl_DrawID
+	PrimitiveInfo primitiveInfos[]; //Index with prim_id
 };
 
 layout(scalar, buffer_reference, buffer_reference_align = 4) buffer ViewProjMatrixBuffer {
@@ -44,6 +48,7 @@ layout(scalar, buffer_reference, buffer_reference_align = 4) buffer TexturesBuff
 };
 
 layout(push_constant) uniform PushConstants {
+	PrimitiveIdsBuffer primIdBuffer;
 	PrimitiveInfosBuffer primInfoBuffer;
 	ViewProjMatrixBuffer viewprojBuffer;
 	ModelMatricesBuffer modelsBuffer;
@@ -61,13 +66,14 @@ layout(location = 2) in vec4 tangent;
 layout(location = 3) in vec3 color; //COLOR_0
 layout(location = 4) in vec2 uv; //TEXCOORD_0
 
-layout(location = 0) out int outDrawID; //Passing drawID to fragShader
+layout(location = 0) out int outPrimID; //Passing drawID to fragShader
 layout(location = 1) out vec3 outColor;
 layout(location = 2) out vec2 outUV;
 
 void main() {
-	PrimitiveInfo primitive = primInfoBuffer.primitiveInfos[gl_DrawID];
-	outDrawID = gl_DrawID;
+	int primID = primIdBuffer.prim_ids[gl_DrawID];
+	PrimitiveInfo primitive = primInfoBuffer.primitiveInfos[primID];
+	outPrimID = primID;
 	outColor = color;
 	outUV = uv;
 	gl_Position = viewprojBuffer.proj * viewprojBuffer.view * modelsBuffer.model[primitive.model_matrix_id] * vec4(inPosition, 1.0f);

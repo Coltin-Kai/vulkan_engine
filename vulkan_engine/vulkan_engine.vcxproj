@@ -30,6 +30,7 @@
     <ClCompile Include="src\imgui_widgets.cpp" />
     <ClCompile Include="src\loader.cpp" />
     <ClCompile Include="src\main.cpp" />
+    <ClCompile Include="src\myDevice.cpp" />
     <ClCompile Include="src\pipeline.cpp" />
     <ClCompile Include="src\stbImage.cpp" />
     <ClCompile Include="src\VkBootstrap.cpp" />
@@ -50,6 +51,7 @@
     <ClInclude Include="include\imstb_textedit.h" />
     <ClInclude Include="include\imstb_truetype.h" />
     <ClInclude Include="include\loader.h" />
+    <ClInclude Include="include\myDevice.h" />
     <ClInclude Include="include\pipeline.h" />
     <ClInclude Include="include\shader_types.h" />
     <ClInclude Include="include\VkBootstrap.h" />

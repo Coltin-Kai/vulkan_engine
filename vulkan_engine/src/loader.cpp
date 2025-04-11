@@ -9,9 +9,7 @@
 #include <iostream>
 #include <stack>
 
-#include "engine.h" //Potential Circular Dependency Risk
-
-void loadGLTFFile(GraphicsDataPayload& dataPayload, Engine& engine, std::filesystem::path filePath) { //WIP, want to make it so that it properly add to existing data payload to allow loading multiple scenes.
+void loadGLTFFile(MyDevice& device, GraphicsDataPayload& dataPayload, std::filesystem::path filePath) { //WIP, want to make it so that it properly add to existing data payload to allow loading multiple scenes.
 	//Parser and GLTF LOading Code
 	fastgltf::Parser parser;
 
@@ -48,7 +46,7 @@ void loadGLTFFile(GraphicsDataPayload& dataPayload, Engine& engine, std::filesys
 		samplerInfo.minFilter = extract_filter(sampler.minFilter.value_or(fastgltf::Filter::Nearest));
 		samplerInfo.mipmapMode = extract_mipmap_mode(sampler.minFilter.value_or(fastgltf::Filter::Nearest));
 		
-		vkCreateSampler(engine._device, &samplerInfo, nullptr, &temp_samplers[temp_samplers.size() - 1]);
+		temp_samplers[temp_samplers.size() - 1] = device.create_sampler(samplerInfo);
 	}
 
 	dataPayload.samplers.insert(dataPayload.samplers.end(), temp_samplers.begin(), temp_samplers.end()); //Add Sampelrs to Payload
@@ -58,7 +56,7 @@ void loadGLTFFile(GraphicsDataPayload& dataPayload, Engine& engine, std::filesys
 	temp_images.reserve(asset.images.size());
 
 	for (fastgltf::Image& image : asset.images) {
-		std::optional<AllocatedImage> img = load_image(engine, asset, image);
+		std::optional<AllocatedImage> img = load_image(device, asset, image);
 
 		if (img.has_value()) {
 			temp_images.push_back(img.value());
@@ -350,10 +348,16 @@ glm::mat4 translate_to_glm_mat4(fastgltf::math::fmat4x4 gltf_mat4) {
 	return result_transform;
 }
 
-std::optional<AllocatedImage> load_image(Engine& engine, fastgltf::Asset& asset, fastgltf::Image& image) {
+std::optional<AllocatedImage> load_image(MyDevice& device, fastgltf::Asset& asset, fastgltf::Image& image) {
 	AllocatedImage newImage{};
 	int width, height, nrChannels;
 	
+	const char* name;
+	if (!image.name.empty())
+		name = image.name.c_str();
+	else
+		name = "null_name";
+
 	std::visit(fastgltf::visitor{
 		[](auto& arg) {
 			std::cout << "A load_images function encountered an unaccounted for DataSource type from its std::visit function." << std::endl;
@@ -370,9 +374,9 @@ std::optional<AllocatedImage> load_image(Engine& engine, fastgltf::Asset& asset,
 				imageSize.width = width;
 				imageSize.height = height;
 				imageSize.depth = 1;
+				newImage = device.create_image(name, imageSize, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, false);
+				device.update_image(newImage, data, imageSize);
 
-				newImage = engine.create_image(data, imageSize, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT, false);
-				
 				stbi_image_free(data);
 			}
 		},
@@ -385,7 +389,8 @@ std::optional<AllocatedImage> load_image(Engine& engine, fastgltf::Asset& asset,
 				imageSize.height = height;
 				imageSize.depth = 1;
 
-				newImage = engine.create_image(data, imageSize, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT, false);
+				newImage = device.create_image(name, imageSize, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, false);
+				device.update_image(newImage, data, imageSize);
 
 				stbi_image_free(data);
 			}
@@ -399,8 +404,9 @@ std::optional<AllocatedImage> load_image(Engine& engine, fastgltf::Asset& asset,
 				imageSize.height = height;
 				imageSize.depth = 1;
 
-				newImage = engine.create_image(data, imageSize, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT, false);
-				
+				newImage = device.create_image(name, imageSize, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, false);
+				device.update_image(newImage, data, imageSize);
+
 				stbi_image_free(data);
 			}
 		},
@@ -419,8 +425,9 @@ std::optional<AllocatedImage> load_image(Engine& engine, fastgltf::Asset& asset,
 						imageSize.height = height;
 						imageSize.depth = 1;
 
-						newImage = engine.create_image(data, imageSize, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT, false);
-						
+						newImage = device.create_image(name, imageSize, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, false);
+						device.update_image(newImage, data, imageSize);
+
 						stbi_image_free(data);
 					}
 				}

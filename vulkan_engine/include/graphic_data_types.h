@@ -30,21 +30,7 @@ struct GraphicsDataPayload{
 	std::vector<std::shared_ptr<Texture>> textures{}; //Global Textures
 	std::vector<std::shared_ptr<Material>> materials{}; //Global Materials
 
-	//Clean up any vulkan resources that require manual deltion/cleanup
-	void cleanup(const VkDevice& device, const VmaAllocator& allocator) {
-		for (VkSampler& sampler : samplers) {
-			vkDestroySampler(device, sampler, nullptr);
-		}
-		samplers.clear();
-
-		for (AllocatedImage& image : images) {
-			vkDestroyImageView(device, image.imageView, nullptr);
-			vmaDestroyImage(allocator, image.image, image.allocation);
-		}
-		images.clear();
-
-		//STill in Development
-	}
+	glm::mat4 camera_transform;
 };
 
 struct Scene {

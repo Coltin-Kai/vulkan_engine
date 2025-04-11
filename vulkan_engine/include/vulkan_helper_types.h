@@ -8,10 +8,15 @@ struct AllocatedImage {
 	VkImage image;
 	VkImageView imageView;
 	VmaAllocation allocation;
+	VmaAllocationInfo info;
 	VkExtent3D extent;
 	VkFormat format;
+};
 
-	//void destroy(const VkDevice& device, const VmaAllocator& allocator) {} Unsure if should move deletion operations from engine class to struct types themselves
+struct Image { //Image that is not allocated using VMA
+	VkImage image;
+	VkImageView imageView;
+	VkExtent3D extent;
 };
 
 struct AllocatedBuffer {

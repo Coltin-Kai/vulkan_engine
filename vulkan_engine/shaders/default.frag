@@ -22,8 +22,12 @@ struct Texture {
 	int sampler_id;
 };
 
+layout(scalar, buffer_reference, buffer_reference_align = 1) buffer PrimitiveIdsBuffer { 
+	int prim_ids[]; //Index with glDrawID
+};
+
 layout(scalar, buffer_reference, buffer_reference_align = 4) buffer PrimitiveInfosBuffer { //Unsure what buffer_reference_align should be
-	PrimitiveInfo primitiveInfos[]; //Index with gl_DrawID
+	PrimitiveInfo primitiveInfos[]; //Index with prim_id
 };
 
 layout(scalar, buffer_reference, buffer_reference_align = 4) buffer ViewProjMatrixBuffer {
@@ -44,6 +48,7 @@ layout(scalar, buffer_reference, buffer_reference_align = 4) buffer TexturesBuff
 };
 
 layout(push_constant) uniform PushConstants {
+	PrimitiveIdsBuffer primIdBuffer;
 	PrimitiveInfosBuffer primInfoBuffer;
 	ViewProjMatrixBuffer viewprojBuffer;
 	ModelMatricesBuffer modelsBuffer;
@@ -55,14 +60,14 @@ layout(set = 0, binding = 0) uniform texture2D texture_images[MAX_TEXTURE2D_COUN
 layout(set = 0, binding = 1) uniform sampler samplers[MAX_SAMPLER_COUNT]; //Index with Texture::sampler_id
 
 //-------------------------------------------------------------------------------------
-layout(location = 0) flat in int drawID;
+layout(location = 0) flat in int inPrimID;
 layout(location = 1) in vec3 inColor; //Color_0
 layout(location = 2) in vec2 inUV; //TexCoord_0
 
 layout(location = 0) out vec4 outFragColor;
 
 void main() {
-	PrimitiveInfo primitive = primInfoBuffer.primitiveInfos[drawID];
+	PrimitiveInfo primitive = primInfoBuffer.primitiveInfos[inPrimID];
 	Material mat = matBuffer.materials[primitive.mat_id];
 
 	//BaseColor

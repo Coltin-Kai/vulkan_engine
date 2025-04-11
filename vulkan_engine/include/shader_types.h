@@ -35,6 +35,7 @@ namespace RenderShader {
 	};
 
 	struct PushConstants {
+		VkDeviceAddress primitiveIdsBufferAddress;
 		VkDeviceAddress primitiveInfosBufferAddress;
 		VkDeviceAddress viewProjMatrixBufferAddress;
 		VkDeviceAddress modelMatricesBufferAddress;
