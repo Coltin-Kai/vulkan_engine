@@ -1,16 +1,14 @@
 #pragma once
-#include <vector>
+
+#include "thirdparty_defines.h"
 
 #include "vulkan/vulkan.h"
 
-#define SDL_MAIN_HANDLED //Needed as SDL defines main macro that can conflict with app main
 #include "SDL.h"
 #include "SDL_vulkan.h"
 
 #include "vk_mem_alloc.h"
 
-#define GLM_FORCE_RADIANS
-#define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include "glm.hpp"
 #include "vec3.hpp"
 
@@ -22,6 +20,7 @@
 #include "Camera.h"
 #include "myDevice.h"
 
+#include <vector>
 #include <deque>
 #include <functional>
 #include <filesystem>

@@ -22,7 +22,7 @@ struct Texture {
 	int sampler_id;
 };
 
-layout(scalar, buffer_reference, buffer_reference_align = 1) buffer PrimitiveIdsBuffer { 
+layout(scalar, buffer_reference, buffer_reference_align = 4) buffer PrimitiveIdsBuffer { 
 	int prim_ids[]; //Index with glDrawID
 };
 

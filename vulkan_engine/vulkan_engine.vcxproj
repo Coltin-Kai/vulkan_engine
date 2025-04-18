@@ -54,6 +54,7 @@
     <ClInclude Include="include\myDevice.h" />
     <ClInclude Include="include\pipeline.h" />
     <ClInclude Include="include\shader_types.h" />
+    <ClInclude Include="include\thirdparty_defines.h" />
     <ClInclude Include="include\VkBootstrap.h" />
     <ClInclude Include="include\VkBootstrapDispatch.h" />
     <ClInclude Include="include\vulkan_helper_functions.h" />

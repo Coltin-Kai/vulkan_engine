@@ -633,7 +633,7 @@ void MyDevice::setup_drawContexts(const GraphicsDataPayload& payload) {
 	std::vector<uint32_t> indices;
 	RenderShader::ViewProj viewproj;
 	viewproj.view = payload.camera_transform;
-	viewproj.proj = glm::perspective(glm::radians(45.0f), _swapchain.extent.width / (float)_swapchain.extent.height, 50.0f, 0.1f);
+	viewproj.proj = glm::perspective(glm::radians(45.0f), _swapchain.extent.width / (float)_swapchain.extent.height, 50.0f, 0.01f);
 	viewproj.proj[1][1] *= -1;
 	std::vector<glm::mat4> model_matrices; //Also contains view and proj at start
 	std::vector<int32_t> primitiveIds;

@@ -155,6 +155,9 @@
     <ClInclude Include="include\myDevice.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="include\thirdparty_defines.h">
+      <Filter>Header Files\ThirdParty</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="shaders\default.vert">

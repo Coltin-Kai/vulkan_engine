@@ -3,6 +3,15 @@
 #include "gtc/matrix_transform.hpp"
 
 Camera::Camera(glm::vec3 pos, float yaw, float pitch) : pos(pos), yaw(yaw), pitch(pitch) {
+	if (this->pitch > 89.0f)
+		this->pitch = 89.0f;
+	if (this->pitch < -89.0f)
+		this->pitch = -89.0f;
+
+	this->cameraDirection.x = cos(glm::radians(this->yaw)) * cos(glm::radians(this->pitch));
+	this->cameraDirection.y = sin(glm::radians(this->pitch));
+	this->cameraDirection.z = sin(glm::radians(this->yaw)) * cos(glm::radians(this->pitch));
+	this->cameraDirection = glm::normalize(this->cameraDirection);
 }
 
 void Camera::update_view_matrix() {
@@ -42,7 +51,7 @@ bool Camera::processInput(int32_t rel_mouse_x, int32_t rel_mouse_y, const uint8_
 	}
 
 	//Walk Around
-	const float movementSpeed = 0.005f * static_cast<float>(deltaFrameTime);
+	const float movementSpeed = 0.0005f * static_cast<float>(deltaFrameTime);
 	
 	if (keys[SDL_SCANCODE_W]) {
 		inputChangeDetected = true;

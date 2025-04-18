@@ -283,7 +283,7 @@ void loadGLTFFile(MyDevice& device, GraphicsDataPayload& dataPayload, std::files
 
 			//Add Local Transform. Do it before adding children to prevent function from recursing
 			node->updateLocalTransform(translate_to_glm_mat4(fastgltf::getTransformMatrix(asset.nodes[node_index])));
-
+			
 			//Check if node has children, thus adding children to DFS idnex stack and the node itself to parent stack
 			if (!asset.nodes[node_index].children.empty()) {
 				DFS_node_parent_stack.push(std::pair<std::shared_ptr<Node>, int>(node, asset.nodes[node_index].children.size()));

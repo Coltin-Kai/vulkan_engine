@@ -1,6 +1,7 @@
 #pragma once
 
-#define SDL_MAIN_HANDLED //Needed as SDL defines main macro that can conflict with app main
+#include "thirdparty_defines.h"
+
 #include "SDL.h"
 #include "SDL_vulkan.h"
 #include "vulkan/vulkan.h"

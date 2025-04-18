@@ -37,7 +37,7 @@ void Engine::init() {
 	//-Load File Data
 	loadGLTFFile(_device, _payload, "C:\\Github\\vulkan_engine\\vulkan_engine\\assets\\Sample_Models\\BoomBox\\BoomBox.gltf"); //Exception expected to be thrown since allocated data in payload is not released
 	
-	_camera = Camera({ 0.0f, 0.0f, 2.0f });
+	_camera = Camera({ 0.0f, 0.0f, 0.15f });
 	_camera.update_view_matrix();
 	_payload.camera_transform = _camera.get_view_matrix();
 
