@@ -21,6 +21,7 @@
   <ItemGroup>
     <ClCompile Include="src\Camera.cpp" />
     <ClCompile Include="src\engine.cpp" />
+    <ClCompile Include="src\guiSystem.cpp" />
     <ClCompile Include="src\imgui.cpp" />
     <ClCompile Include="src\imgui_demo.cpp" />
     <ClCompile Include="src\imgui_draw.cpp" />
@@ -42,6 +43,7 @@
     <ClInclude Include="include\checkVkResult.h" />
     <ClInclude Include="include\engine.h" />
     <ClInclude Include="include\graphic_data_types.h" />
+    <ClInclude Include="include\guiSystem.h" />
     <ClInclude Include="include\imconfig.h" />
     <ClInclude Include="include\imgui.h" />
     <ClInclude Include="include\imgui_impl_sdl2.h" />
