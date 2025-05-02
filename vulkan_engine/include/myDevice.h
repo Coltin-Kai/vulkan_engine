@@ -44,9 +44,7 @@ enum class DeviceBufferType {
 class MyDevice { //Representation of Abstracted GPU MyDevice and a lot of related objects and Vulkan operations
 public:
 	//Need to figure out how to handle these public variables. Getters? Or performs commands involving these variables only inside the device class. Or just keep them public.
-	VkDevice _device;
 	VkSurfaceKHR _surface;
-	VkQueue _graphicsQueue;
 
 	//Descriptors
 	VkDescriptorPool _descriptorPool;
@@ -59,25 +57,6 @@ public:
 
 	void init(SDL_Window* window, VkExtent2D windowExtent);
 	void shutdown();
-
-	//Buffer and Image Operations
-	AllocatedBuffer create_buffer(const char* name, size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage, VmaAllocationCreateFlags allocFlags);
-	AllocatedBuffer create_buffer(const char* name, VkBufferCreateInfo bufferInfo, VmaAllocationCreateInfo allocInfo); //WHen Buffer Creation requires more specific details
-	void destroy_buffer(const AllocatedBuffer& buffer);
-	void update_buffer(const AllocatedBuffer& buffer, void* srcData, size_t srcDataSize, VkBufferCopy& copyInfo);
-	void update_buffer(const AllocatedBuffer& buffer, void* srcData, size_t srcDataSize, std::vector<VkBufferCopy>& copyInfos);
-
-	AllocatedImage create_image(const char* name, VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped);
-	AllocatedImage create_image(const char* name, VkImageCreateInfo imageInfo, VmaAllocationCreateInfo allocInfo); //When Image Create requires more specific details
-	void destroy_image(const AllocatedImage& image);
-	void update_image(const AllocatedImage& image, void* srcData, VkExtent3D imageSize); //Uploads raw data to an image
-
-	VkSampler create_sampler(VkSamplerCreateInfo& samplerCreateInfo);
-	void destroy_sampler(const VkSampler& sampler);
-
-	//Commands
-	VkCommandBuffer start_immediate_recording(); //Begins Immediate Command Recording and returns the cmd buffer to record commands.
-	void submit_immediate_commands();
 
 	//Frame
 	VkCommandBuffer startFrame(VkResult& result); //Returns the current frame's command buffer and starts recording
@@ -143,15 +122,6 @@ private:
 		DrawContext drawContext;
 	};
 
-	//Vulkan Components
-	VkInstance _instance;
-	VkDebugUtilsMessengerEXT _debug_messenger;
-	VkPhysicalDevice _physicalDevice;
-	uint32_t _graphicsQueueFamily;
-
-	//VMA Allocator
-	VmaAllocator _allocator;
-
 	//Swapchain
 	Swapchain _swapchain;
 	uint32_t _swapchainImageIndex; //Represents the current image that will be presented
@@ -161,11 +131,6 @@ private:
 	int _frameNumber = 0;
 	Frame& get_current_frame() { return _frames[_frameNumber % FRAMES_TOTAL]; }
 	void go_next_frame() { _frameNumber++;  }
-
-	//Immediate Commands
-	VkCommandPool _immCommandPool;
-	VkCommandBuffer _immCommandBuffer;
-	VkFence _immFence;
 
 	//Vertex Input
 	std::vector<VkVertexInputBindingDescription> _bindingDescriptions;
@@ -177,7 +142,6 @@ private:
 	//Device Data Updates
 	std::unordered_map<DeviceBufferType, int> _deviceBufferTypesCounter;
 
-	void init_vulkan(SDL_Window* window);
 	void init_swapchain(VkExtent2D windowExtent);
 	void init_commands();
 	void init_syncStructurrs();

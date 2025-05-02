@@ -96,6 +96,9 @@
     <ClCompile Include="src\guiSystem.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\vulkanContext.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\engine.h">
@@ -162,6 +165,9 @@
       <Filter>Header Files\ThirdParty</Filter>
     </ClInclude>
     <ClInclude Include="include\guiSystem.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\vulkanContext.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

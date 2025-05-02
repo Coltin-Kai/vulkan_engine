@@ -36,6 +36,7 @@
     <ClCompile Include="src\stbImage.cpp" />
     <ClCompile Include="src\VkBootstrap.cpp" />
     <ClCompile Include="src\vma.cpp" />
+    <ClCompile Include="src\vulkanContext.cpp" />
     <ClCompile Include="src\vulkan_helper_functions.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -59,6 +60,7 @@
     <ClInclude Include="include\thirdparty_defines.h" />
     <ClInclude Include="include\VkBootstrap.h" />
     <ClInclude Include="include\VkBootstrapDispatch.h" />
+    <ClInclude Include="include\vulkanContext.h" />
     <ClInclude Include="include\vulkan_helper_functions.h" />
     <ClInclude Include="include\vulkan_helper_types.h" />
   </ItemGroup>
