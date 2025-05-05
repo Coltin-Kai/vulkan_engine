@@ -9,10 +9,8 @@
 #include "vk_mem_alloc.h"
 #include "VkBootstrap.h"
 #include "gtc/matrix_transform.hpp"
-#include "imgui.h"
-#include "imgui_impl_sdl2.h"
-#include "imgui_impl_vulkan.h"
 
+#include "vulkanContext.h"
 #include "vulkan_helper_types.h"
 #include "vulkan_helper_functions.h"
 #include "graphic_data_types.h"
@@ -41,7 +39,7 @@ enum class DeviceBufferType {
 	Texture
 };
 
-class MyDevice { //Representation of Abstracted GPU MyDevice and a lot of related objects and Vulkan operations
+class RenderSystem { 
 public:
 	//Need to figure out how to handle these public variables. Getters? Or performs commands involving these variables only inside the device class. Or just keep them public.
 	VkSurfaceKHR _surface;
@@ -55,7 +53,9 @@ public:
 	VkPipelineLayout _pipelineLayout;
 	VkPipeline _pipeline;
 
-	void init(SDL_Window* window, VkExtent2D windowExtent);
+	RenderSystem(VulkanContext& vkContext) : _vkContext(vkContext){}
+
+	void init(VkExtent2D windowExtent);
 	void shutdown();
 
 	//Frame
@@ -65,6 +65,7 @@ public:
 	//Swapchain
 	Image get_currentSwapchainImage();
 	VkExtent2D get_swapChainExtent();
+	VkFormat get_swapChainFormat();
 	void resize_swapchain(VkExtent2D windowExtent);
 
 	//Descriptors
@@ -122,6 +123,9 @@ private:
 		DrawContext drawContext;
 	};
 
+	//Vulkan Context
+	VulkanContext& _vkContext;
+
 	//Swapchain
 	Swapchain _swapchain;
 	uint32_t _swapchainImageIndex; //Represents the current image that will be presented
@@ -136,19 +140,14 @@ private:
 	std::vector<VkVertexInputBindingDescription> _bindingDescriptions;
 	std::vector<VkVertexInputAttributeDescription>_attribueDescriptions;
 
-	//IMGUI Pool
-	VkDescriptorPool _imguiDescriptorPool;
-
 	//Device Data Updates
 	std::unordered_map<DeviceBufferType, int> _deviceBufferTypesCounter;
 
 	void init_swapchain(VkExtent2D windowExtent);
-	void init_commands();
-	void init_syncStructurrs();
+	void init_frames();
 	void init_vertexInput();
 	void init_descriptorSet();
 	void init_graphicsPipeline();
-	void init_imgui(SDL_Window* window);
 
 	void destroy_swapchain();
 };

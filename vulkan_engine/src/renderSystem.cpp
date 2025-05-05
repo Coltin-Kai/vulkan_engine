@@ -1,65 +1,58 @@
-#include "myDevice.h"
+#include "renderSystem.h"
 #include <iostream>
 #include <format>
 #include <stack>
 
-void MyDevice::init(SDL_Window* window, VkExtent2D windowExtent) {
-	init_vulkan(window);
+void RenderSystem::init(VkExtent2D windowExtent) {
 	init_swapchain(windowExtent);
-	init_commands();
-	init_syncStructurrs();
+	init_frames();
 	init_vertexInput();
 	init_descriptorSet();
 	init_graphicsPipeline();
-	init_imgui(window);
 }
 
-void MyDevice::shutdown() {
-	//Cleanup Imgui
-	ImGui_ImplVulkan_Shutdown();
-	vkDestroyDescriptorPool(_device, _imguiDescriptorPool, nullptr);
-
+void RenderSystem::shutdown() {
 	//Cleanup Pipeline
-	vkDestroyPipelineLayout(_device, _pipelineLayout, nullptr);
-	vkDestroyPipeline(_device, _pipeline, nullptr);
+	vkDestroyPipelineLayout(_vkContext.device, _pipelineLayout, nullptr);
+	vkDestroyPipeline(_vkContext.device, _pipeline, nullptr);
 
 	//Cleanup Descriptor Stuff
-	vkDestroyDescriptorSetLayout(_device, _descriptorSetLayout, nullptr);
-	vkDestroyDescriptorPool(_device, _descriptorPool, nullptr);
+	vkDestroyDescriptorSetLayout(_vkContext.device, _descriptorSetLayout, nullptr);
+	vkDestroyDescriptorPool(_vkContext.device, _descriptorPool, nullptr);
 
 	for (Frame& frame : _frames) {
-		vkDestroyCommandPool(_device, frame.commandPool, nullptr);
-		vkDestroySemaphore(_device, frame.renderSemaphore, nullptr);
-		vkDestroySemaphore(_device, frame.swapchainSemaphore, nullptr);
-		vkDestroyFence(_device, frame.renderFence, nullptr);
+		vkDestroyCommandPool(_vkContext.device, frame.commandPool, nullptr);
+		vkDestroySemaphore(_vkContext.device, frame.renderSemaphore, nullptr);
+		vkDestroySemaphore(_vkContext.device, frame.swapchainSemaphore, nullptr);
+		vkDestroyFence(_vkContext.device, frame.renderFence, nullptr);
 
-		destroy_buffer(frame.drawContext.indirectDrawCommandsBuffer);
-		destroy_buffer(frame.drawContext.vertexPosBuffer);
-		destroy_buffer(frame.drawContext.vertexOtherAttribBuffer);
-		destroy_buffer(frame.drawContext.indexBuffer);
-		destroy_buffer(frame.drawContext.viewprojMatrixBuffer);
-		destroy_buffer(frame.drawContext.modelMatricesBuffer);
-		destroy_buffer(frame.drawContext.primitiveIdsBuffer);
-		destroy_buffer(frame.drawContext.primitiveInfosBuffer);
-		destroy_buffer(frame.drawContext.materialsBuffer);
-		destroy_buffer(frame.drawContext.texturesBuffer);
+		_vkContext.destroy_buffer(frame.drawContext.indirectDrawCommandsBuffer);
+		_vkContext.destroy_buffer(frame.drawContext.vertexPosBuffer);
+		_vkContext.destroy_buffer(frame.drawContext.vertexOtherAttribBuffer);
+		_vkContext.destroy_buffer(frame.drawContext.indexBuffer);
+		_vkContext.destroy_buffer(frame.drawContext.viewprojMatrixBuffer);
+		_vkContext.destroy_buffer(frame.drawContext.modelMatricesBuffer);
+		_vkContext.destroy_buffer(frame.drawContext.primitiveIdsBuffer);
+		_vkContext.destroy_buffer(frame.drawContext.primitiveInfosBuffer);
+		_vkContext.destroy_buffer(frame.drawContext.materialsBuffer);
+		_vkContext.destroy_buffer(frame.drawContext.texturesBuffer);
 	}
 
 	//Cleanup Swapchain
 	destroy_swapchain();
 }
 
-VkCommandBuffer MyDevice::startFrame(VkResult& result) {
-	VK_CHECK(vkWaitForFences(_device, 1, &get_current_frame().renderFence, true, 1000000000));
+VkCommandBuffer RenderSystem::startFrame(VkResult& result) {
+	VK_CHECK(vkWaitForFences(_vkContext.device, 1, &get_current_frame().renderFence, true, 1000000000));
 
 	//Acquire the next swapchain image
-	result = vkAcquireNextImageKHR(_device, _swapchain.vkSwapchain, 1000000000, get_current_frame().swapchainSemaphore, nullptr, &_swapchainImageIndex);
+	result = vkAcquireNextImageKHR(_vkContext.device, _swapchain.vkSwapchain, 1000000000, get_current_frame().swapchainSemaphore, nullptr, &_swapchainImageIndex);
 
 	if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
 		return nullptr;
 	}
 
-	VK_CHECK(vkResetFences(_device, 1, &get_current_frame().renderFence));
+	VK_CHECK(vkResetFences(_vkContext.device, 1, &get_current_frame().renderFence));
 
 	VkCommandBuffer cmd = get_current_frame().commandBuffer;
 
@@ -76,7 +69,7 @@ VkCommandBuffer MyDevice::startFrame(VkResult& result) {
 	return cmd;
 }
 
-void MyDevice::endFrame(VkResult& result) {
+void RenderSystem::endFrame(VkResult& result) {
 	VkCommandBuffer cmd = get_current_frame().commandBuffer;
 
 	VK_CHECK(vkEndCommandBuffer(cmd));
@@ -87,7 +80,7 @@ void MyDevice::endFrame(VkResult& result) {
 
 	VkSubmitInfo2 submit = vkutil::submit_info(&cmdInfo, &signalInfo, &waitInfo);
 
-	VK_CHECK(vkQueueSubmit2(_graphicsQueue, 1, &submit, get_current_frame().renderFence));
+	VK_CHECK(vkQueueSubmit2(_vkContext.graphicsQueue, 1, &submit, get_current_frame().renderFence));
 
 	VkPresentInfoKHR presentInfo{};
 	presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
@@ -98,21 +91,25 @@ void MyDevice::endFrame(VkResult& result) {
 	presentInfo.waitSemaphoreCount = 1;
 	presentInfo.pImageIndices = &_swapchainImageIndex;
 
-	result = vkQueuePresentKHR(_graphicsQueue, &presentInfo);
+	result = vkQueuePresentKHR(_vkContext.graphicsQueue, &presentInfo);
 
 	go_next_frame();
 }
 
-Image MyDevice::get_currentSwapchainImage() {
+Image RenderSystem::get_currentSwapchainImage() {
 	return _swapchain.images[_swapchainImageIndex];
 }
 
-VkExtent2D MyDevice::get_swapChainExtent() {
+VkExtent2D RenderSystem::get_swapChainExtent() {
 	return _swapchain.extent;
 }
 
-void MyDevice::init_swapchain(VkExtent2D windowExtent) {
-	vkb::SwapchainBuilder builder{ _physicalDevice, _device, _surface };
+VkFormat RenderSystem::get_swapChainFormat() {
+	return _swapchain.format;
+}
+
+void RenderSystem::init_swapchain(VkExtent2D windowExtent) {
+	vkb::SwapchainBuilder builder{ _vkContext.physicalDevice, _vkContext.device, _vkContext.surface };
 
 	_swapchain.format = VK_FORMAT_B8G8R8A8_UNORM;
 
@@ -134,29 +131,14 @@ void MyDevice::init_swapchain(VkExtent2D windowExtent) {
 	}
 }
 
-void MyDevice::init_commands() {
+void RenderSystem::init_frames() {
+	//Init frames' command and sync-structures
 	VkCommandPoolCreateInfo cmdPoolInfo{};
 	cmdPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
 	cmdPoolInfo.pNext = nullptr;
 	cmdPoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-	cmdPoolInfo.queueFamilyIndex = _graphicsQueueFamily;
+	cmdPoolInfo.queueFamilyIndex = _vkContext.graphicsQueueFamily;
 
-	for (int i = 0; i < FRAMES_TOTAL; i++) {
-		VK_CHECK(vkCreateCommandPool(_device, &cmdPoolInfo, nullptr, &_frames[i].commandPool));
-
-		VkCommandBufferAllocateInfo cmdAllocInfo{};
-		cmdAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-		cmdAllocInfo.pNext = nullptr;
-		cmdAllocInfo.commandPool = _frames[i].commandPool;
-		cmdAllocInfo.commandBufferCount = 1;
-		cmdAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-
-		VK_CHECK(vkAllocateCommandBuffers(_device, &cmdAllocInfo, &_frames[i].commandBuffer));
-	}
-}
-
-void MyDevice::init_syncStructurrs() {
-	//Init Frame's Syns Structures
 	VkFenceCreateInfo fenceCreateInfo{};
 	fenceCreateInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
 	fenceCreateInfo.pNext = nullptr;
@@ -167,13 +149,24 @@ void MyDevice::init_syncStructurrs() {
 	semaphoreCreateInfo.pNext = nullptr;
 
 	for (int i = 0; i < FRAMES_TOTAL; i++) {
-		VK_CHECK(vkCreateFence(_device, &fenceCreateInfo, nullptr, &_frames[i].renderFence));
-		VK_CHECK(vkCreateSemaphore(_device, &semaphoreCreateInfo, nullptr, &_frames[i].swapchainSemaphore));
-		VK_CHECK(vkCreateSemaphore(_device, &semaphoreCreateInfo, nullptr, &_frames[i].renderSemaphore));
+		VK_CHECK(vkCreateCommandPool(_vkContext.device, &cmdPoolInfo, nullptr, &_frames[i].commandPool));
+
+		VkCommandBufferAllocateInfo cmdAllocInfo{};
+		cmdAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+		cmdAllocInfo.pNext = nullptr;
+		cmdAllocInfo.commandPool = _frames[i].commandPool;
+		cmdAllocInfo.commandBufferCount = 1;
+		cmdAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+
+		VK_CHECK(vkAllocateCommandBuffers(_vkContext.device, &cmdAllocInfo, &_frames[i].commandBuffer));
+
+		VK_CHECK(vkCreateFence(_vkContext.device, &fenceCreateInfo, nullptr, &_frames[i].renderFence));
+		VK_CHECK(vkCreateSemaphore(_vkContext.device, &semaphoreCreateInfo, nullptr, &_frames[i].swapchainSemaphore));
+		VK_CHECK(vkCreateSemaphore(_vkContext.device, &semaphoreCreateInfo, nullptr, &_frames[i].renderSemaphore));
 	}
 }
 
-void MyDevice::init_vertexInput() {
+void RenderSystem::init_vertexInput() {
 	//Vertex Buffer Format
 	//VB1: [pos1, pos2, ...]
 	//VB2: [(norm1, tan1, ...), (norm2, tan2, ...), ...] where each () corresponds to a vertex
@@ -224,7 +217,7 @@ void MyDevice::init_vertexInput() {
 	_attribueDescriptions[4].offset = offsetof(RenderShader::VertexAttributes, RenderShader::VertexAttributes::uv);
 }
 
-void MyDevice::init_descriptorSet() {
+void RenderSystem::init_descriptorSet() {
 	//Create Descriptor Pool
 	std::vector<VkDescriptorPoolSize> poolSizes = {
 		{.type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, .descriptorCount = MAX_SAMPLED_IMAGE_COUNT },
@@ -238,7 +231,7 @@ void MyDevice::init_descriptorSet() {
 	poolInfo.maxSets = 1;
 	poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
 
-	if (vkCreateDescriptorPool(_device, &poolInfo, nullptr, &_descriptorPool) != VK_SUCCESS)
+	if (vkCreateDescriptorPool(_vkContext.device, &poolInfo, nullptr, &_descriptorPool) != VK_SUCCESS)
 		throw std::runtime_error("Failed to create Descriptor Pool");
 
 	//Create Descriptor Set Layout for Descriptors
@@ -269,7 +262,7 @@ void MyDevice::init_descriptorSet() {
 	layoutInfo.pBindings = layout_bindings.data();
 	layoutInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
 
-	if (vkCreateDescriptorSetLayout(_device, &layoutInfo, nullptr, &_descriptorSetLayout) != VK_SUCCESS)
+	if (vkCreateDescriptorSetLayout(_vkContext.device, &layoutInfo, nullptr, &_descriptorSetLayout) != VK_SUCCESS)
 		throw std::runtime_error("Failed to Create Descriptor Set Layout");
 
 	//Create Descriptor Set
@@ -279,11 +272,11 @@ void MyDevice::init_descriptorSet() {
 	allocInfo.descriptorSetCount = 1;
 	allocInfo.pSetLayouts = &_descriptorSetLayout;
 
-	if (vkAllocateDescriptorSets(_device, &allocInfo, &_descriptorSet) != VK_SUCCESS)
+	if (vkAllocateDescriptorSets(_vkContext.device, &allocInfo, &_descriptorSet) != VK_SUCCESS)
 		throw std::runtime_error("Failed to allocate Descriptor Set");
 }
 
-void MyDevice::setup_drawContexts(const GraphicsDataPayload& payload) { 
+void RenderSystem::setup_drawContexts(const GraphicsDataPayload& payload) { 
 	//Holds all the data for one drawContext
 	std::vector<VkDrawIndexedIndirectCommand> indirect_commands;
 	uint32_t drawCount = 0;
@@ -457,58 +450,58 @@ void MyDevice::setup_drawContexts(const GraphicsDataPayload& payload) {
 		currentDrawContext.drawCount = drawCount;
 
 		//Draw Coommand and Vertex Input Buffers	
-		currentDrawContext.indirectDrawCommandsBuffer = create_buffer(std::format("Indirect Draw Commands Buffer {}", i).c_str(), alloc_indirect_size, VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT);
-		currentDrawContext.vertexPosBuffer = create_buffer(std::format("Vertex Position Buffer {}", i).c_str(), alloc_vertPos_size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT);
-		currentDrawContext.vertexOtherAttribBuffer = create_buffer(std::format("Vertex Other Attributes Buffer {}", i).c_str(), alloc_vertAttrib_size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT);
-		currentDrawContext.indexBuffer = create_buffer(std::format("Index Buffer {}", i).c_str(), alloc_index_size, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT);
+		currentDrawContext.indirectDrawCommandsBuffer = _vkContext.create_buffer(std::format("Indirect Draw Commands Buffer {}", i).c_str(), alloc_indirect_size, VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT);
+		currentDrawContext.vertexPosBuffer = _vkContext.create_buffer(std::format("Vertex Position Buffer {}", i).c_str(), alloc_vertPos_size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT);
+		currentDrawContext.vertexOtherAttribBuffer = _vkContext.create_buffer(std::format("Vertex Other Attributes Buffer {}", i).c_str(), alloc_vertAttrib_size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT);
+		currentDrawContext.indexBuffer = _vkContext.create_buffer(std::format("Index Buffer {}", i).c_str(), alloc_index_size, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT);
 		//BDA Buffers
-		currentDrawContext.viewprojMatrixBuffer = create_buffer(std::format("View and Projection Matrix Buffer {}", i).c_str(), alloc_viewprojMatrix_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT); //Careful as if the alloc size is 0. Will cause errors
-		currentDrawContext.modelMatricesBuffer = create_buffer(std::format("Model Matrices Buffer {}", i).c_str(), alloc_modelMatrices_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT);
-		currentDrawContext.primitiveIdsBuffer = create_buffer(std::format("Primitive IDs Buffer {}", i).c_str(), alloc_primIds_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT);
-		currentDrawContext.primitiveInfosBuffer = create_buffer(std::format("Primitive Infos Buffer {}", i).c_str(), alloc_primInfo_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT);
-		currentDrawContext.materialsBuffer = create_buffer(std::format("Materials Buffer {}", i).c_str(), alloc_materials_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT);
-		currentDrawContext.texturesBuffer = create_buffer(std::format("Textures Buffer {}", i).c_str(), alloc_textures_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT);
+		currentDrawContext.viewprojMatrixBuffer = _vkContext.create_buffer(std::format("View and Projection Matrix Buffer {}", i).c_str(), alloc_viewprojMatrix_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT); //Careful as if the alloc size is 0. Will cause errors
+		currentDrawContext.modelMatricesBuffer = _vkContext.create_buffer(std::format("Model Matrices Buffer {}", i).c_str(), alloc_modelMatrices_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT);
+		currentDrawContext.primitiveIdsBuffer = _vkContext.create_buffer(std::format("Primitive IDs Buffer {}", i).c_str(), alloc_primIds_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT);
+		currentDrawContext.primitiveInfosBuffer = _vkContext.create_buffer(std::format("Primitive Infos Buffer {}", i).c_str(), alloc_primInfo_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT);
+		currentDrawContext.materialsBuffer = _vkContext.create_buffer(std::format("Materials Buffer {}", i).c_str(), alloc_materials_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT);
+		currentDrawContext.texturesBuffer = _vkContext.create_buffer(std::format("Textures Buffer {}", i).c_str(), alloc_textures_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT);
 
 		VkBufferDeviceAddressInfo address_info{ .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO };
 		address_info.buffer = currentDrawContext.viewprojMatrixBuffer.buffer;
-		currentDrawContext.viewprojMatrixBufferAddress = vkGetBufferDeviceAddress(_device, &address_info);
+		currentDrawContext.viewprojMatrixBufferAddress = vkGetBufferDeviceAddress(_vkContext.device, &address_info);
 		address_info.buffer = currentDrawContext.modelMatricesBuffer.buffer;
-		currentDrawContext.modelMatricesBufferAddress = vkGetBufferDeviceAddress(_device, &address_info);
+		currentDrawContext.modelMatricesBufferAddress = vkGetBufferDeviceAddress(_vkContext.device, &address_info);
 		address_info.buffer = currentDrawContext.primitiveIdsBuffer.buffer;
-		currentDrawContext.primitiveIdsBufferAddress = vkGetBufferDeviceAddress(_device, &address_info);
+		currentDrawContext.primitiveIdsBufferAddress = vkGetBufferDeviceAddress(_vkContext.device, &address_info);
 		address_info.buffer = currentDrawContext.primitiveInfosBuffer.buffer;
-		currentDrawContext.primitiveInfosBufferAddress = vkGetBufferDeviceAddress(_device, &address_info);
+		currentDrawContext.primitiveInfosBufferAddress = vkGetBufferDeviceAddress(_vkContext.device, &address_info);
 		address_info.buffer = currentDrawContext.materialsBuffer.buffer;
-		currentDrawContext.materialsBufferAddress = vkGetBufferDeviceAddress(_device, &address_info);
+		currentDrawContext.materialsBufferAddress = vkGetBufferDeviceAddress(_vkContext.device, &address_info);
 		address_info.buffer = currentDrawContext.texturesBuffer.buffer;
-		currentDrawContext.texturesBufferAddress = vkGetBufferDeviceAddress(_device, &address_info);
+		currentDrawContext.texturesBufferAddress = vkGetBufferDeviceAddress(_vkContext.device, &address_info);
 
 		//Copy Data to the Buffers
-		update_buffer(currentDrawContext.indirectDrawCommandsBuffer, indirect_commands.data(), alloc_indirect_size, indirect_copy_info);
-		update_buffer(currentDrawContext.vertexPosBuffer, positions.data(), alloc_vertPos_size, pos_copy_info);
-		update_buffer(currentDrawContext.vertexOtherAttribBuffer, attributes.data(), alloc_vertAttrib_size, attrib_copy_info);
-		update_buffer(currentDrawContext.indexBuffer, indices.data(), alloc_index_size, index_copy_info);
-		update_buffer(currentDrawContext.viewprojMatrixBuffer, &viewproj, alloc_viewprojMatrix_size, viewprojMatrix_copy_info);
-		update_buffer(currentDrawContext.modelMatricesBuffer, model_matrices.data(), alloc_modelMatrices_size, modelMatrices_copy_infos);
-		update_buffer(currentDrawContext.primitiveIdsBuffer, primitiveIds.data(), alloc_primIds_size, primId_copy_info);
-		update_buffer(currentDrawContext.primitiveInfosBuffer, primitiveInfos.data(), alloc_primInfo_size, primInfo_copy_infos);
-		update_buffer(currentDrawContext.materialsBuffer, materials.data(), alloc_materials_size, material_copy_infos);
-		update_buffer(currentDrawContext.texturesBuffer, textures.data(), alloc_textures_size, texture_copy_infos);
+		_vkContext.update_buffer(currentDrawContext.indirectDrawCommandsBuffer, indirect_commands.data(), alloc_indirect_size, indirect_copy_info);
+		_vkContext.update_buffer(currentDrawContext.vertexPosBuffer, positions.data(), alloc_vertPos_size, pos_copy_info);
+		_vkContext.update_buffer(currentDrawContext.vertexOtherAttribBuffer, attributes.data(), alloc_vertAttrib_size, attrib_copy_info);
+		_vkContext.update_buffer(currentDrawContext.indexBuffer, indices.data(), alloc_index_size, index_copy_info);
+		_vkContext.update_buffer(currentDrawContext.viewprojMatrixBuffer, &viewproj, alloc_viewprojMatrix_size, viewprojMatrix_copy_info);
+		_vkContext.update_buffer(currentDrawContext.modelMatricesBuffer, model_matrices.data(), alloc_modelMatrices_size, modelMatrices_copy_infos);
+		_vkContext.update_buffer(currentDrawContext.primitiveIdsBuffer, primitiveIds.data(), alloc_primIds_size, primId_copy_info);
+		_vkContext.update_buffer(currentDrawContext.primitiveInfosBuffer, primitiveInfos.data(), alloc_primInfo_size, primInfo_copy_infos);
+		_vkContext.update_buffer(currentDrawContext.materialsBuffer, materials.data(), alloc_materials_size, material_copy_infos);
+		_vkContext.update_buffer(currentDrawContext.texturesBuffer, textures.data(), alloc_textures_size, texture_copy_infos);
 		i++;
 	}
 }
 
-std::vector<VkBuffer> MyDevice::get_vertexBuffers() {
+std::vector<VkBuffer> RenderSystem::get_vertexBuffers() {
 	DrawContext& currentDrawContext = get_current_frame().drawContext;
 	return std::vector<VkBuffer>{currentDrawContext.vertexPosBuffer.buffer, currentDrawContext.vertexOtherAttribBuffer.buffer};
 }
 
-VkBuffer MyDevice::get_indexBuffer() {
+VkBuffer RenderSystem::get_indexBuffer() {
 	DrawContext& currentDrawContext = get_current_frame().drawContext;
 	return currentDrawContext.indexBuffer.buffer;
 }
 
-RenderShader::PushConstants MyDevice::get_pushConstants() {
+RenderShader::PushConstants RenderSystem::get_pushConstants() {
 	DrawContext& currentDrawContext = get_current_frame().drawContext;
 	RenderShader::PushConstants pushconstants{};
 	pushconstants.primitiveIdsBufferAddress = currentDrawContext.primitiveIdsBufferAddress;
@@ -520,40 +513,40 @@ RenderShader::PushConstants MyDevice::get_pushConstants() {
 	return pushconstants;
 }
 
-VkBuffer MyDevice::get_indirectDrawBuffer() {
+VkBuffer RenderSystem::get_indirectDrawBuffer() {
 	DrawContext& currentDrawContext = get_current_frame().drawContext;
 	return currentDrawContext.indirectDrawCommandsBuffer.buffer;
 }
 
-uint32_t MyDevice::get_drawCount() {
+uint32_t RenderSystem::get_drawCount() {
 	DrawContext& currentDrawContext = get_current_frame().drawContext;
 	return currentDrawContext.drawCount;
 }
 
-void MyDevice::signal_to_updateDeviceBuffer(DeviceBufferType bufferType) {
+void RenderSystem::signal_to_updateDeviceBuffer(DeviceBufferType bufferType) {
 	_deviceBufferTypesCounter[bufferType] = FRAMES_TOTAL;
 }
 
-void MyDevice::updateSignaledDeviceBuffers(GraphicsDataPayload& payload) {
+void RenderSystem::updateSignaledDeviceBuffers(GraphicsDataPayload& payload) {
 	if (_deviceBufferTypesCounter[DeviceBufferType::ViewProjMatrix] > 0) {
 		size_t viewSize = sizeof(glm::mat4);
 		VkBufferCopy copyInfo{ .srcOffset = 0, .dstOffset = 0, .size = viewSize };
-		update_buffer(get_current_frame().drawContext.viewprojMatrixBuffer, &payload.camera_transform, viewSize, copyInfo);
+		_vkContext.update_buffer(get_current_frame().drawContext.viewprojMatrixBuffer, &payload.camera_transform, viewSize, copyInfo);
 		_deviceBufferTypesCounter[DeviceBufferType::ViewProjMatrix]--;
 	}
 	//Other Buffers...
 }
 
-void MyDevice::init_graphicsPipeline() {
+void RenderSystem::init_graphicsPipeline() {
 	//Load SHaders
 	VkShaderModule vertexShader;
-	if (!vkutil::load_shader_module("shaders/default_vert.spv", _device, &vertexShader))
+	if (!vkutil::load_shader_module("shaders/default_vert.spv", _vkContext.device, &vertexShader))
 		throw std::runtime_error("Error trying to create Vertex Shader Module");
 	else
 		std::cout << "Vertex Shader successfully loaded" << std::endl;
 
 	VkShaderModule fragShader;
-	if (!vkutil::load_shader_module("shaders/default_frag.spv", _device, &fragShader))
+	if (!vkutil::load_shader_module("shaders/default_frag.spv", _vkContext.device, &fragShader))
 		throw std::runtime_error("error trying to create Frag Shader Module");
 	else
 		std::cout << "Fragment Shader successfully loaded" << std::endl;
@@ -570,7 +563,7 @@ void MyDevice::init_graphicsPipeline() {
 	pipeline_layout_info.pushConstantRangeCount = 1;
 	pipeline_layout_info.pPushConstantRanges = &range;
 
-	VK_CHECK(vkCreatePipelineLayout(_device, &pipeline_layout_info, nullptr, &_pipelineLayout));
+	VK_CHECK(vkCreatePipelineLayout(_vkContext.device, &pipeline_layout_info, nullptr, &_pipelineLayout));
 
 	//Build Pipeline
 	PipelineBuilder pipelineBuilder;
@@ -586,63 +579,19 @@ void MyDevice::init_graphicsPipeline() {
 	pipelineBuilder.set_color_attachment_format(_swapchain.format);
 	pipelineBuilder.set_depth_format(VK_FORMAT_D32_SFLOAT);
 
-	_pipeline = pipelineBuilder.build_pipeline(_device);
+	_pipeline = pipelineBuilder.build_pipeline(_vkContext.device);
 
-	vkDestroyShaderModule(_device, vertexShader, nullptr);
-	vkDestroyShaderModule(_device, fragShader, nullptr);
+	vkDestroyShaderModule(_vkContext.device, vertexShader, nullptr);
+	vkDestroyShaderModule(_vkContext.device, fragShader, nullptr);
 }
 
-void MyDevice::init_imgui(SDL_Window* window) {
-	VkDescriptorPoolSize pool_sizes[] = { { VK_DESCRIPTOR_TYPE_SAMPLER, 1000 },
-	{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000 },
-	{ VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1000 },
-	{ VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000 },
-	{ VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1000 },
-	{ VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 1000 },
-	{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000 },
-	{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000 },
-	{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1000 },
-	{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1000 },
-	{ VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1000 } };
-
-	VkDescriptorPoolCreateInfo pool_info{};
-	pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-	pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
-	pool_info.maxSets = 1000;
-	pool_info.poolSizeCount = static_cast<uint32_t>(std::size(pool_sizes));
-	pool_info.pPoolSizes = pool_sizes;
-
-	if (vkCreateDescriptorPool(_device, &pool_info, nullptr, &_imguiDescriptorPool) != VK_SUCCESS)
-		throw std::runtime_error("Failed to create Descriptor Pool for Imgui");
-
-	ImGui::CreateContext();
-	ImGui_ImplSDL2_InitForVulkan(window);
-
-	ImGui_ImplVulkan_InitInfo init_info{};
-	init_info.Instance = _instance;
-	init_info.PhysicalDevice = _physicalDevice;
-	init_info.Device = _device;
-	init_info.Queue = _graphicsQueue;
-	init_info.DescriptorPool = _imguiDescriptorPool;
-	init_info.MinImageCount = 3;
-	init_info.ImageCount = 3;
-	init_info.UseDynamicRendering = true;
-	init_info.PipelineRenderingCreateInfo = { .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO };
-	init_info.PipelineRenderingCreateInfo.colorAttachmentCount = 1;
-	init_info.PipelineRenderingCreateInfo.pColorAttachmentFormats = &_swapchain.format;
-	init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
-
-	ImGui_ImplVulkan_Init(&init_info);
-	ImGui_ImplVulkan_CreateFontsTexture();
-}
-
-void MyDevice::resize_swapchain(VkExtent2D windowExtent) {
-	vkDeviceWaitIdle(_device);
+void RenderSystem::resize_swapchain(VkExtent2D windowExtent) {
+	vkDeviceWaitIdle(_vkContext.device);
 	destroy_swapchain();
 	init_swapchain(windowExtent);
 }
 
-void MyDevice::bind_descriptors(GraphicsDataPayload& payload) {
+void RenderSystem::bind_descriptors(GraphicsDataPayload& payload) {
 	std::vector<VkWriteDescriptorSet> descriptorWrites(2);
 
 	std::vector<VkDescriptorImageInfo> sampledImages_imgInfos;
@@ -676,12 +625,12 @@ void MyDevice::bind_descriptors(GraphicsDataPayload& payload) {
 	descriptorWrites[1].descriptorCount = sampler_imgInfos.size();
 	descriptorWrites[1].pImageInfo = sampler_imgInfos.data();
 
-	vkUpdateDescriptorSets(_device, descriptorWrites.size(), descriptorWrites.data(), 0, nullptr);
+	vkUpdateDescriptorSets(_vkContext.device, descriptorWrites.size(), descriptorWrites.data(), 0, nullptr);
 }
 
-void MyDevice::destroy_swapchain() {
-	vkDestroySwapchainKHR(_device, _swapchain.vkSwapchain, nullptr);
+void RenderSystem::destroy_swapchain() {
+	vkDestroySwapchainKHR(_vkContext.device, _swapchain.vkSwapchain, nullptr);
 
 	for (int i = 0; i < _swapchain.images.size(); i++)
-		vkDestroyImageView(_device, _swapchain.images[i].imageView, nullptr);
+		vkDestroyImageView(_vkContext.device, _swapchain.images[i].imageView, nullptr);
 }

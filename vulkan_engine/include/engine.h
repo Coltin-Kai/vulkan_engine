@@ -17,8 +17,9 @@
 #include "vulkan_helper_types.h"
 #include "graphic_data_types.h"
 
+#include "vulkanContext.h"
 #include "Camera.h"
-#include "myDevice.h"
+#include "renderSystem.h"	
 
 #include <vector>
 #include <deque>
@@ -72,8 +73,11 @@ private:
 	struct SDL_Window* _window{ nullptr };
 	VkExtent2D _windowExtent{ 1700, 900 };
 	
+	//VulkanContext
+	VulkanContext _vkContext;
+
 	//MyDevice
-	MyDevice _device;
+	RenderSystem _renderSys{ _vkContext };
 
 	//Swapchain
 	bool windowResized = false;

@@ -30,21 +30,27 @@ void Engine::init() {
 	_window = SDL_CreateWindow("Engine", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, _windowExtent.width, _windowExtent.height, window_flags);
 	SDL_SetRelativeMouseMode(SDL_TRUE); //Traps Mouse and records relative mouse movement
 	
-	_device.init(_window, _windowExtent);
+	//Initialize Vulkan Context
+	_vkContext.init(_window);
+
+	//Initalize Systems
+	_renderSys.init(_windowExtent);
+
+	//adfads
 	setup_depthImage();
 	setup_default_data();
 	//LAZY CODE STUFF
 	//-Load File Data
-	loadGLTFFile(_device, _payload, "C:\\Github\\vulkan_engine\\vulkan_engine\\assets\\Sample_Models\\BoomBox\\BoomBox.gltf"); //Exception expected to be thrown since allocated data in payload is not released
+	loadGLTFFile(_vkContext, _payload, "C:\\Github\\vulkan_engine\\vulkan_engine\\assets\\Sample_Models\\BoomBox\\BoomBox.gltf"); //Exception expected to be thrown since allocated data in payload is not released
 	
 	_camera = Camera({ 0.0f, 0.0f, 0.15f });
 	_camera.update_view_matrix();
 	_payload.camera_transform = _camera.get_view_matrix();
 
 	//Bind Images and Samplers
-	_device.bind_descriptors(_payload);
+	_renderSys.bind_descriptors(_payload);
 	//Upload Draw Data
-	_device.setup_drawContexts(_payload);
+	_renderSys.setup_drawContexts(_payload);
 }
 
 void Engine::run() {
@@ -88,7 +94,7 @@ void Engine::run() {
 			VkExtent2D windowExtent;
 			windowExtent.width = w;
 			windowExtent.height = h;
-			_device.resize_swapchain(windowExtent);
+			_renderSys.resize_swapchain(windowExtent);
 			windowResized = false;
 		}
 		
@@ -101,11 +107,11 @@ void Engine::run() {
 		if (_camera.processInput(static_cast<uint32_t>(rel_mouse_x), static_cast<uint32_t>(rel_mouse_y), keys)) { //If camera received input/change in input
 			_camera.update_view_matrix();
 			_payload.camera_transform = _camera.get_view_matrix();
-			_device.signal_to_updateDeviceBuffer(DeviceBufferType::ViewProjMatrix);
+			_renderSys.signal_to_updateDeviceBuffer(DeviceBufferType::ViewProjMatrix);
 		}
 
 		//Device Data Updates
-		_device.updateSignaledDeviceBuffers(_payload);
+		_renderSys.updateSignaledDeviceBuffers(_payload);
 
 		//IMGUI Rendering
 		ImGui_ImplVulkan_NewFrame();
@@ -120,25 +126,28 @@ void Engine::run() {
 }
 
 void Engine::cleanup() {
-	vkDeviceWaitIdle(_device._device);
+	vkDeviceWaitIdle(_vkContext.device);
 
 	//Depth Image
-	_device.destroy_image(_depthImage);
+	_vkContext.destroy_image(_depthImage);
 
 	//Payload Cleanup
 	for (VkSampler& sampler : _payload.samplers) {
-		_device.destroy_sampler(sampler);
+		_vkContext.destroy_sampler(sampler);
 	}
 
 	for (AllocatedImage& image : _payload.images) {
-		_device.destroy_image(image);
+		_vkContext.destroy_image(image);
 	}
 	
 	//Deletion Queue
 	_mainDeletionQueue.flush();
 
+	//RenderingSystem Cleanup
+	_renderSys.shutdown();
+
 	//Vulkan Cleanup
-	_device.shutdown();
+	_vkContext.shutdown();
 
 	//SDL Cleanup
 	SDL_DestroyWindow(_window);
@@ -146,8 +155,8 @@ void Engine::cleanup() {
 
 void Engine::draw() {
 	VkResult result;
-	VkCommandBuffer cmd = _device.startFrame(result);
-	Image swapchainImage = _device.get_currentSwapchainImage();
+	VkCommandBuffer cmd = _renderSys.startFrame(result);
+	Image swapchainImage = _renderSys.get_currentSwapchainImage();
 
 	if (result == VK_ERROR_OUT_OF_DATE_KHR) { //Failed to acquire swapchain image
 		windowResized = true;
@@ -176,7 +185,7 @@ void Engine::draw() {
 	//Transition for Presentation
 	vkutil::transition_image(cmd, swapchainImage.image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 
-	_device.endFrame(result);
+	_renderSys.endFrame(result);
 
 	if (result == VK_ERROR_OUT_OF_DATE_KHR)
 		windowResized = true;
@@ -188,12 +197,12 @@ void Engine::draw_geometry(VkCommandBuffer cmd, const Image& swapchainImage) {
 	VkRenderingAttachmentInfo colorAttachment = vkutil::attachment_info(swapchainImage.imageView, nullptr, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
 	VkRenderingAttachmentInfo depthAttachment = vkutil::depth_attachment_info(_depthImage.imageView, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
 
-	VkExtent2D swapchainExtent = _device.get_swapChainExtent();
+	VkExtent2D swapchainExtent = _renderSys.get_swapChainExtent();
 
 	VkRenderingInfo renderInfo = vkutil::rendering_info(swapchainExtent, &colorAttachment, &depthAttachment);
 	vkCmdBeginRendering(cmd, &renderInfo);
 
-	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _device._pipeline);
+	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _renderSys._pipeline);
 
 	//Set Dynamic States
 	VkViewport viewport{};
@@ -215,27 +224,27 @@ void Engine::draw_geometry(VkCommandBuffer cmd, const Image& swapchainImage) {
 	vkCmdSetScissor(cmd, 0, 1, &scissor);
 
 	//Bind Descriptor Set
-	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _device._pipelineLayout, 0, 1, &_device._descriptorSet, 0, nullptr);
+	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _renderSys._pipelineLayout, 0, 1, &_renderSys._descriptorSet, 0, nullptr);
 
 	//Bind Vertex Input Buffers
-	std::vector<VkBuffer> vertexBuffers = _device.get_vertexBuffers(); //Jank Debug code will move vector to drawContext structure itself
+	std::vector<VkBuffer> vertexBuffers = _renderSys.get_vertexBuffers(); //Jank Debug code will move vector to drawContext structure itself
 	std::vector<VkDeviceSize> vertexOffsets = { 0, 0 };
 	vkCmdBindVertexBuffers(cmd, 0, vertexBuffers.size(), vertexBuffers.data(), vertexOffsets.data());
-	vkCmdBindIndexBuffer(cmd, _device.get_indexBuffer(), 0, VK_INDEX_TYPE_UINT32);
+	vkCmdBindIndexBuffer(cmd, _renderSys.get_indexBuffer(), 0, VK_INDEX_TYPE_UINT32);
 
 	//Push Constants
-	RenderShader::PushConstants pushconstants = _device.get_pushConstants();
-	vkCmdPushConstants(cmd, _device._pipelineLayout, VK_SHADER_STAGE_ALL_GRAPHICS, 0, sizeof(RenderShader::PushConstants), &pushconstants);
+	RenderShader::PushConstants pushconstants = _renderSys.get_pushConstants();
+	vkCmdPushConstants(cmd, _renderSys._pipelineLayout, VK_SHADER_STAGE_ALL_GRAPHICS, 0, sizeof(RenderShader::PushConstants), &pushconstants);
 
 	//Draw
-	vkCmdDrawIndexedIndirect(cmd, _device.get_indirectDrawBuffer(), 0, _device.get_drawCount(), sizeof(VkDrawIndexedIndirectCommand));
+	vkCmdDrawIndexedIndirect(cmd, _renderSys.get_indirectDrawBuffer(), 0, _renderSys.get_drawCount(), sizeof(VkDrawIndexedIndirectCommand));
 
 	vkCmdEndRendering(cmd);
 }
 
 void Engine::draw_imgui(VkCommandBuffer cmd, const Image& swapchainImage) {
 	VkRenderingAttachmentInfo colorAttachment = vkutil::attachment_info(swapchainImage.imageView, nullptr, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
-	VkRenderingInfo renderInfo = vkutil::rendering_info(_device.get_swapChainExtent(), &colorAttachment, nullptr);
+	VkRenderingInfo renderInfo = vkutil::rendering_info(_renderSys.get_swapChainExtent(), &colorAttachment, nullptr);
 
 	vkCmdBeginRendering(cmd, &renderInfo);
 
@@ -265,12 +274,12 @@ void Engine::setup_depthImage() {
 
 	VK_CHECK(vkCreateImageView(_device, &depth_image_view_info, nullptr, &_depthImage.imageView));
 	*/
-	VkExtent2D swapchainExtent = _device.get_swapChainExtent();
+	VkExtent2D swapchainExtent = _renderSys.get_swapChainExtent();
 	VkExtent3D depthExtent;
 	depthExtent.width = swapchainExtent.width;
 	depthExtent.height = swapchainExtent.height;
 	depthExtent.depth = 1;
-	_depthImage = _device.create_image("Depth Image", depthExtent, VK_FORMAT_D32_SFLOAT, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, false);
+	_depthImage = _vkContext.create_image("Depth Image", depthExtent, VK_FORMAT_D32_SFLOAT, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, false);
 }
 
 void Engine::setup_default_data() {
@@ -279,8 +288,8 @@ void Engine::setup_default_data() {
 	extent.width = 1;
 	extent.height = 1;
 	extent.depth = 1;
-	AllocatedImage default_image = _device.create_image("Default Image", extent, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, true);
-	_device.update_image(default_image,(void*)&default_data, extent);
+	AllocatedImage default_image = _vkContext.create_image("Default Image", extent, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, true);
+	_vkContext.update_image(default_image,(void*)&default_data, extent);
 	_payload.images.push_back(default_image);
 
 	VkSampler default_sampler;
@@ -291,7 +300,7 @@ void Engine::setup_default_data() {
 	sampler_info.magFilter = VK_FILTER_LINEAR;
 	sampler_info.minFilter = VK_FILTER_LINEAR;
 	sampler_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-	default_sampler = _device.create_sampler(sampler_info);
+	default_sampler = _vkContext.create_sampler(sampler_info);
 	_payload.samplers.push_back(default_sampler);
 
 	Texture default_texture{};
