@@ -4,6 +4,15 @@ void GUISystem::init(SDL_Window* window, const VkFormat& swapChainFormat) {
 	init_imgui(window, swapChainFormat);
 }
 
+void GUISystem::run() {
+	//IMGUI Rendering
+	ImGui_ImplVulkan_NewFrame();
+	ImGui_ImplSDL2_NewFrame();
+	ImGui::NewFrame();
+	ImGui::ShowDemoWindow();
+	ImGui::Render();
+}
+
 void GUISystem::shutdown() {
 	//Cleanup Imgui
 	ImGui_ImplVulkan_Shutdown();

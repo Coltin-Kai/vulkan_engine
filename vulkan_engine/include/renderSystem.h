@@ -5,10 +5,11 @@
 #include "SDL.h"
 #include "SDL_vulkan.h"
 #include "vulkan/vulkan.h"
-
 #include "vk_mem_alloc.h"
 #include "VkBootstrap.h"
 #include "gtc/matrix_transform.hpp"
+#include "imgui_impl_sdl2.h"
+#include "imgui_impl_vulkan.h"
 
 #include "vulkanContext.h"
 #include "vulkan_helper_types.h"
@@ -56,29 +57,11 @@ public:
 	RenderSystem(VulkanContext& vkContext) : _vkContext(vkContext){}
 
 	void init(VkExtent2D windowExtent);
+	VkResult run();
 	void shutdown();
 
-	//Frame
-	VkCommandBuffer startFrame(VkResult& result); //Returns the current frame's command buffer and starts recording
-	void endFrame(VkResult& result); //Submits the current frame's commands to the queue
-
-	//Swapchain
-	Image get_currentSwapchainImage();
-	VkExtent2D get_swapChainExtent();
-	VkFormat get_swapChainFormat();
-	void resize_swapchain(VkExtent2D windowExtent);
-
-	//Descriptors
 	void bind_descriptors(GraphicsDataPayload& payload);
-
-	//Draw Context
 	void setup_drawContexts(const GraphicsDataPayload& payload);
-	std::vector<VkBuffer> get_vertexBuffers();
-	VkBuffer get_indexBuffer();
-	RenderShader::PushConstants get_pushConstants();
-	VkBuffer get_indirectDrawBuffer();
-	uint32_t get_drawCount();
-
 	void signal_to_updateDeviceBuffer(DeviceBufferType bufferType);
 	void updateSignaledDeviceBuffers(GraphicsDataPayload& payload);
 private:
@@ -143,11 +126,35 @@ private:
 	//Device Data Updates
 	std::unordered_map<DeviceBufferType, int> _deviceBufferTypesCounter;
 
+	//Depth Image
+	AllocatedImage _depthImage;
+
 	void init_swapchain(VkExtent2D windowExtent);
 	void init_frames();
 	void init_vertexInput();
 	void init_descriptorSet();
 	void init_graphicsPipeline();
+	
+	//Draw
+	VkResult draw(); //Maybe move draw commands to rendersystem object.
+	VkResult draw_geometry(VkCommandBuffer cmd, const Image& swapchainImage);
+	VkResult draw_gui(VkCommandBuffer cmd, const Image& swapchainImage);
+
+	//Swapchain
+	Image get_currentSwapchainImage();
+	VkExtent2D get_swapChainExtent();
+	VkFormat get_swapChainFormat();
+	void resize_swapchain(VkExtent2D windowExtent);
+	
+	//DrawContext
+	std::vector<VkBuffer> get_vertexBuffers();
+	VkBuffer get_indexBuffer();
+	RenderShader::PushConstants get_pushConstants();
+	VkBuffer get_indirectDrawBuffer();
+	uint32_t get_drawCount();
+
+	//Depth Image
+	void setup_depthImage();
 
 	void destroy_swapchain();
 };

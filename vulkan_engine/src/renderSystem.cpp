@@ -9,9 +9,25 @@ void RenderSystem::init(VkExtent2D windowExtent) {
 	init_vertexInput();
 	init_descriptorSet();
 	init_graphicsPipeline();
+
+	setup_depthImage();
+}
+
+VkResult RenderSystem::run() {
+	VkResult result;
+	result = draw();
+
+	if (result != VK_SUCCESS || result != VK_SUBOPTIMAL_KHR) {
+		std::cerr << "Render System: Failed to draw" << std::endl;
+	}
+
+	return result;
 }
 
 void RenderSystem::shutdown() {
+	//Depth Image
+	_vkContext.destroy_image(_depthImage);
+
 	//Cleanup Pipeline
 	vkDestroyPipelineLayout(_vkContext.device, _pipelineLayout, nullptr);
 	vkDestroyPipeline(_vkContext.device, _pipeline, nullptr);
@@ -40,60 +56,6 @@ void RenderSystem::shutdown() {
 
 	//Cleanup Swapchain
 	destroy_swapchain();
-}
-
-VkCommandBuffer RenderSystem::startFrame(VkResult& result) {
-	VK_CHECK(vkWaitForFences(_vkContext.device, 1, &get_current_frame().renderFence, true, 1000000000));
-
-	//Acquire the next swapchain image
-	result = vkAcquireNextImageKHR(_vkContext.device, _swapchain.vkSwapchain, 1000000000, get_current_frame().swapchainSemaphore, nullptr, &_swapchainImageIndex);
-
-	if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
-		return nullptr;
-	}
-
-	VK_CHECK(vkResetFences(_vkContext.device, 1, &get_current_frame().renderFence));
-
-	VkCommandBuffer cmd = get_current_frame().commandBuffer;
-
-	VK_CHECK(vkResetCommandBuffer(cmd, 0));
-
-	VkCommandBufferBeginInfo cmdBeginInfo{};
-	cmdBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-	cmdBeginInfo.pNext = nullptr;
-	cmdBeginInfo.pInheritanceInfo = nullptr;
-	cmdBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-
-	VK_CHECK(vkBeginCommandBuffer(cmd, &cmdBeginInfo));
-	
-	return cmd;
-}
-
-void RenderSystem::endFrame(VkResult& result) {
-	VkCommandBuffer cmd = get_current_frame().commandBuffer;
-
-	VK_CHECK(vkEndCommandBuffer(cmd));
-
-	VkCommandBufferSubmitInfo cmdInfo = vkutil::command_buffer_submit_info(cmd);
-	VkSemaphoreSubmitInfo waitInfo = vkutil::semaphore_submit_info(VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR, get_current_frame().swapchainSemaphore);
-	VkSemaphoreSubmitInfo signalInfo = vkutil::semaphore_submit_info(VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT, get_current_frame().renderSemaphore);
-
-	VkSubmitInfo2 submit = vkutil::submit_info(&cmdInfo, &signalInfo, &waitInfo);
-
-	VK_CHECK(vkQueueSubmit2(_vkContext.graphicsQueue, 1, &submit, get_current_frame().renderFence));
-
-	VkPresentInfoKHR presentInfo{};
-	presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-	presentInfo.pNext = nullptr;
-	presentInfo.pSwapchains = &_swapchain.vkSwapchain;
-	presentInfo.swapchainCount = 1;
-	presentInfo.pWaitSemaphores = &get_current_frame().renderSemaphore;
-	presentInfo.waitSemaphoreCount = 1;
-	presentInfo.pImageIndices = &_swapchainImageIndex;
-
-	result = vkQueuePresentKHR(_vkContext.graphicsQueue, &presentInfo);
-
-	go_next_frame();
 }
 
 Image RenderSystem::get_currentSwapchainImage() {
@@ -585,6 +547,144 @@ void RenderSystem::init_graphicsPipeline() {
 	vkDestroyShaderModule(_vkContext.device, fragShader, nullptr);
 }
 
+VkResult RenderSystem::draw() {
+	VK_CHECK(vkWaitForFences(_vkContext.device, 1, &get_current_frame().renderFence, true, 1000000000));
+
+	//Acquire the next swapchain image
+	VkResult result;
+	result = vkAcquireNextImageKHR(_vkContext.device, _swapchain.vkSwapchain, 1000000000, get_current_frame().swapchainSemaphore, nullptr, &_swapchainImageIndex);
+	
+	if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
+	{
+		std::cerr << "Render System: Failed to acquire swapchain image" << std::endl;
+		return result;
+	}
+
+	VK_CHECK(vkResetFences(_vkContext.device, 1, &get_current_frame().renderFence));
+
+	VkCommandBuffer cmd = get_current_frame().commandBuffer;
+
+	VK_CHECK(vkResetCommandBuffer(cmd, 0));
+
+	VkCommandBufferBeginInfo cmdBeginInfo{};
+	cmdBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	cmdBeginInfo.pNext = nullptr;
+	cmdBeginInfo.pInheritanceInfo = nullptr;
+	cmdBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+	VK_CHECK(vkBeginCommandBuffer(cmd, &cmdBeginInfo));
+	Image swapchainImage = get_currentSwapchainImage();
+
+	//Transition Images for Drawing
+	vkutil::transition_image(cmd, swapchainImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
+	vkutil::transition_image(cmd, _depthImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
+
+	//Clear Color
+	VkClearColorValue clearValue = { {0.5f, 0.5f, 0.5f, 0.5f} };
+
+	VkImageSubresourceRange clearRange = vkutil::image_subresource_range(VK_IMAGE_ASPECT_COLOR_BIT);
+
+	vkCmdClearColorImage(cmd, swapchainImage.image, VK_IMAGE_LAYOUT_GENERAL, &clearValue, 1, &clearRange);
+
+	//Draw
+	draw_geometry(cmd, swapchainImage);
+
+	//Draw GUI
+	draw_gui(cmd, swapchainImage	);
+
+	//Transition for Presentation
+	vkutil::transition_image(cmd, swapchainImage.image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+
+	VK_CHECK(vkEndCommandBuffer(cmd));
+
+	VkCommandBufferSubmitInfo cmdInfo = vkutil::command_buffer_submit_info(cmd);
+	VkSemaphoreSubmitInfo waitInfo = vkutil::semaphore_submit_info(VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR, get_current_frame().swapchainSemaphore);
+	VkSemaphoreSubmitInfo signalInfo = vkutil::semaphore_submit_info(VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT, get_current_frame().renderSemaphore);
+
+	VkSubmitInfo2 submit = vkutil::submit_info(&cmdInfo, &signalInfo, &waitInfo);
+
+	VK_CHECK(vkQueueSubmit2(_vkContext.graphicsQueue, 1, &submit, get_current_frame().renderFence));
+
+	VkPresentInfoKHR presentInfo{};
+	presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+	presentInfo.pNext = nullptr;
+	presentInfo.pSwapchains = &_swapchain.vkSwapchain;
+	presentInfo.swapchainCount = 1;
+	presentInfo.pWaitSemaphores = &get_current_frame().renderSemaphore;
+	presentInfo.waitSemaphoreCount = 1;
+	presentInfo.pImageIndices = &_swapchainImageIndex;
+
+	result = vkQueuePresentKHR(_vkContext.graphicsQueue, &presentInfo);
+
+	go_next_frame();
+	
+	if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+		std::cerr << "Render System: Failed to present" << std::endl;
+	}
+
+	return result;
+}
+
+VkResult RenderSystem::draw_geometry(VkCommandBuffer cmd, const Image& swapchainImage) {
+	VkRenderingAttachmentInfo colorAttachment = vkutil::attachment_info(swapchainImage.imageView, nullptr, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+	VkRenderingAttachmentInfo depthAttachment = vkutil::depth_attachment_info(_depthImage.imageView, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
+
+	VkExtent2D swapchainExtent = get_swapChainExtent();
+
+	VkRenderingInfo renderInfo = vkutil::rendering_info(swapchainExtent, &colorAttachment, &depthAttachment);
+	vkCmdBeginRendering(cmd, &renderInfo);
+
+	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _pipeline);
+
+	//Set Dynamic States
+	VkViewport viewport{};
+	viewport.x = 0;
+	viewport.y = 0;
+	viewport.width = swapchainExtent.width;
+	viewport.height = swapchainExtent.height;
+	viewport.minDepth = 0.0f;
+	viewport.maxDepth = 1.0f;
+
+	vkCmdSetViewport(cmd, 0, 1, &viewport);
+
+	VkRect2D scissor{};
+	scissor.offset.x = 0;
+	scissor.offset.y = 0;
+	scissor.extent.width = swapchainExtent.width;
+	scissor.extent.height = swapchainExtent.height;
+
+	vkCmdSetScissor(cmd, 0, 1, &scissor);
+
+	//Bind Descriptor Set
+	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _pipelineLayout, 0, 1, &_descriptorSet, 0, nullptr);
+
+	//Bind Vertex Input Buffers
+	std::vector<VkBuffer> vertexBuffers = get_vertexBuffers(); //Jank Debug code will move vector to drawContext structure itself
+	std::vector<VkDeviceSize> vertexOffsets = { 0, 0 };
+	vkCmdBindVertexBuffers(cmd, 0, vertexBuffers.size(), vertexBuffers.data(), vertexOffsets.data());
+	vkCmdBindIndexBuffer(cmd, get_indexBuffer(), 0, VK_INDEX_TYPE_UINT32);
+
+	//Push Constants
+	RenderShader::PushConstants pushconstants = get_pushConstants();
+	vkCmdPushConstants(cmd, _pipelineLayout, VK_SHADER_STAGE_ALL_GRAPHICS, 0, sizeof(RenderShader::PushConstants), &pushconstants);
+
+	//Draw
+	vkCmdDrawIndexedIndirect(cmd, get_indirectDrawBuffer(), 0, get_drawCount(), sizeof(VkDrawIndexedIndirectCommand));
+
+	vkCmdEndRendering(cmd);
+}
+
+VkResult RenderSystem::draw_gui(VkCommandBuffer cmd, const Image& swapchainImage) {
+	VkRenderingAttachmentInfo colorAttachment = vkutil::attachment_info(swapchainImage.imageView, nullptr, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+	VkRenderingInfo renderInfo = vkutil::rendering_info(get_swapChainExtent(), &colorAttachment, nullptr);
+
+	vkCmdBeginRendering(cmd, &renderInfo);
+
+	ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
+
+	vkCmdEndRendering(cmd);
+}
+
 void RenderSystem::resize_swapchain(VkExtent2D windowExtent) {
 	vkDeviceWaitIdle(_vkContext.device);
 	destroy_swapchain();
@@ -626,6 +726,15 @@ void RenderSystem::bind_descriptors(GraphicsDataPayload& payload) {
 	descriptorWrites[1].pImageInfo = sampler_imgInfos.data();
 
 	vkUpdateDescriptorSets(_vkContext.device, descriptorWrites.size(), descriptorWrites.data(), 0, nullptr);
+}
+
+void RenderSystem::setup_depthImage() {
+	VkExtent2D swapchainExtent = get_swapChainExtent();
+	VkExtent3D depthExtent;
+	depthExtent.width = swapchainExtent.width;
+	depthExtent.height = swapchainExtent.height;
+	depthExtent.depth = 1;
+	_depthImage = _vkContext.create_image("Depth Image", depthExtent, VK_FORMAT_D32_SFLOAT, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, false);
 }
 
 void RenderSystem::destroy_swapchain() {

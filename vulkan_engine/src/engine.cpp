@@ -35,6 +35,7 @@ void Engine::init() {
 
 	//Initalize Systems
 	_renderSys.init(_windowExtent);
+	_guiSys.init(_window, _renderSys.get_swapChainFormat());
 
 	//adfads
 	setup_depthImage();
@@ -113,23 +114,18 @@ void Engine::run() {
 		//Device Data Updates
 		_renderSys.updateSignaledDeviceBuffers(_payload);
 
-		//IMGUI Rendering
-		ImGui_ImplVulkan_NewFrame();
-		ImGui_ImplSDL2_NewFrame();
-		ImGui::NewFrame();
-		ImGui::ShowDemoWindow();
-		ImGui::Render();
-
-		//DRAW
-		draw();
+		VkResult result;
+		result = _renderSys.run();
+		if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+			windowResized = true;
+			continue;
+		}
+		_guiSys.run();
 	}
 }
 
 void Engine::cleanup() {
 	vkDeviceWaitIdle(_vkContext.device);
-
-	//Depth Image
-	_vkContext.destroy_image(_depthImage);
 
 	//Payload Cleanup
 	for (VkSampler& sampler : _payload.samplers) {
@@ -144,6 +140,7 @@ void Engine::cleanup() {
 	_mainDeletionQueue.flush();
 
 	//RenderingSystem Cleanup
+	_guiSys.shutdown();
 	_renderSys.shutdown();
 
 	//Vulkan Cleanup
@@ -151,106 +148,6 @@ void Engine::cleanup() {
 
 	//SDL Cleanup
 	SDL_DestroyWindow(_window);
-}
-
-void Engine::draw() {
-	VkResult result;
-	VkCommandBuffer cmd = _renderSys.startFrame(result);
-	Image swapchainImage = _renderSys.get_currentSwapchainImage();
-
-	if (result == VK_ERROR_OUT_OF_DATE_KHR) { //Failed to acquire swapchain image
-		windowResized = true;
-		return;
-	}
-	else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
-		throw std::runtime_error("Failed to acquire Swap Chain Images");
-
-	//Transition Images for Drawing
-	vkutil::transition_image(cmd, swapchainImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
-	vkutil::transition_image(cmd, _depthImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
-
-	//Clear Color
-	VkClearColorValue clearValue = { {0.5f, 0.5f, 0.5f, 0.5f} };
-
-	VkImageSubresourceRange clearRange = vkutil::image_subresource_range(VK_IMAGE_ASPECT_COLOR_BIT);
-
-	vkCmdClearColorImage(cmd, swapchainImage.image, VK_IMAGE_LAYOUT_GENERAL, &clearValue, 1, &clearRange);
-
-	//Draw
-	draw_geometry(cmd, swapchainImage);
-
-	//Draw GUI
-	draw_imgui(cmd, swapchainImage);
-
-	//Transition for Presentation
-	vkutil::transition_image(cmd, swapchainImage.image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
-
-	_renderSys.endFrame(result);
-
-	if (result == VK_ERROR_OUT_OF_DATE_KHR)
-		windowResized = true;
-	else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
-		throw std::runtime_error("Failed to Present!");
-}
-
-void Engine::draw_geometry(VkCommandBuffer cmd, const Image& swapchainImage) {
-	VkRenderingAttachmentInfo colorAttachment = vkutil::attachment_info(swapchainImage.imageView, nullptr, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
-	VkRenderingAttachmentInfo depthAttachment = vkutil::depth_attachment_info(_depthImage.imageView, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
-
-	VkExtent2D swapchainExtent = _renderSys.get_swapChainExtent();
-
-	VkRenderingInfo renderInfo = vkutil::rendering_info(swapchainExtent, &colorAttachment, &depthAttachment);
-	vkCmdBeginRendering(cmd, &renderInfo);
-
-	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _renderSys._pipeline);
-
-	//Set Dynamic States
-	VkViewport viewport{};
-	viewport.x = 0;
-	viewport.y = 0;
-	viewport.width = swapchainExtent.width;
-	viewport.height = swapchainExtent.height;
-	viewport.minDepth = 0.0f;
-	viewport.maxDepth = 1.0f;
-
-	vkCmdSetViewport(cmd, 0, 1, &viewport);
-
-	VkRect2D scissor{};
-	scissor.offset.x = 0;
-	scissor.offset.y = 0;
-	scissor.extent.width = swapchainExtent.width;
-	scissor.extent.height = swapchainExtent.height;
-
-	vkCmdSetScissor(cmd, 0, 1, &scissor);
-
-	//Bind Descriptor Set
-	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _renderSys._pipelineLayout, 0, 1, &_renderSys._descriptorSet, 0, nullptr);
-
-	//Bind Vertex Input Buffers
-	std::vector<VkBuffer> vertexBuffers = _renderSys.get_vertexBuffers(); //Jank Debug code will move vector to drawContext structure itself
-	std::vector<VkDeviceSize> vertexOffsets = { 0, 0 };
-	vkCmdBindVertexBuffers(cmd, 0, vertexBuffers.size(), vertexBuffers.data(), vertexOffsets.data());
-	vkCmdBindIndexBuffer(cmd, _renderSys.get_indexBuffer(), 0, VK_INDEX_TYPE_UINT32);
-
-	//Push Constants
-	RenderShader::PushConstants pushconstants = _renderSys.get_pushConstants();
-	vkCmdPushConstants(cmd, _renderSys._pipelineLayout, VK_SHADER_STAGE_ALL_GRAPHICS, 0, sizeof(RenderShader::PushConstants), &pushconstants);
-
-	//Draw
-	vkCmdDrawIndexedIndirect(cmd, _renderSys.get_indirectDrawBuffer(), 0, _renderSys.get_drawCount(), sizeof(VkDrawIndexedIndirectCommand));
-
-	vkCmdEndRendering(cmd);
-}
-
-void Engine::draw_imgui(VkCommandBuffer cmd, const Image& swapchainImage) {
-	VkRenderingAttachmentInfo colorAttachment = vkutil::attachment_info(swapchainImage.imageView, nullptr, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
-	VkRenderingInfo renderInfo = vkutil::rendering_info(_renderSys.get_swapChainExtent(), &colorAttachment, nullptr);
-
-	vkCmdBeginRendering(cmd, &renderInfo);
-
-	ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
-
-	vkCmdEndRendering(cmd);
 }
 
 void Engine::setup_depthImage() {

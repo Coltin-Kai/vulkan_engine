@@ -20,6 +20,7 @@
 #include "vulkanContext.h"
 #include "Camera.h"
 #include "renderSystem.h"	
+#include "guiSystem.h"
 
 #include <vector>
 #include <deque>
@@ -76,14 +77,12 @@ private:
 	//VulkanContext
 	VulkanContext _vkContext;
 
-	//MyDevice
+	//Systems
 	RenderSystem _renderSys{ _vkContext };
+	GUISystem _guiSys{ _vkContext };
 
 	//Swapchain
 	bool windowResized = false;
-
-	//Depth Image
-	AllocatedImage _depthImage;
 
 	//Deletion Queue
 	DeletionQueue _mainDeletionQueue;
@@ -95,13 +94,7 @@ private:
 	GraphicsDataPayload _payload;
 
 	//Data Update Stuff
-	DeviceDataMapper _deviceDataMapper;
-
-	void draw();
-
-	void draw_geometry(VkCommandBuffer cmd, const Image& swapchainImage);
-
-	void draw_imgui(VkCommandBuffer cmd, const Image& swapchainImage);
+	DeviceDataMapper _deviceDataMapper; //Currently not used
 
 	void setup_depthImage();
 

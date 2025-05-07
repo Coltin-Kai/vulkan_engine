@@ -12,6 +12,7 @@
 #include "vulkanContext.h"
 
 class GUISystem {
+public:
 	//IMGUI Pool
 
 	GUISystem(VulkanContext& vkContext) : _vkContext(vkContext) {}
