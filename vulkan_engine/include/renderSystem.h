@@ -60,6 +60,12 @@ public:
 	VkResult run();
 	void shutdown();
 
+	//Swapchain
+	Image get_currentSwapchainImage();
+	VkExtent2D get_swapChainExtent();
+	VkFormat get_swapChainFormat();
+
+	void resize_swapchain(VkExtent2D windowExtent);
 	void bind_descriptors(GraphicsDataPayload& payload);
 	void setup_drawContexts(const GraphicsDataPayload& payload);
 	void signal_to_updateDeviceBuffer(DeviceBufferType bufferType);
@@ -137,14 +143,8 @@ private:
 	
 	//Draw
 	VkResult draw(); //Maybe move draw commands to rendersystem object.
-	VkResult draw_geometry(VkCommandBuffer cmd, const Image& swapchainImage);
-	VkResult draw_gui(VkCommandBuffer cmd, const Image& swapchainImage);
-
-	//Swapchain
-	Image get_currentSwapchainImage();
-	VkExtent2D get_swapChainExtent();
-	VkFormat get_swapChainFormat();
-	void resize_swapchain(VkExtent2D windowExtent);
+	void draw_geometry(VkCommandBuffer cmd, const Image& swapchainImage);
+	void draw_gui(VkCommandBuffer cmd, const Image& swapchainImage);
 	
 	//DrawContext
 	std::vector<VkBuffer> get_vertexBuffers();

@@ -17,7 +17,7 @@ VkResult RenderSystem::run() {
 	VkResult result;
 	result = draw();
 
-	if (result != VK_SUCCESS || result != VK_SUBOPTIMAL_KHR) {
+	if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
 		std::cerr << "Render System: Failed to draw" << std::endl;
 	}
 
@@ -88,6 +88,8 @@ void RenderSystem::init_swapchain(VkExtent2D windowExtent) {
 	std::vector<VkImage> imgs = vkbSwapchain.get_images().value();
 	std::vector<VkImageView> imgViews = vkbSwapchain.get_image_views().value();
 
+	_swapchain.images.clear(); //Ensures that future calls to this function, like when resizing swapchain, will remove existing deleted images
+	_swapchain.images.reserve(imgs.size());
 	for (int i = 0; i < imgs.size(); i++) {
 		_swapchain.images.push_back({ .image = imgs[i], .imageView = imgViews[i], .extent = { .width = 0, .height = 0, .depth = 0 } }); //Since using swapchain struct's extent, no need for indivudual image extents.
 	}
@@ -590,7 +592,7 @@ VkResult RenderSystem::draw() {
 	draw_geometry(cmd, swapchainImage);
 
 	//Draw GUI
-	draw_gui(cmd, swapchainImage	);
+	draw_gui(cmd, swapchainImage);
 
 	//Transition for Presentation
 	vkutil::transition_image(cmd, swapchainImage.image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
@@ -625,7 +627,7 @@ VkResult RenderSystem::draw() {
 	return result;
 }
 
-VkResult RenderSystem::draw_geometry(VkCommandBuffer cmd, const Image& swapchainImage) {
+void RenderSystem::draw_geometry(VkCommandBuffer cmd, const Image& swapchainImage) {
 	VkRenderingAttachmentInfo colorAttachment = vkutil::attachment_info(swapchainImage.imageView, nullptr, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
 	VkRenderingAttachmentInfo depthAttachment = vkutil::depth_attachment_info(_depthImage.imageView, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
 
@@ -674,7 +676,7 @@ VkResult RenderSystem::draw_geometry(VkCommandBuffer cmd, const Image& swapchain
 	vkCmdEndRendering(cmd);
 }
 
-VkResult RenderSystem::draw_gui(VkCommandBuffer cmd, const Image& swapchainImage) {
+void RenderSystem::draw_gui(VkCommandBuffer cmd, const Image& swapchainImage) {
 	VkRenderingAttachmentInfo colorAttachment = vkutil::attachment_info(swapchainImage.imageView, nullptr, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
 	VkRenderingInfo renderInfo = vkutil::rendering_info(get_swapChainExtent(), &colorAttachment, nullptr);
 
@@ -689,6 +691,9 @@ void RenderSystem::resize_swapchain(VkExtent2D windowExtent) {
 	vkDeviceWaitIdle(_vkContext.device);
 	destroy_swapchain();
 	init_swapchain(windowExtent);
+	//Recreate DepthImage with new adjusted Swapchain size
+	_vkContext.destroy_image(_depthImage);
+	setup_depthImage();
 }
 
 void RenderSystem::bind_descriptors(GraphicsDataPayload& payload) {

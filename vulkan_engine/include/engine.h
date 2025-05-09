@@ -96,7 +96,5 @@ private:
 	//Data Update Stuff
 	DeviceDataMapper _deviceDataMapper; //Currently not used
 
-	void setup_depthImage();
-
 	void setup_default_data();
 };

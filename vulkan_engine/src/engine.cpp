@@ -37,8 +37,6 @@ void Engine::init() {
 	_renderSys.init(_windowExtent);
 	_guiSys.init(_window, _renderSys.get_swapChainFormat());
 
-	//adfads
-	setup_depthImage();
 	setup_default_data();
 	//LAZY CODE STUFF
 	//-Load File Data
@@ -115,12 +113,12 @@ void Engine::run() {
 		_renderSys.updateSignaledDeviceBuffers(_payload);
 
 		VkResult result;
+		_guiSys.run();
 		result = _renderSys.run();
 		if (result == VK_ERROR_OUT_OF_DATE_KHR) {
 			windowResized = true;
 			continue;
 		}
-		_guiSys.run();
 	}
 }
 
@@ -148,35 +146,6 @@ void Engine::cleanup() {
 
 	//SDL Cleanup
 	SDL_DestroyWindow(_window);
-}
-
-void Engine::setup_depthImage() {
-	/*
-	_depthImage.format = VK_FORMAT_D32_SFLOAT;
-	VkExtent3D extent{};
-	extent.width = _swapchain.extent.width;
-	extent.height = _swapchain.extent.height;
-	extent.depth = 1; 
-	_depthImage.extent = extent;
-
-	VkImageCreateInfo depth_image_info = vkutil::image_create_info(_depthImage.format, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, _depthImage.extent);
-	
-	VmaAllocationCreateInfo depth_image_alloc_info{};
-	depth_image_alloc_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-	depth_image_alloc_info.requiredFlags = VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
-	vmaCreateImage(_allocator, &depth_image_info, &depth_image_alloc_info, &_depthImage.image, &_depthImage.allocation, nullptr);
-
-	VkImageViewCreateInfo depth_image_view_info = vkutil::imageview_create_info(_depthImage.format, _depthImage.image, VK_IMAGE_ASPECT_DEPTH_BIT);
-
-	VK_CHECK(vkCreateImageView(_device, &depth_image_view_info, nullptr, &_depthImage.imageView));
-	*/
-	VkExtent2D swapchainExtent = _renderSys.get_swapChainExtent();
-	VkExtent3D depthExtent;
-	depthExtent.width = swapchainExtent.width;
-	depthExtent.height = swapchainExtent.height;
-	depthExtent.depth = 1;
-	_depthImage = _vkContext.create_image("Depth Image", depthExtent, VK_FORMAT_D32_SFLOAT, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, false);
 }
 
 void Engine::setup_default_data() {
