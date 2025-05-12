@@ -45,6 +45,8 @@ void Engine::init() {
 	_camera = Camera({ 0.0f, 0.0f, 0.15f });
 	_camera.update_view_matrix();
 	_payload.camera_transform = _camera.get_view_matrix();
+	_payload.proj_transform = glm::perspective(glm::radians(45.0f), _windowExtent.width / (float)_windowExtent.height, 50.0f, 0.01f);
+	_payload.proj_transform[1][1] *= -1;
 
 	//Bind Images and Samplers
 	_renderSys.bind_descriptors(_payload);
@@ -90,10 +92,12 @@ void Engine::run() {
 			int w;
 			int h;
 			SDL_GetWindowSize(_window, &w, &h);
-			VkExtent2D windowExtent;
-			windowExtent.width = w;
-			windowExtent.height = h;
-			_renderSys.resize_swapchain(windowExtent);
+			_windowExtent.width = w;
+			_windowExtent.height = h;
+			_renderSys.resize_swapchain(_windowExtent);
+			_payload.proj_transform = glm::perspective(glm::radians(45.0f), _windowExtent.width / (float)_windowExtent.height, 50.0f, 0.01f);
+			_payload.proj_transform[1][1] *= -1;
+			_renderSys.signal_to_updateDeviceBuffer(DeviceBufferType::ViewProjMatrix);
 			windowResized = false;
 		}
 		

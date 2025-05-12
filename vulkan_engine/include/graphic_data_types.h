@@ -31,6 +31,7 @@ struct GraphicsDataPayload{
 	std::vector<std::shared_ptr<Material>> materials{}; //Global Materials
 
 	glm::mat4 camera_transform;
+	glm::mat4 proj_transform;
 };
 
 struct Scene {

@@ -10,6 +10,7 @@
 #include "vk_mem_alloc.h"
 
 #include "glm.hpp"
+#include "gtc/matrix_transform.hpp"
 #include "vec3.hpp"
 
 #include "fastgltf/core.hpp"
