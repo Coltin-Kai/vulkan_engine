@@ -8,6 +8,7 @@
 #include "imgui.h"
 #include "imgui_impl_sdl2.h"
 #include "imgui_impl_vulkan.h"
+#include "imfilebrowser.h"
 
 #include "vulkanContext.h"
 
@@ -25,6 +26,8 @@ public:
 
 private:
 	VulkanContext& _vkContext;
+
+	ImGui::FileBrowser fileExplorer{ImGuiFileBrowserFlags_CloseOnEsc};
 
 	void init_imgui(SDL_Window* window, const VkFormat& swapChainFormat);
 };

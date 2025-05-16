@@ -2,14 +2,36 @@
 
 void GUISystem::init(SDL_Window* window, const VkFormat& swapChainFormat) {
 	init_imgui(window, swapChainFormat);
+
+	//Init File Explorer
+	fileExplorer.SetTitle("Load 3D File");
+	fileExplorer.SetTypeFilters({ ".gltf" });
 }
 
 void GUISystem::run() {
-	//IMGUI Rendering
+	//GUI
 	ImGui_ImplVulkan_NewFrame();
 	ImGui_ImplSDL2_NewFrame();
 	ImGui::NewFrame();
-	ImGui::ShowDemoWindow();
+
+	if (ImGui::BeginMainMenuBar()) {
+		if (ImGui::BeginMenu("File")) {
+			if (ImGui::MenuItem("Open")) {
+				fileExplorer.Open();
+			}
+			ImGui::EndMenu();
+		}
+		ImGui::EndMainMenuBar();
+	}
+
+	fileExplorer.Display();
+
+	if (fileExplorer.HasSelected()) {
+		//Do whatever...
+		std::cout << fileExplorer.GetSelected().string() << std::endl;
+		fileExplorer.ClearSelected();
+	}
+
 	ImGui::Render();
 }
 
@@ -45,7 +67,7 @@ void GUISystem::init_imgui(SDL_Window* window, const VkFormat& swapChainFormat) 
 	ImGui::CreateContext();
 	ImGui_ImplSDL2_InitForVulkan(window);
 
-	ImGui_ImplVulkan_InitInfo init_info{};
+	ImGui_ImplVulkan_InitInfo init_info{}; 
 	init_info.Instance = _vkContext.instance;
 	init_info.PhysicalDevice = _vkContext.physicalDevice;
 	init_info.Device = _vkContext.device;

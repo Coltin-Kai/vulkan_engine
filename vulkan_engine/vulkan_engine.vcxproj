@@ -46,6 +46,7 @@
     <ClInclude Include="include\graphic_data_types.h" />
     <ClInclude Include="include\guiSystem.h" />
     <ClInclude Include="include\imconfig.h" />
+    <ClInclude Include="include\imfilebrowser.h" />
     <ClInclude Include="include\imgui.h" />
     <ClInclude Include="include\imgui_impl_sdl2.h" />
     <ClInclude Include="include\imgui_impl_vulkan.h" />
