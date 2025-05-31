@@ -9,7 +9,7 @@
 #include <iostream>
 #include <stack>
 
-void loadGLTFFile(VulkanContext& vkContext, GraphicsDataPayload& dataPayload, std::filesystem::path filePath) { //WIP, want to make it so that it properly add to existing data payload to allow loading multiple scenes.
+void loadGLTFFile(VulkanContext& vkContext, GraphicsDataPayload& dataPayload, std::filesystem::path filePath) { 
 	//Parser and GLTF LOading Code
 	fastgltf::Parser parser;
 
@@ -24,11 +24,9 @@ void loadGLTFFile(VulkanContext& vkContext, GraphicsDataPayload& dataPayload, st
 
 	fastgltf::Asset asset = std::move(expected_asset.get());
 
-	//Index/ID offsets. To offset id for already existing data in the payload's data vectors (Default data and existing data)
+	//Index offsets. To offset index for already existing data in the payload's data vectors (Default data and existing data)
 	size_t textureImage_index_offset = dataPayload.images.size();
 	size_t samplers_index_offset = dataPayload.samplers.size();
-	size_t texture_index_offset = dataPayload.textures.size();
-	size_t material_index_offset = dataPayload.materials.size();
 
 	//Load Texture Samplers
 	std::vector<VkSampler> temp_samplers; //Temp vectors used to correctly point other element's members according to index from GLTF file.
@@ -49,7 +47,7 @@ void loadGLTFFile(VulkanContext& vkContext, GraphicsDataPayload& dataPayload, st
 		temp_samplers[temp_samplers.size() - 1] = vkContext.create_sampler(samplerInfo);
 	}
 
-	dataPayload.samplers.insert(dataPayload.samplers.end(), temp_samplers.begin(), temp_samplers.end()); //Add Sampelrs to Payload
+	dataPayload.samplers.insert(dataPayload.samplers.end(), temp_samplers.begin(), temp_samplers.end()); //Add Samplers to Payload
 
 	//Load Images
 	std::vector<AllocatedImage> temp_images;
@@ -241,11 +239,14 @@ void loadGLTFFile(VulkanContext& vkContext, GraphicsDataPayload& dataPayload, st
 		dataPayload.scenes.emplace_back();
 		Scene& scene = dataPayload.scenes[scenes_offset + i];
 		
-		if (asset.defaultScene.has_value() && i == asset.defaultScene.value()) { //Set Current/Default Scene
-			dataPayload.current_scene = &scene;
+		if (asset.defaultScene.has_value() && i == asset.defaultScene.value()) { //Set Current/Default Scene from this file if it exists
+			dataPayload.current_scene_idx = scenes_offset + i;
 		}
 
-		scene.name = asset.scenes[i].name;
+		if (!asset.scenes[i].name.empty()) //If Scene has name, assign name in payload. If not, name it after the File + scene index;
+			scene.name = asset.scenes[i].name;
+		else
+			scene.name = filePath.stem().string() + std::format("_{}", i);
 
 		//Load Nodes. Perform DFS to get all the nodes in the scene
 		std::stack<size_t> DFS_node_index_stack; //Maps the correct nodes to traverse for DFS

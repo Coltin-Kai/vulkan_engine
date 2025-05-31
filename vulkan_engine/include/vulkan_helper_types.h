@@ -29,11 +29,6 @@ struct AllocatedBuffer {
 	}
 };
 
-struct DataRegion { //Used to keep track of data and its space inside a buffer. Specificallyy those that havee varied sizes
-	size_t offset; //Offset of region in bytes
-	size_t size; //SIze of region in bytes
-};
-
 //Maybe create a allocatedbuffer struct that allows easy suballocation. Maybe.like a dynamic allocated buffer
 struct DynamicAllocatedBuffer {
 	AllocatedBuffer alloc_buffer;

@@ -113,11 +113,19 @@ void Engine::run() {
 			_renderSys.signal_to_updateDeviceBuffer(DeviceBufferType::ViewProjMatrix);
 		}
 
-		//Device Data Updates
+		VkResult result;
+		_guiSys.run(_guiParam, _payload);
+
+		if (_guiParam.fileOpened) {
+			_guiParam.fileOpened = false;
+			loadGLTFFile(_vkContext, _payload, _guiParam.OpenedFilePath); //Testing this
+			_renderSys.signal_to_updateDeviceBuffer(DeviceBufferType::All);
+			_renderSys.bind_descriptors(_payload);
+		}
+
+		//Render System Device Data/Render Data Updates
 		_renderSys.updateSignaledDeviceBuffers(_payload);
 
-		VkResult result;
-		_guiSys.run();
 		result = _renderSys.run();
 		if (result == VK_ERROR_OUT_OF_DATE_KHR) {
 			windowResized = true;

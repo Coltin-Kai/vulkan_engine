@@ -8,7 +8,7 @@ void GUISystem::init(SDL_Window* window, const VkFormat& swapChainFormat) {
 	fileExplorer.SetTypeFilters({ ".gltf" });
 }
 
-void GUISystem::run() {
+void GUISystem::run(GUIParameters& param, GraphicsDataPayload& graphics_payload) {
 	//GUI
 	ImGui_ImplVulkan_NewFrame();
 	ImGui_ImplSDL2_NewFrame();
@@ -24,11 +24,32 @@ void GUISystem::run() {
 		ImGui::EndMainMenuBar();
 	}
 
-	fileExplorer.Display();
+	if (ImGui::Begin("Menu")) {
+		ImGui::SeparatorText("Scene");
+		//Combo
+		std::string combo_preview_value = graphics_payload.scenes[graphics_payload.current_scene_idx].name;
+		if (ImGui::BeginCombo("Scene", combo_preview_value.c_str())) {
+			for (int i = 0; i < graphics_payload.scenes.size(); i++) {
+				const bool is_selected = (graphics_payload.current_scene_idx == i);
+				std::string label = graphics_payload.scenes[i].name + std::format("##{}", i); //Assign unique label ID to selectable
+				if (ImGui::Selectable(label.c_str(), is_selected))
+					graphics_payload.current_scene_idx = i;
 
+				if (is_selected)
+					ImGui::SetItemDefaultFocus();
+			}
+			ImGui::EndCombo();
+		}
+
+		ImGui::SeparatorText("Node Tree");
+		ImGui::End();
+	}
+
+	//File Explorer
+	fileExplorer.Display();
 	if (fileExplorer.HasSelected()) {
-		//Do whatever...
-		std::cout << fileExplorer.GetSelected().string() << std::endl;
+		param.fileOpened = true;
+		param.OpenedFilePath = fileExplorer.GetSelected().string();
 		fileExplorer.ClearSelected();
 	}
 

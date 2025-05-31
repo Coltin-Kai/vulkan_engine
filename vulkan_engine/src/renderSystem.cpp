@@ -241,189 +241,41 @@ void RenderSystem::init_descriptorSet() {
 }
 
 void RenderSystem::setup_drawContexts(const GraphicsDataPayload& payload) { 
-	//Holds all the data for one drawContext
-	std::vector<VkDrawIndexedIndirectCommand> indirect_commands;
-	uint32_t drawCount = 0;
-	std::vector<glm::vec3> positions;
-	std::vector<RenderShader::VertexAttributes> attributes;
-	std::vector<uint32_t> indices;
-	RenderShader::ViewProj viewproj;
-	viewproj.view = payload.camera_transform;
-	viewproj.proj = payload.proj_transform;
-	std::vector<glm::mat4> model_matrices; //Also contains view and proj at start
-	std::vector<int32_t> primitiveIds;
-	std::vector<RenderShader::PrimitiveInfo> primitiveInfos;
-	std::vector<RenderShader::Material> materials;
-	std::vector<RenderShader::Texture> textures;
-
-	//VkBufferCopies to correctly copy data to respective regions in buffer in accordance to their ids
-	VkBufferCopy viewprojMatrix_copy_info;
-	viewprojMatrix_copy_info = { .srcOffset = 0, .dstOffset = 0, .size = sizeof(glm::mat4) * 2 };
-	VkBufferCopy pos_copy_info;
-	VkBufferCopy attrib_copy_info;
-	VkBufferCopy index_copy_info;
-	VkBufferCopy indirect_copy_info;
-	VkBufferCopy primId_copy_info;
-	std::vector<VkBufferCopy> modelMatrices_copy_infos;
-	std::vector<VkBufferCopy> primInfo_copy_infos;
-	std::vector<VkBufferCopy> material_copy_infos;
-	std::vector<VkBufferCopy> texture_copy_infos;
-
-	//Get Our Data from Host
-	//-Navigate Node Tree for Mesh Nodes and Get Primitive Data
-	//--Add all root nodes in current scene to Sack
-	std::stack<std::shared_ptr<Node>> dfs_node_stack;
-	for (auto root_node : payload.current_scene->root_nodes) {
-		dfs_node_stack.push(root_node);
-	}
-	//--Perform DFS, traverse all Nodes
-	while (!dfs_node_stack.empty()) {
-		std::shared_ptr<Node> currentNode = dfs_node_stack.top();
-		dfs_node_stack.pop();
-
-		//Add currentNode's children to Stack
-		for (std::shared_ptr<Node> child_node : currentNode->child_nodes) {
-			dfs_node_stack.push(child_node);
-		}
-
-		modelMatrices_copy_infos.push_back({ .srcOffset = model_matrices.size() * sizeof(glm::mat4), .dstOffset = currentNode->getID() * sizeof(glm::mat4), .size = sizeof(glm::mat4) });
-		model_matrices.push_back(currentNode->get_WorldTransform());
-
-		//Check if Node represents Mesh
-		if (currentNode->mesh != nullptr) {
-			std::shared_ptr<Mesh>& currentMesh = currentNode->mesh;
-
-			//Iterate through it's primitives and add their data to 
-			for (Mesh::Primitive primitive : currentMesh->primitives) {
-				//Indirect Draw Command
-				VkDrawIndexedIndirectCommand indirect_command{};
-				indirect_command.firstIndex = indices.size();
-				indirect_command.indexCount = primitive.indices.size();
-				indirect_command.vertexOffset = positions.size();
-				indirect_command.firstInstance = 0;
-				indirect_command.instanceCount = 1;
-				indirect_commands.push_back(indirect_command);
-
-				drawCount++;
-
-				//Primitive Ids
-				primitiveIds.push_back(primitive.getID());
-
-				/*
-				//-Construct The Primitive's DataRegions and push them back onto our array of regions.
-				DataRegion last_vertex_region;
-				if (_deviceDataMapper.primitiveVerticeRegions.size() > 0) { //Check if there is a region to designate as the last. If not just set a 0 offset 0 size one.
-					uint32_t last_vertex_region_ID = _deviceDataMapper.primitiveVerticeRegions.back();
-					last_vertex_region = _deviceDataMapper.PrimitiveID_to_PrimitivePositionsRegions[last_vertex_region_ID];
-				}
-				else
-					last_vertex_region = { .offset = 0, .size = 0 };
-
-				_deviceDataMapper.PrimitiveID_to_PrimitivePositionsRegions[primitive.getID()] = { .offset = last_vertex_region.offset + last_vertex_region.size, .size = sizeof(glm::vec3) * primitive.vertices.size() };
-				_deviceDataMapper.PrimitiveID_to_PrimitiveAttributesRegions[primitive.getID()] = { .offset = last_vertex_region.offset + last_vertex_region.size, .size = sizeof(RenderShader::VertexAttributes) * primitive.vertices.size() };
-				_deviceDataMapper.primitiveVerticeRegions.push_back(primitive.getID());
-
-				DataRegion last_index_region;
-				if (_deviceDataMapper.primitiveIndicesRegions.size() > 0) { //Check if there is a region to designate as the last. If not just set a 0 offset 0 size one.
-					uint32_t last_index_region_ID = _deviceDataMapper.primitiveIndicesRegions.back();
-					last_index_region = _deviceDataMapper.PrimitiveID_to_PrimitiveIndicesRegions[last_index_region_ID];
-				}
-				else
-					last_index_region = { .offset = 0, .size = 0 };
-
-				_deviceDataMapper.PrimitiveID_to_PrimitiveIndicesRegions[primitive.getID()] = { .offset = last_index_region.offset + last_index_region.size, .size = sizeof(uint32_t) * primitive.indices.size() };
-				_deviceDataMapper.primitiveIndicesRegions.push_back(primitive.getID());
-				*/
-				//Vertex's Position and other Vertex Attributes
-				for (Mesh::Primitive::Vertex vertex : primitive.vertices) {
-					RenderShader::VertexAttributes attribute;
-					attribute.normal = vertex.normal;
-					attribute.tangent = vertex.tangent;
-					if (vertex.colors.empty())
-						attribute.color = glm::vec3(1.0f, 1.0f, 1.0f);
-					else
-						attribute.color = vertex.colors[0]; //Get Color_0
-					if (vertex.uvs.empty())
-						attribute.uv = glm::vec2(-1.0f, -1.0f);
-					else
-						attribute.uv = vertex.uvs[0]; //Get TexCoord_0
-
-					positions.push_back(vertex.position);
-					attributes.push_back(attribute);
-				}
-
-				//Indices
-				indices.insert(indices.end(), primitive.indices.begin(), primitive.indices.end());
-
-				//PrimitiveInfo
-				primInfo_copy_infos.push_back({ .srcOffset = primitiveInfos.size() * sizeof(RenderShader::PrimitiveInfo), .dstOffset = primitive.getID() * sizeof(RenderShader::PrimitiveInfo), .size = sizeof(RenderShader::PrimitiveInfo) });
-				RenderShader::PrimitiveInfo prmInfo{};
-				if (primitive.material.expired() != true)
-					prmInfo.mat_id = primitive.material.lock()->getID();
-				else
-					prmInfo.mat_id = 0;
-				prmInfo.model_matrix_id = currentNode->getID();
-				primitiveInfos.push_back(prmInfo);
-			}
-		}
-	}
-	pos_copy_info = { .srcOffset = 0, .dstOffset = 0, .size = sizeof(glm::vec3) * positions.size() };
-	attrib_copy_info = { .srcOffset = 0, .dstOffset = 0, .size = sizeof(RenderShader::VertexAttributes) * attributes.size() };
-	index_copy_info = { .srcOffset = 0, .dstOffset = 0, .size = sizeof(uint32_t) * indices.size() };
-	indirect_copy_info = { .srcOffset = 0, .dstOffset = 0, .size = sizeof(VkDrawIndexedIndirectCommand) * indirect_commands.size() };
-	primId_copy_info = { .srcOffset = 0, .dstOffset = 0, .size = sizeof(int32_t) * primitiveIds.size() };
-
-	//-Get Materials
-	for (std::shared_ptr<Material> material : payload.materials) {
-		material_copy_infos.push_back({ .srcOffset = materials.size() * sizeof(RenderShader::Material), .dstOffset = material->getID() * sizeof(RenderShader::Material), .size = sizeof(RenderShader::Material) });
-		RenderShader::Material mat{};
-		if (material->baseColor_texture.expired() != true)
-			mat.baseColor_texture_id = material->baseColor_texture.lock()->getID();
-		else
-			mat.baseColor_texture_id = 0;
-		mat.baseColor_texCoord_id = material->baseColor_coord_index;
-		mat.baseColor_factor = material->baseColor_Factor;
-		materials.push_back(mat);
-	}
-
-	//-Get Textures
-	for (auto& texture : payload.textures) {
-		texture_copy_infos.push_back({ .srcOffset = textures.size() * sizeof(RenderShader::Texture), .dstOffset = texture->getID() * sizeof(RenderShader::Texture), .size = sizeof(RenderShader::Texture) });
-		RenderShader::Texture tex{};
-		tex.textureImage_id = texture->image_index;
-		tex.sampler_id = texture->sampler_index;
-		textures.push_back(tex);
-	}
+	RenderShaderData renderData;
+	extract_render_data(payload, DeviceBufferType::All, renderData);
 
 	//Add Data to DrawContexts
-	size_t alloc_vertPos_size = sizeof(glm::vec3) * positions.size();
-	size_t alloc_vertAttrib_size = sizeof(RenderShader::VertexAttributes) * attributes.size();
-	size_t alloc_index_size = sizeof(uint32_t) * indices.size();
-	size_t alloc_indirect_size = sizeof(VkDrawIndexedIndirectCommand) * indirect_commands.size();
+	const size_t buffer_size = 40000000;
+
+	size_t alloc_vertPos_size = sizeof(glm::vec3) * renderData.positions.size();
+	size_t alloc_vertAttrib_size = sizeof(RenderShader::VertexAttributes) * renderData.attributes.size();
+	size_t alloc_index_size = sizeof(uint32_t) * renderData.indices.size();
+	size_t alloc_indirect_size = sizeof(VkDrawIndexedIndirectCommand) * renderData.indirect_commands.size();
 	size_t alloc_viewprojMatrix_size = sizeof(glm::mat4) * 2;
-	size_t alloc_modelMatrices_size = sizeof(glm::mat4) * model_matrices.size();
-	size_t alloc_primIds_size = sizeof(int32_t) * primitiveIds.size();
-	size_t alloc_primInfo_size = sizeof(RenderShader::PrimitiveInfo) * primitiveInfos.size();
-	size_t alloc_materials_size = sizeof(RenderShader::Material) * materials.size();
-	size_t alloc_textures_size = sizeof(RenderShader::Texture) * textures.size();
+	size_t alloc_modelMatrices_size = sizeof(glm::mat4) * renderData.model_matrices.size();
+	size_t alloc_primIds_size = sizeof(int32_t) * renderData.primitiveIds.size();
+	size_t alloc_primInfo_size = sizeof(RenderShader::PrimitiveInfo) * renderData.primitiveInfos.size();
+	size_t alloc_materials_size = sizeof(RenderShader::Material) * renderData.materials.size();
+	size_t alloc_textures_size = sizeof(RenderShader::Texture) * renderData.textures.size();
 
 	int i = 1;
 	for (Frame& frame : _frames) {
 		DrawContext& currentDrawContext = frame.drawContext;
-		currentDrawContext.drawCount = drawCount;
+		currentDrawContext.drawCount = renderData.indirect_commands.size();
 
 		//Draw Coommand and Vertex Input Buffers	
-		currentDrawContext.indirectDrawCommandsBuffer = _vkContext.create_buffer(std::format("Indirect Draw Commands Buffer {}", i).c_str(), alloc_indirect_size, VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT);
-		currentDrawContext.vertexPosBuffer = _vkContext.create_buffer(std::format("Vertex Position Buffer {}", i).c_str(), alloc_vertPos_size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT);
-		currentDrawContext.vertexOtherAttribBuffer = _vkContext.create_buffer(std::format("Vertex Other Attributes Buffer {}", i).c_str(), alloc_vertAttrib_size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT);
-		currentDrawContext.indexBuffer = _vkContext.create_buffer(std::format("Index Buffer {}", i).c_str(), alloc_index_size, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT);
+		VmaAllocationCreateFlags allocFlags = VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT;
+		currentDrawContext.indirectDrawCommandsBuffer = _vkContext.create_buffer(std::format("Indirect Draw Commands Buffer {}", i).c_str(), buffer_size, VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, allocFlags);
+		currentDrawContext.vertexPosBuffer = _vkContext.create_buffer(std::format("Vertex Position Buffer {}", i).c_str(), buffer_size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, allocFlags);
+		currentDrawContext.vertexOtherAttribBuffer = _vkContext.create_buffer(std::format("Vertex Other Attributes Buffer {}", i).c_str(), buffer_size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, allocFlags);
+		currentDrawContext.indexBuffer = _vkContext.create_buffer(std::format("Index Buffer {}", i).c_str(), buffer_size, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, allocFlags);
 		//BDA Buffers
-		currentDrawContext.viewprojMatrixBuffer = _vkContext.create_buffer(std::format("View and Projection Matrix Buffer {}", i).c_str(), alloc_viewprojMatrix_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT); //Careful as if the alloc size is 0. Will cause errors
-		currentDrawContext.modelMatricesBuffer = _vkContext.create_buffer(std::format("Model Matrices Buffer {}", i).c_str(), alloc_modelMatrices_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT);
-		currentDrawContext.primitiveIdsBuffer = _vkContext.create_buffer(std::format("Primitive IDs Buffer {}", i).c_str(), alloc_primIds_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT);
-		currentDrawContext.primitiveInfosBuffer = _vkContext.create_buffer(std::format("Primitive Infos Buffer {}", i).c_str(), alloc_primInfo_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT);
-		currentDrawContext.materialsBuffer = _vkContext.create_buffer(std::format("Materials Buffer {}", i).c_str(), alloc_materials_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT);
-		currentDrawContext.texturesBuffer = _vkContext.create_buffer(std::format("Textures Buffer {}", i).c_str(), alloc_textures_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT);
+		currentDrawContext.viewprojMatrixBuffer = _vkContext.create_buffer(std::format("View and Projection Matrix Buffer {}", i).c_str(), buffer_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, allocFlags); //Careful as if the alloc size is 0. Will cause errors
+		currentDrawContext.modelMatricesBuffer = _vkContext.create_buffer(std::format("Model Matrices Buffer {}", i).c_str(), buffer_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, allocFlags);
+		currentDrawContext.primitiveIdsBuffer = _vkContext.create_buffer(std::format("Primitive IDs Buffer {}", i).c_str(), buffer_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, allocFlags);
+		currentDrawContext.primitiveInfosBuffer = _vkContext.create_buffer(std::format("Primitive Infos Buffer {}", i).c_str(), buffer_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, allocFlags);
+		currentDrawContext.materialsBuffer = _vkContext.create_buffer(std::format("Materials Buffer {}", i).c_str(), buffer_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, allocFlags);
+		currentDrawContext.texturesBuffer = _vkContext.create_buffer(std::format("Textures Buffer {}", i).c_str(), buffer_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, allocFlags);
 
 		VkBufferDeviceAddressInfo address_info{ .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO };
 		address_info.buffer = currentDrawContext.viewprojMatrixBuffer.buffer;
@@ -438,18 +290,18 @@ void RenderSystem::setup_drawContexts(const GraphicsDataPayload& payload) {
 		currentDrawContext.materialsBufferAddress = vkGetBufferDeviceAddress(_vkContext.device, &address_info);
 		address_info.buffer = currentDrawContext.texturesBuffer.buffer;
 		currentDrawContext.texturesBufferAddress = vkGetBufferDeviceAddress(_vkContext.device, &address_info);
-
+		
 		//Copy Data to the Buffers
-		_vkContext.update_buffer(currentDrawContext.indirectDrawCommandsBuffer, indirect_commands.data(), alloc_indirect_size, indirect_copy_info);
-		_vkContext.update_buffer(currentDrawContext.vertexPosBuffer, positions.data(), alloc_vertPos_size, pos_copy_info);
-		_vkContext.update_buffer(currentDrawContext.vertexOtherAttribBuffer, attributes.data(), alloc_vertAttrib_size, attrib_copy_info);
-		_vkContext.update_buffer(currentDrawContext.indexBuffer, indices.data(), alloc_index_size, index_copy_info);
-		_vkContext.update_buffer(currentDrawContext.viewprojMatrixBuffer, &viewproj, alloc_viewprojMatrix_size, viewprojMatrix_copy_info);
-		_vkContext.update_buffer(currentDrawContext.modelMatricesBuffer, model_matrices.data(), alloc_modelMatrices_size, modelMatrices_copy_infos);
-		_vkContext.update_buffer(currentDrawContext.primitiveIdsBuffer, primitiveIds.data(), alloc_primIds_size, primId_copy_info);
-		_vkContext.update_buffer(currentDrawContext.primitiveInfosBuffer, primitiveInfos.data(), alloc_primInfo_size, primInfo_copy_infos);
-		_vkContext.update_buffer(currentDrawContext.materialsBuffer, materials.data(), alloc_materials_size, material_copy_infos);
-		_vkContext.update_buffer(currentDrawContext.texturesBuffer, textures.data(), alloc_textures_size, texture_copy_infos);
+		_vkContext.update_buffer(currentDrawContext.indirectDrawCommandsBuffer, renderData.indirect_commands.data(), alloc_indirect_size, renderData.indirect_copy_info);
+		_vkContext.update_buffer(currentDrawContext.vertexPosBuffer, renderData.positions.data(), alloc_vertPos_size, renderData.pos_copy_info);
+		_vkContext.update_buffer(currentDrawContext.vertexOtherAttribBuffer, renderData.attributes.data(), alloc_vertAttrib_size, renderData.attrib_copy_info);
+		_vkContext.update_buffer(currentDrawContext.indexBuffer, renderData.indices.data(), alloc_index_size, renderData.index_copy_info);
+		_vkContext.update_buffer(currentDrawContext.viewprojMatrixBuffer, &renderData.viewproj, alloc_viewprojMatrix_size, renderData.viewprojMatrix_copy_info);
+		_vkContext.update_buffer(currentDrawContext.modelMatricesBuffer, renderData.model_matrices.data(), alloc_modelMatrices_size, renderData.modelMatrices_copy_infos);
+		_vkContext.update_buffer(currentDrawContext.primitiveIdsBuffer, renderData.primitiveIds.data(), alloc_primIds_size, renderData.primId_copy_info);
+		_vkContext.update_buffer(currentDrawContext.primitiveInfosBuffer, renderData.primitiveInfos.data(), alloc_primInfo_size, renderData.primInfo_copy_infos);
+		_vkContext.update_buffer(currentDrawContext.materialsBuffer, renderData.materials.data(), alloc_materials_size, renderData.material_copy_infos);
+		_vkContext.update_buffer(currentDrawContext.texturesBuffer, renderData.textures.data(), alloc_textures_size, renderData.texture_copy_infos);
 		i++;
 	}
 }
@@ -487,20 +339,91 @@ uint32_t RenderSystem::get_drawCount() {
 }
 
 void RenderSystem::signal_to_updateDeviceBuffer(DeviceBufferType bufferType) {
-	_deviceBufferTypesCounter[bufferType] = FRAMES_TOTAL;
+	//Update COunter associated with type of data
+	if (bufferType == DeviceBufferType::All) {
+		_deviceBufferTypesCounter[DeviceBufferType::ViewProjMatrix] = FRAMES_TOTAL;
+		_deviceBufferTypesCounter[DeviceBufferType::IndirectDraw] = FRAMES_TOTAL;
+		_deviceBufferTypesCounter[DeviceBufferType::PrimitiveID] = FRAMES_TOTAL;
+		_deviceBufferTypesCounter[DeviceBufferType::PrimitiveInfo] = FRAMES_TOTAL;
+		_deviceBufferTypesCounter[DeviceBufferType::ModelMatrix] = FRAMES_TOTAL;
+		_deviceBufferTypesCounter[DeviceBufferType::Vertex] = FRAMES_TOTAL;
+		_deviceBufferTypesCounter[DeviceBufferType::Index] = FRAMES_TOTAL;
+		_deviceBufferTypesCounter[DeviceBufferType::Material] = FRAMES_TOTAL;
+		_deviceBufferTypesCounter[DeviceBufferType::Texture] = FRAMES_TOTAL;
+	}
+	else
+		_deviceBufferTypesCounter[bufferType] = FRAMES_TOTAL;
 }
 
-void RenderSystem::updateSignaledDeviceBuffers(GraphicsDataPayload& payload) {
+void RenderSystem::updateSignaledDeviceBuffers(const GraphicsDataPayload& payload) {
+	DeviceBufferType flags = DeviceBufferType::None;
+
+	//FIgure out which render data type flags were signaled
+	for (auto& pair : _deviceBufferTypesCounter) {
+		if (pair.second == FRAMES_TOTAL ) { //Only add type to flag if it is an recently new signaled update (counter == frames_total). Thus preventing uneccesary extractions on same data that is just the same as staging data
+			flags = flags | pair.first;
+		}
+	}
+
+	//Stage Data of those that were only recently signaled to be updated
+	extract_render_data(payload, flags, _stagingUpdateData);
+
+	//Updatae Buffers
 	if (_deviceBufferTypesCounter[DeviceBufferType::ViewProjMatrix] > 0) {
 		size_t viewSize = sizeof(RenderShader::ViewProj);
-		RenderShader::ViewProj viewproj;
-		viewproj.view = payload.camera_transform;
-		viewproj.proj = payload.proj_transform;
-		VkBufferCopy copyInfo{ .srcOffset = 0, .dstOffset = 0, .size = viewSize };
-		_vkContext.update_buffer(get_current_frame().drawContext.viewprojMatrixBuffer, &payload.camera_transform, viewSize, copyInfo);
+		_vkContext.update_buffer(get_current_frame().drawContext.viewprojMatrixBuffer, &_stagingUpdateData.viewproj, viewSize, _stagingUpdateData.viewprojMatrix_copy_info);
 		_deviceBufferTypesCounter[DeviceBufferType::ViewProjMatrix]--;
 	}
-	//Other Buffers...
+
+	if (_deviceBufferTypesCounter[DeviceBufferType::IndirectDraw] > 0) {
+		size_t indirectSize = sizeof(VkDrawIndexedIndirectCommand) * _stagingUpdateData.indirect_commands.size();
+		_vkContext.update_buffer(get_current_frame().drawContext.indirectDrawCommandsBuffer, _stagingUpdateData.indirect_commands.data(), indirectSize, _stagingUpdateData.indirect_copy_info);
+		_deviceBufferTypesCounter[DeviceBufferType::IndirectDraw]--;
+	}
+	
+	if (_deviceBufferTypesCounter[DeviceBufferType::PrimitiveID] > 0) {
+		size_t primIDsize = sizeof(int32_t) * _stagingUpdateData.primitiveIds.size();
+		_vkContext.update_buffer(get_current_frame().drawContext.primitiveIdsBuffer, _stagingUpdateData.primitiveIds.data(), primIDsize, _stagingUpdateData.primId_copy_info);
+		_deviceBufferTypesCounter[DeviceBufferType::PrimitiveID]--;
+	}
+
+	if (_deviceBufferTypesCounter[DeviceBufferType::PrimitiveInfo] > 0) {
+		size_t primInfoSize = sizeof(RenderShader::PrimitiveInfo) * _stagingUpdateData.primitiveInfos.size();
+		_vkContext.update_buffer(get_current_frame().drawContext.primitiveInfosBuffer, _stagingUpdateData.primitiveInfos.data(), primInfoSize, _stagingUpdateData.primInfo_copy_infos);
+		_deviceBufferTypesCounter[DeviceBufferType::PrimitiveInfo]--;
+	}
+
+	if (_deviceBufferTypesCounter[DeviceBufferType::ModelMatrix] > 0) {
+		size_t modetSize = sizeof(glm::mat4) * _stagingUpdateData.model_matrices.size();
+		_vkContext.update_buffer(get_current_frame().drawContext.modelMatricesBuffer, _stagingUpdateData.model_matrices.data(), modetSize, _stagingUpdateData.modelMatrices_copy_infos);
+		_deviceBufferTypesCounter[DeviceBufferType::ModelMatrix]--;
+	}
+
+	if (_deviceBufferTypesCounter[DeviceBufferType::Index] > 0) {
+		size_t indiceSize = sizeof(uint32_t) * _stagingUpdateData.indices.size();
+		_vkContext.update_buffer(get_current_frame().drawContext.indexBuffer, _stagingUpdateData.indices.data(), indiceSize, _stagingUpdateData.index_copy_info);
+		_deviceBufferTypesCounter[DeviceBufferType::Index]--;
+	}
+
+	if (_deviceBufferTypesCounter[DeviceBufferType::Vertex] > 0) {
+		size_t vertexPosSize = sizeof(glm::vec3) * _stagingUpdateData.positions.size();
+		size_t vertexAttribSize = sizeof(RenderShader::VertexAttributes) * _stagingUpdateData.attributes.size();
+		_vkContext.update_buffer(get_current_frame().drawContext.vertexPosBuffer, _stagingUpdateData.positions.data(), vertexPosSize, _stagingUpdateData.pos_copy_info);
+		_vkContext.update_buffer(get_current_frame().drawContext.vertexOtherAttribBuffer, _stagingUpdateData.attributes.data(), vertexAttribSize, _stagingUpdateData.attrib_copy_info);
+		_deviceBufferTypesCounter[DeviceBufferType::Vertex]--;
+	}
+
+	if (_deviceBufferTypesCounter[DeviceBufferType::Material] > 0) {
+		size_t matSize = sizeof(RenderShader::Material) * _stagingUpdateData.materials.size();
+		_vkContext.update_buffer(get_current_frame().drawContext.materialsBuffer, _stagingUpdateData.materials.data(), matSize, _stagingUpdateData.material_copy_infos);
+		_deviceBufferTypesCounter[DeviceBufferType::Material]--;
+	}
+
+	if (_deviceBufferTypesCounter[DeviceBufferType::Texture] > 0) {
+		size_t textureSize = sizeof(RenderShader::Texture) * _stagingUpdateData.textures.size();
+		_vkContext.update_buffer(get_current_frame().drawContext.texturesBuffer, _stagingUpdateData.textures.data(), textureSize, _stagingUpdateData.texture_copy_infos);
+		_deviceBufferTypesCounter[DeviceBufferType::Texture]--;
+	}
 }
 
 void RenderSystem::init_graphicsPipeline() {
@@ -749,4 +672,183 @@ void RenderSystem::destroy_swapchain() {
 
 	for (int i = 0; i < _swapchain.images.size(); i++)
 		vkDestroyImageView(_vkContext.device, _swapchain.images[i].imageView, nullptr);
+}
+
+void RenderSystem::extract_render_data(const GraphicsDataPayload& payload, DeviceBufferType dataType, RenderShaderData& data) {
+	//View and Proj Matrix
+	if ((dataType & DeviceBufferType::ViewProjMatrix) == DeviceBufferType::ViewProjMatrix) {
+		data.viewproj.view = payload.camera_transform;
+		data.viewproj.proj = payload.proj_transform;
+		data.viewprojMatrix_copy_info = { .srcOffset = 0, .dstOffset = 0, .size = sizeof(glm::mat4) * 2 };
+	}
+
+	//Navigate each scene, and each scene's root nodes, and through each root node's children
+	if (((dataType & DeviceBufferType::ModelMatrix) == DeviceBufferType::ModelMatrix) || ((dataType & DeviceBufferType::IndirectDraw) == DeviceBufferType::IndirectDraw) || ((dataType & DeviceBufferType::PrimitiveID) == DeviceBufferType::PrimitiveID) || ((dataType & DeviceBufferType::Vertex) == DeviceBufferType::Vertex) || ((dataType & DeviceBufferType::Index) == DeviceBufferType::Index) || ((dataType & DeviceBufferType::PrimitiveInfo) == DeviceBufferType::PrimitiveInfo)) {
+		//Clear any specified data from RenderShaderData parameter
+		if ((dataType & DeviceBufferType::ModelMatrix) == DeviceBufferType::ModelMatrix) {
+			data.model_matrices.clear();
+			data.modelMatrices_copy_infos.clear();
+		}
+
+		if ((dataType & DeviceBufferType::IndirectDraw) == DeviceBufferType::IndirectDraw) {
+			_primID_to_drawCmd.clear();
+			data.indirect_commands.clear();
+		}
+
+		if ((dataType & DeviceBufferType::PrimitiveID) == DeviceBufferType::PrimitiveID) {
+			data.primitiveIds.clear();
+		}
+
+		if ((dataType & DeviceBufferType::Vertex) == DeviceBufferType::Vertex) {
+			data.positions.clear();
+			data.attributes.clear();
+		}
+		
+		if ((dataType & DeviceBufferType::Index) == DeviceBufferType::Index) {
+			data.indices.clear();
+		}
+
+		if ((dataType & DeviceBufferType::PrimitiveInfo) == DeviceBufferType::PrimitiveInfo) {
+			data.primitiveInfos.clear();
+			data.primInfo_copy_infos.clear();
+		}
+
+		size_t scene_idx = 0; //Index of the current scene we are working on in the for loop
+		for (const Scene& scene : payload.scenes) {
+			//Add all root nodes in current scene to Stack
+			std::stack<std::shared_ptr<Node>> dfs_node_stack;
+			for (auto root_node : scene.root_nodes) {
+				dfs_node_stack.push(root_node);
+			}
+			//Perform DFS, traverse all Nodes
+			while (!dfs_node_stack.empty()) {
+				std::shared_ptr<Node> node = dfs_node_stack.top();
+				dfs_node_stack.pop();
+
+				//Add currentNode's children to Stack
+				for (std::shared_ptr<Node> child_node : node->child_nodes) {
+					dfs_node_stack.push(child_node);
+				}
+
+				//Model Matrices
+				if ((dataType & DeviceBufferType::ModelMatrix) == DeviceBufferType::ModelMatrix) {
+					data.modelMatrices_copy_infos.push_back({ .srcOffset = data.model_matrices.size() * sizeof(glm::mat4), .dstOffset = node->getID() * sizeof(glm::mat4), .size = sizeof(glm::mat4) });
+					data.model_matrices.push_back(node->get_WorldTransform());
+				}
+
+				//Check if Node represents Mesh
+				if (node->mesh != nullptr) {
+					std::shared_ptr<Mesh>& currentMesh = node->mesh;
+
+					//Iterate through it's primitives and add their data to 
+					for (Mesh::Primitive primitive : currentMesh->primitives) {
+						//Indirect Draw Command
+						if ((dataType & DeviceBufferType::IndirectDraw) == DeviceBufferType::IndirectDraw) {
+							VkDrawIndexedIndirectCommand indirect_command{};
+							indirect_command.firstIndex = data.indices.size();
+							indirect_command.indexCount = primitive.indices.size();
+							indirect_command.vertexOffset = data.positions.size();
+							indirect_command.firstInstance = 0;
+							indirect_command.instanceCount = 1;
+
+							_primID_to_drawCmd[primitive.getID()] = indirect_command; //Add to primID mapping structure
+
+							if (scene_idx == payload.current_scene_idx) { //If Primitive is part of current scene, add its draw command to draw command buffer
+								data.indirect_commands.push_back(indirect_command);
+
+								//Primitive Ids
+								if ((dataType & DeviceBufferType::PrimitiveID) == DeviceBufferType::PrimitiveID) {
+									data.primitiveIds.push_back(primitive.getID());
+								}
+
+							}
+						}
+
+						//Vertex's Position and other Vertex Attributes
+						if ((dataType & DeviceBufferType::Vertex) == DeviceBufferType::Vertex) {
+							for (Mesh::Primitive::Vertex vertex : primitive.vertices) {
+								RenderShader::VertexAttributes attribute;
+								attribute.normal = vertex.normal;
+								attribute.tangent = vertex.tangent;
+								if (vertex.colors.empty())
+									attribute.color = glm::vec3(1.0f, 1.0f, 1.0f);
+								else
+									attribute.color = vertex.colors[0]; //Get Color_0
+								if (vertex.uvs.empty())
+									attribute.uv = glm::vec2(-1.0f, -1.0f);
+								else
+									attribute.uv = vertex.uvs[0]; //Get TexCoord_0
+
+								data.positions.push_back(vertex.position);
+								data.attributes.push_back(attribute);
+							}
+						}
+
+						//Indices
+						if ((dataType & DeviceBufferType::Index) == DeviceBufferType::Index) {
+							data.indices.insert(data.indices.end(), primitive.indices.begin(), primitive.indices.end());
+						}
+
+						//PrimitiveInfo
+						if ((dataType & DeviceBufferType::PrimitiveInfo) == DeviceBufferType::PrimitiveInfo) {
+							data.primInfo_copy_infos.push_back({ .srcOffset = data.primitiveInfos.size() * sizeof(RenderShader::PrimitiveInfo), .dstOffset = primitive.getID() * sizeof(RenderShader::PrimitiveInfo), .size = sizeof(RenderShader::PrimitiveInfo) });
+							RenderShader::PrimitiveInfo prmInfo{};
+							if (primitive.material.expired() != true)
+								prmInfo.mat_id = primitive.material.lock()->getID();
+							else
+								prmInfo.mat_id = 0;
+							prmInfo.model_matrix_id = node->getID();
+							data.primitiveInfos.push_back(prmInfo);
+						}
+					}
+				}
+			}
+
+			//Add Copy Infos for data that is not added to specific id locations (but just as lists).
+			if ((dataType & DeviceBufferType::Vertex) == DeviceBufferType::Vertex) {
+				data.pos_copy_info = { .srcOffset = 0, .dstOffset = 0, .size = sizeof(glm::vec3) * data.positions.size() };
+				data.attrib_copy_info = { .srcOffset = 0, .dstOffset = 0, .size = sizeof(RenderShader::VertexAttributes) * data.attributes.size() };
+			}
+			if ((dataType & DeviceBufferType::Index) == DeviceBufferType::Index)
+				data.index_copy_info = { .srcOffset = 0, .dstOffset = 0, .size = sizeof(uint32_t) * data.indices.size() };
+			if ((dataType & DeviceBufferType::IndirectDraw) == DeviceBufferType::IndirectDraw)
+				data.indirect_copy_info = { .srcOffset = 0, .dstOffset = 0, .size = sizeof(VkDrawIndexedIndirectCommand) * data.indirect_commands.size() };
+			if ((dataType & DeviceBufferType::PrimitiveID) == DeviceBufferType::PrimitiveID)
+				data.primId_copy_info = { .srcOffset = 0, .dstOffset = 0, .size = sizeof(int32_t) * data.primitiveIds.size() };
+
+			scene_idx++;
+		}
+	}
+
+	//Get Materials
+	if ((dataType & DeviceBufferType::Material) == DeviceBufferType::Material) {
+		data.materials.clear();
+		data.material_copy_infos.clear();
+
+		for (std::shared_ptr<Material> material : payload.materials) {
+			data.material_copy_infos.push_back({ .srcOffset = data.materials.size() * sizeof(RenderShader::Material), .dstOffset = material->getID() * sizeof(RenderShader::Material), .size = sizeof(RenderShader::Material) });
+			RenderShader::Material mat{};
+			if (material->baseColor_texture.expired() != true)
+				mat.baseColor_texture_id = material->baseColor_texture.lock()->getID();
+			else
+				mat.baseColor_texture_id = 0;
+			mat.baseColor_texCoord_id = material->baseColor_coord_index;
+			mat.baseColor_factor = material->baseColor_Factor;
+			data.materials.push_back(mat);
+		}
+	}
+
+	//Get Textures
+	if ((dataType & DeviceBufferType::Texture) == DeviceBufferType::Texture) {
+		data.textures.clear();
+		data.texture_copy_infos.clear();
+
+		for (auto& texture : payload.textures) {
+			data.texture_copy_infos.push_back({ .srcOffset = data.textures.size() * sizeof(RenderShader::Texture), .dstOffset = texture->getID() * sizeof(RenderShader::Texture), .size = sizeof(RenderShader::Texture) });
+			RenderShader::Texture tex{};
+			tex.textureImage_id = texture->image_index;
+			tex.sampler_id = texture->sampler_index;
+			data.textures.push_back(tex);
+		}
+	}
 }

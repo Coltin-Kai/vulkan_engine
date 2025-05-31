@@ -197,7 +197,7 @@ void VulkanContext::destroy_buffer(const AllocatedBuffer& buffer) {
 void VulkanContext::update_buffer(const AllocatedBuffer& buffer, void* srcData, size_t srcDataSize, VkBufferCopy& copyInfo) {
 	VkMemoryPropertyFlags buffer_memProperties;
 	vmaGetAllocationMemoryProperties(allocator, buffer.allocation, &buffer_memProperties);
-
+	
 	if (buffer_memProperties & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
 		unsigned char* srcPointer = static_cast<unsigned char*>(srcData);
 		unsigned char* dstPointer = static_cast<unsigned char*>(buffer.info.pMappedData);

@@ -11,6 +11,12 @@
 #include "imfilebrowser.h"
 
 #include "vulkanContext.h"
+#include "graphic_data_types.h"
+
+struct GUIParameters { //Used to pass GUI Parameters and values outside of GUISystem
+	bool fileOpened;
+	std::string OpenedFilePath;
+};
 
 class GUISystem {
 public:
@@ -21,13 +27,13 @@ public:
 	VkDescriptorPool _imguiDescriptorPool;
 
 	void init(SDL_Window* window, const VkFormat& swapChainFormat);
-	void run();
+	void run(GUIParameters& param, GraphicsDataPayload& graphics_payload);
 	void shutdown();
 
 private:
 	VulkanContext& _vkContext;
 
-	ImGui::FileBrowser fileExplorer{ImGuiFileBrowserFlags_CloseOnEsc};
+	ImGui::FileBrowser fileExplorer{};
 
 	void init_imgui(SDL_Window* window, const VkFormat& swapChainFormat);
 };
