@@ -376,6 +376,7 @@ void RenderSystem::updateSignaledDeviceBuffers(const GraphicsDataPayload& payloa
 	}
 
 	if (_deviceBufferTypesCounter[DeviceBufferType::IndirectDraw] > 0) {
+		get_current_frame().drawContext.drawCount = _stagingUpdateData.indirect_commands.size();
 		size_t indirectSize = sizeof(VkDrawIndexedIndirectCommand) * _stagingUpdateData.indirect_commands.size();
 		_vkContext.update_buffer(get_current_frame().drawContext.indirectDrawCommandsBuffer, _stagingUpdateData.indirect_commands.data(), indirectSize, _stagingUpdateData.indirect_copy_info);
 		_deviceBufferTypesCounter[DeviceBufferType::IndirectDraw]--;
@@ -760,7 +761,6 @@ void RenderSystem::extract_render_data(const GraphicsDataPayload& payload, Devic
 								if ((dataType & DeviceBufferType::PrimitiveID) == DeviceBufferType::PrimitiveID) {
 									data.primitiveIds.push_back(primitive.getID());
 								}
-
 							}
 						}
 
@@ -803,21 +803,20 @@ void RenderSystem::extract_render_data(const GraphicsDataPayload& payload, Devic
 					}
 				}
 			}
-
-			//Add Copy Infos for data that is not added to specific id locations (but just as lists).
-			if ((dataType & DeviceBufferType::Vertex) == DeviceBufferType::Vertex) {
-				data.pos_copy_info = { .srcOffset = 0, .dstOffset = 0, .size = sizeof(glm::vec3) * data.positions.size() };
-				data.attrib_copy_info = { .srcOffset = 0, .dstOffset = 0, .size = sizeof(RenderShader::VertexAttributes) * data.attributes.size() };
-			}
-			if ((dataType & DeviceBufferType::Index) == DeviceBufferType::Index)
-				data.index_copy_info = { .srcOffset = 0, .dstOffset = 0, .size = sizeof(uint32_t) * data.indices.size() };
-			if ((dataType & DeviceBufferType::IndirectDraw) == DeviceBufferType::IndirectDraw)
-				data.indirect_copy_info = { .srcOffset = 0, .dstOffset = 0, .size = sizeof(VkDrawIndexedIndirectCommand) * data.indirect_commands.size() };
-			if ((dataType & DeviceBufferType::PrimitiveID) == DeviceBufferType::PrimitiveID)
-				data.primId_copy_info = { .srcOffset = 0, .dstOffset = 0, .size = sizeof(int32_t) * data.primitiveIds.size() };
-
 			scene_idx++;
 		}
+
+		//Add Copy Infos for data that is not added to specific id locations (but just as lists).
+		if ((dataType & DeviceBufferType::Vertex) == DeviceBufferType::Vertex) {
+			data.pos_copy_info = { .srcOffset = 0, .dstOffset = 0, .size = sizeof(glm::vec3) * data.positions.size() };
+			data.attrib_copy_info = { .srcOffset = 0, .dstOffset = 0, .size = sizeof(RenderShader::VertexAttributes) * data.attributes.size() };
+		}
+		if ((dataType & DeviceBufferType::Index) == DeviceBufferType::Index)
+			data.index_copy_info = { .srcOffset = 0, .dstOffset = 0, .size = sizeof(uint32_t) * data.indices.size() };
+		if ((dataType & DeviceBufferType::IndirectDraw) == DeviceBufferType::IndirectDraw)
+			data.indirect_copy_info = { .srcOffset = 0, .dstOffset = 0, .size = sizeof(VkDrawIndexedIndirectCommand) * data.indirect_commands.size() };
+		if ((dataType & DeviceBufferType::PrimitiveID) == DeviceBufferType::PrimitiveID)
+			data.primId_copy_info = { .srcOffset = 0, .dstOffset = 0, .size = sizeof(int32_t) * data.primitiveIds.size() };
 	}
 
 	//Get Materials
