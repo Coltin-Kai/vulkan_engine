@@ -26,14 +26,18 @@ void GUISystem::run(GUIParameters& param, GraphicsDataPayload& graphics_payload)
 
 	if (ImGui::Begin("Menu")) {
 		ImGui::SeparatorText("Scene");
-		//Combo
+		//Select Scene Combo
 		std::string combo_preview_value = graphics_payload.scenes[graphics_payload.current_scene_idx].name;
 		if (ImGui::BeginCombo("Scene", combo_preview_value.c_str())) {
 			for (int i = 0; i < graphics_payload.scenes.size(); i++) {
 				const bool is_selected = (graphics_payload.current_scene_idx == i);
 				std::string label = graphics_payload.scenes[i].name + std::format("##{}", i); //Assign unique label ID to selectable
-				if (ImGui::Selectable(label.c_str(), is_selected))
-					graphics_payload.current_scene_idx = i;
+				if (ImGui::Selectable(label.c_str(), is_selected)) { //If a Combo option was selected
+					if (graphics_payload.current_scene_idx != i) { //If the Combo option selected isn't just the current scene, change scene
+						graphics_payload.current_scene_idx = i;
+						param.sceneChanged = true;
+					}
+				}
 
 				if (is_selected)
 					ImGui::SetItemDefaultFocus();

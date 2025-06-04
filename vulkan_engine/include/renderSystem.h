@@ -27,22 +27,29 @@ constexpr unsigned int UNIFORM_DESCRIPTOR_COUNT = 500;
 constexpr uint32_t MAX_SAMPLED_IMAGE_COUNT = 100;
 constexpr uint32_t MAX_SAMPLER_COUNT = 100;
 
-enum class DeviceBufferType { //Probably want to rename. ANd maek a better design than normal bit flags 
-	None = 0,
-	IndirectDraw = 1 << 0,
-	Vertex = 1 << 1,
-	Index = 1 << 2,
-	PrimitiveID = 1 << 3, //May combine IndirectDraw and PrimitiveID into just Primitive
-	PrimitiveInfo = 1 << 4,
-	ViewProjMatrix = 1 << 5,
-	ModelMatrix = 1 << 6,
-	Material = 1 << 7,
-	Texture = 1 << 8,
-	All = (1 << 9) - 1 //Special Flag to flip all flags
-};
+struct DeviceBufferType { //Probably want to rename. Represents what type of data to update. Plan to make it into a properly working flag
+	bool viewProjMatrix = false;
+	bool indirectDraw = false;
+	bool primID = false;
+	bool primInfo = false;
+	bool modelMatrix = false;
+	bool index = false;
+	bool vertex = false;
+	bool material = false;
+	bool texture = false;
 
-constexpr DeviceBufferType operator|(DeviceBufferType a, DeviceBufferType b) { return static_cast<DeviceBufferType>(static_cast<int>(a) | static_cast<int>(b)); }
-constexpr DeviceBufferType operator&(DeviceBufferType a, DeviceBufferType b) { return static_cast<DeviceBufferType>(static_cast<int>(a) & static_cast<int>(b)); }
+	void setAll() {
+		viewProjMatrix = true;
+		indirectDraw = true;
+		primID = true;
+		primInfo = true;
+		modelMatrix = true;
+		index = true;
+		vertex = true;
+		material = true;
+		texture = true;
+	}
+};
 
 class RenderSystem { 
 public:
@@ -161,10 +168,10 @@ private:
 	std::vector<VkVertexInputAttributeDescription>_attribueDescriptions;
 
 	//DEBUG - Device Data Updates
-	std::unordered_map<DeviceBufferType, int> _deviceBufferTypesCounter; //Used for keeping track of how many buffers need to updated for each type (across the frames). Doesnt use None and All flag cause this and the enum are a bad design it seems
+	std::unordered_map<std::string, int> _deviceBufferTypesCounter; //Used for keeping track of how many buffers need to updated for each type (across the frames). Doesnt use None and All flag cause this and the enum are a bad design it seems
 	RenderShaderData _stagingUpdateData; //Use to stage render data for updates
 
-	//DEBUG - Primitive Vertex Input Data Tracker
+	//DEBUG - Primitive Vertex Input Data Tracker. Might delete
 	std::unordered_map<uint32_t, VkDrawIndexedIndirectCommand> _primID_to_drawCmd;	//Stores and Maps a Primitive's ID to a DrawCommand, which contains the info pertaining to offset and sizes of its indices and vertex info in the GPU buffers. Aka allows us to keep track of vertex and index info using IDs
 
 	//Depth Image

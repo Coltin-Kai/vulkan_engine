@@ -16,6 +16,8 @@
 struct GUIParameters { //Used to pass GUI Parameters and values outside of GUISystem
 	bool fileOpened;
 	std::string OpenedFilePath;
+
+	bool sceneChanged;
 };
 
 class GUISystem {

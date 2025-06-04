@@ -11,6 +11,16 @@ void RenderSystem::init(VkExtent2D windowExtent) {
 	init_graphicsPipeline();
 
 	setup_depthImage();
+
+	_deviceBufferTypesCounter["viewProjMatrix"] = 0;
+	_deviceBufferTypesCounter["indirectDraw"] = 0;
+	_deviceBufferTypesCounter["primID"] = 0;
+	_deviceBufferTypesCounter["primInfo"] = 0;
+	_deviceBufferTypesCounter["modelMatrix"] = 0;
+	_deviceBufferTypesCounter["index"] = 0;
+	_deviceBufferTypesCounter["vertex"] = 0;
+	_deviceBufferTypesCounter["material"] = 0;
+	_deviceBufferTypesCounter["texture"] = 0;
 }
 
 VkResult RenderSystem::run() {
@@ -242,7 +252,9 @@ void RenderSystem::init_descriptorSet() {
 
 void RenderSystem::setup_drawContexts(const GraphicsDataPayload& payload) { 
 	RenderShaderData renderData;
-	extract_render_data(payload, DeviceBufferType::All, renderData);
+	DeviceBufferType dataType;
+	dataType.setAll();
+	extract_render_data(payload, dataType, renderData);
 
 	//Add Data to DrawContexts
 	const size_t buffer_size = 40000000;
@@ -340,90 +352,107 @@ uint32_t RenderSystem::get_drawCount() {
 
 void RenderSystem::signal_to_updateDeviceBuffer(DeviceBufferType bufferType) {
 	//Update COunter associated with type of data
-	if (bufferType == DeviceBufferType::All) {
-		_deviceBufferTypesCounter[DeviceBufferType::ViewProjMatrix] = FRAMES_TOTAL;
-		_deviceBufferTypesCounter[DeviceBufferType::IndirectDraw] = FRAMES_TOTAL;
-		_deviceBufferTypesCounter[DeviceBufferType::PrimitiveID] = FRAMES_TOTAL;
-		_deviceBufferTypesCounter[DeviceBufferType::PrimitiveInfo] = FRAMES_TOTAL;
-		_deviceBufferTypesCounter[DeviceBufferType::ModelMatrix] = FRAMES_TOTAL;
-		_deviceBufferTypesCounter[DeviceBufferType::Vertex] = FRAMES_TOTAL;
-		_deviceBufferTypesCounter[DeviceBufferType::Index] = FRAMES_TOTAL;
-		_deviceBufferTypesCounter[DeviceBufferType::Material] = FRAMES_TOTAL;
-		_deviceBufferTypesCounter[DeviceBufferType::Texture] = FRAMES_TOTAL;
-	}
-	else
-		_deviceBufferTypesCounter[bufferType] = FRAMES_TOTAL;
+	if (bufferType.viewProjMatrix)
+		_deviceBufferTypesCounter["viewProjMatrix"] = FRAMES_TOTAL;
+	if (bufferType.indirectDraw)
+		_deviceBufferTypesCounter["indirectDraw"] = FRAMES_TOTAL;
+	if (bufferType.primID)
+		_deviceBufferTypesCounter["primID"] = FRAMES_TOTAL;
+	if (bufferType.primInfo)
+		_deviceBufferTypesCounter["primInfo"] = FRAMES_TOTAL;
+	if (bufferType.modelMatrix)
+		_deviceBufferTypesCounter["modelMatrix"] = FRAMES_TOTAL;
+	if (bufferType.index)
+		_deviceBufferTypesCounter["index"] = FRAMES_TOTAL;
+	if (bufferType.vertex)
+		_deviceBufferTypesCounter["vertex"] = FRAMES_TOTAL;
+	if (bufferType.material)
+		_deviceBufferTypesCounter["material"] = FRAMES_TOTAL;
+	if (bufferType.texture)
+		_deviceBufferTypesCounter["texture"] = FRAMES_TOTAL;
 }
 
 void RenderSystem::updateSignaledDeviceBuffers(const GraphicsDataPayload& payload) {
-	DeviceBufferType flags = DeviceBufferType::None;
-
+	DeviceBufferType dataType;
 	//FIgure out which render data type flags were signaled
-	for (auto& pair : _deviceBufferTypesCounter) {
-		if (pair.second == FRAMES_TOTAL ) { //Only add type to flag if it is an recently new signaled update (counter == frames_total). Thus preventing uneccesary extractions on same data that is just the same as staging data
-			flags = flags | pair.first;
-		}
-	}
+	if (_deviceBufferTypesCounter["viewProjMatrix"] == FRAMES_TOTAL)
+		dataType.viewProjMatrix = true;
+	if (_deviceBufferTypesCounter["indirectDraw"] == FRAMES_TOTAL)
+		dataType.indirectDraw = true;
+	if (_deviceBufferTypesCounter["primID"] == FRAMES_TOTAL)
+		dataType.primID = true;
+	if (_deviceBufferTypesCounter["primInfo"] == FRAMES_TOTAL)
+		dataType.primInfo = true;
+	if (_deviceBufferTypesCounter["modelMatrix"] == FRAMES_TOTAL)
+		dataType.modelMatrix = true;
+	if (_deviceBufferTypesCounter["index"] == FRAMES_TOTAL)
+		dataType.index = true;
+	if (_deviceBufferTypesCounter["vertex"] == FRAMES_TOTAL)
+		dataType.vertex = true;
+	if (_deviceBufferTypesCounter["material"] == FRAMES_TOTAL)
+		dataType.material = true;
+	if (_deviceBufferTypesCounter["texture"] == FRAMES_TOTAL)
+		dataType.texture = true;
 
 	//Stage Data of those that were only recently signaled to be updated
-	extract_render_data(payload, flags, _stagingUpdateData);
+	extract_render_data(payload, dataType, _stagingUpdateData);
 
 	//Updatae Buffers
-	if (_deviceBufferTypesCounter[DeviceBufferType::ViewProjMatrix] > 0) {
+	if (_deviceBufferTypesCounter["viewProjMatrix"] > 0) {
 		size_t viewSize = sizeof(RenderShader::ViewProj);
 		_vkContext.update_buffer(get_current_frame().drawContext.viewprojMatrixBuffer, &_stagingUpdateData.viewproj, viewSize, _stagingUpdateData.viewprojMatrix_copy_info);
-		_deviceBufferTypesCounter[DeviceBufferType::ViewProjMatrix]--;
+		_deviceBufferTypesCounter["viewProjMatrix"]--;
 	}
 
-	if (_deviceBufferTypesCounter[DeviceBufferType::IndirectDraw] > 0) {
+	if (_deviceBufferTypesCounter["indirectDraw"] > 0) {
 		get_current_frame().drawContext.drawCount = _stagingUpdateData.indirect_commands.size();
 		size_t indirectSize = sizeof(VkDrawIndexedIndirectCommand) * _stagingUpdateData.indirect_commands.size();
 		_vkContext.update_buffer(get_current_frame().drawContext.indirectDrawCommandsBuffer, _stagingUpdateData.indirect_commands.data(), indirectSize, _stagingUpdateData.indirect_copy_info);
-		_deviceBufferTypesCounter[DeviceBufferType::IndirectDraw]--;
+		_deviceBufferTypesCounter["indirectDraw"]--;
 	}
 	
-	if (_deviceBufferTypesCounter[DeviceBufferType::PrimitiveID] > 0) {
+	if (_deviceBufferTypesCounter["primID"] > 0) {
 		size_t primIDsize = sizeof(int32_t) * _stagingUpdateData.primitiveIds.size();
 		_vkContext.update_buffer(get_current_frame().drawContext.primitiveIdsBuffer, _stagingUpdateData.primitiveIds.data(), primIDsize, _stagingUpdateData.primId_copy_info);
-		_deviceBufferTypesCounter[DeviceBufferType::PrimitiveID]--;
+		_deviceBufferTypesCounter["primID"]--;
 	}
 
-	if (_deviceBufferTypesCounter[DeviceBufferType::PrimitiveInfo] > 0) {
+	if (_deviceBufferTypesCounter["primInfo"] > 0) {
 		size_t primInfoSize = sizeof(RenderShader::PrimitiveInfo) * _stagingUpdateData.primitiveInfos.size();
 		_vkContext.update_buffer(get_current_frame().drawContext.primitiveInfosBuffer, _stagingUpdateData.primitiveInfos.data(), primInfoSize, _stagingUpdateData.primInfo_copy_infos);
-		_deviceBufferTypesCounter[DeviceBufferType::PrimitiveInfo]--;
+		_deviceBufferTypesCounter["primInfo"]--;
 	}
 
-	if (_deviceBufferTypesCounter[DeviceBufferType::ModelMatrix] > 0) {
+	if (_deviceBufferTypesCounter["modelMatrix"] > 0) {
 		size_t modetSize = sizeof(glm::mat4) * _stagingUpdateData.model_matrices.size();
 		_vkContext.update_buffer(get_current_frame().drawContext.modelMatricesBuffer, _stagingUpdateData.model_matrices.data(), modetSize, _stagingUpdateData.modelMatrices_copy_infos);
-		_deviceBufferTypesCounter[DeviceBufferType::ModelMatrix]--;
+		_deviceBufferTypesCounter["modelMatrix"]--;
 	}
 
-	if (_deviceBufferTypesCounter[DeviceBufferType::Index] > 0) {
+	if (_deviceBufferTypesCounter["index"] > 0) {
 		size_t indiceSize = sizeof(uint32_t) * _stagingUpdateData.indices.size();
 		_vkContext.update_buffer(get_current_frame().drawContext.indexBuffer, _stagingUpdateData.indices.data(), indiceSize, _stagingUpdateData.index_copy_info);
-		_deviceBufferTypesCounter[DeviceBufferType::Index]--;
+		_deviceBufferTypesCounter["index"]--;
 	}
 
-	if (_deviceBufferTypesCounter[DeviceBufferType::Vertex] > 0) {
+	if (_deviceBufferTypesCounter["vertex"] > 0) {
 		size_t vertexPosSize = sizeof(glm::vec3) * _stagingUpdateData.positions.size();
 		size_t vertexAttribSize = sizeof(RenderShader::VertexAttributes) * _stagingUpdateData.attributes.size();
 		_vkContext.update_buffer(get_current_frame().drawContext.vertexPosBuffer, _stagingUpdateData.positions.data(), vertexPosSize, _stagingUpdateData.pos_copy_info);
 		_vkContext.update_buffer(get_current_frame().drawContext.vertexOtherAttribBuffer, _stagingUpdateData.attributes.data(), vertexAttribSize, _stagingUpdateData.attrib_copy_info);
-		_deviceBufferTypesCounter[DeviceBufferType::Vertex]--;
+		_deviceBufferTypesCounter["vertex"]--;
 	}
 
-	if (_deviceBufferTypesCounter[DeviceBufferType::Material] > 0) {
+	if (_deviceBufferTypesCounter["material"] > 0) {
 		size_t matSize = sizeof(RenderShader::Material) * _stagingUpdateData.materials.size();
 		_vkContext.update_buffer(get_current_frame().drawContext.materialsBuffer, _stagingUpdateData.materials.data(), matSize, _stagingUpdateData.material_copy_infos);
-		_deviceBufferTypesCounter[DeviceBufferType::Material]--;
+		_deviceBufferTypesCounter["material"]--;
 	}
 
-	if (_deviceBufferTypesCounter[DeviceBufferType::Texture] > 0) {
+	if (_deviceBufferTypesCounter["texture"] > 0) {
 		size_t textureSize = sizeof(RenderShader::Texture) * _stagingUpdateData.textures.size();
 		_vkContext.update_buffer(get_current_frame().drawContext.texturesBuffer, _stagingUpdateData.textures.data(), textureSize, _stagingUpdateData.texture_copy_infos);
-		_deviceBufferTypesCounter[DeviceBufferType::Texture]--;
+		_deviceBufferTypesCounter["texture"]--;
 	}
 }
 
@@ -677,150 +706,146 @@ void RenderSystem::destroy_swapchain() {
 
 void RenderSystem::extract_render_data(const GraphicsDataPayload& payload, DeviceBufferType dataType, RenderShaderData& data) {
 	//View and Proj Matrix
-	if ((dataType & DeviceBufferType::ViewProjMatrix) == DeviceBufferType::ViewProjMatrix) {
+	if (dataType.viewProjMatrix) {
 		data.viewproj.view = payload.camera_transform;
 		data.viewproj.proj = payload.proj_transform;
 		data.viewprojMatrix_copy_info = { .srcOffset = 0, .dstOffset = 0, .size = sizeof(glm::mat4) * 2 };
 	}
 
 	//Navigate each scene, and each scene's root nodes, and through each root node's children
-	if (((dataType & DeviceBufferType::ModelMatrix) == DeviceBufferType::ModelMatrix) || ((dataType & DeviceBufferType::IndirectDraw) == DeviceBufferType::IndirectDraw) || ((dataType & DeviceBufferType::PrimitiveID) == DeviceBufferType::PrimitiveID) || ((dataType & DeviceBufferType::Vertex) == DeviceBufferType::Vertex) || ((dataType & DeviceBufferType::Index) == DeviceBufferType::Index) || ((dataType & DeviceBufferType::PrimitiveInfo) == DeviceBufferType::PrimitiveInfo)) {
+	if (dataType.modelMatrix || dataType.indirectDraw || dataType.primID || dataType.vertex || dataType.index || dataType.primInfo) {
 		//Clear any specified data from RenderShaderData parameter
-		if ((dataType & DeviceBufferType::ModelMatrix) == DeviceBufferType::ModelMatrix) {
+		if (dataType.modelMatrix) {
 			data.model_matrices.clear();
 			data.modelMatrices_copy_infos.clear();
 		}
 
-		if ((dataType & DeviceBufferType::IndirectDraw) == DeviceBufferType::IndirectDraw) {
+		if (dataType.indirectDraw) {
 			_primID_to_drawCmd.clear();
 			data.indirect_commands.clear();
 		}
 
-		if ((dataType & DeviceBufferType::PrimitiveID) == DeviceBufferType::PrimitiveID) {
+		if (dataType.primID) {
 			data.primitiveIds.clear();
 		}
 
-		if ((dataType & DeviceBufferType::Vertex) == DeviceBufferType::Vertex) {
+		if (dataType.vertex) {
 			data.positions.clear();
 			data.attributes.clear();
 		}
 		
-		if ((dataType & DeviceBufferType::Index) == DeviceBufferType::Index) {
+		if (dataType.index) {
 			data.indices.clear();
 		}
 
-		if ((dataType & DeviceBufferType::PrimitiveInfo) == DeviceBufferType::PrimitiveInfo) {
+		if (dataType.primInfo) {
 			data.primitiveInfos.clear();
 			data.primInfo_copy_infos.clear();
 		}
 
-		size_t scene_idx = 0; //Index of the current scene we are working on in the for loop
-		for (const Scene& scene : payload.scenes) {
-			//Add all root nodes in current scene to Stack
-			std::stack<std::shared_ptr<Node>> dfs_node_stack;
-			for (auto root_node : scene.root_nodes) {
-				dfs_node_stack.push(root_node);
+		//Extract Data from Current Scene (only)
+		const Scene& scene = payload.scenes[payload.current_scene_idx];
+		//Add all root nodes in current scene to Stack
+		std::stack<std::shared_ptr<Node>> dfs_node_stack;
+		for (auto root_node : scene.root_nodes) {
+			dfs_node_stack.push(root_node);
+		}
+		//Perform DFS, traverse all Nodes
+		while (!dfs_node_stack.empty()) {
+			std::shared_ptr<Node> node = dfs_node_stack.top();
+			dfs_node_stack.pop();
+
+			//Add currentNode's children to Stack
+			for (std::shared_ptr<Node> child_node : node->child_nodes) {
+				dfs_node_stack.push(child_node);
 			}
-			//Perform DFS, traverse all Nodes
-			while (!dfs_node_stack.empty()) {
-				std::shared_ptr<Node> node = dfs_node_stack.top();
-				dfs_node_stack.pop();
 
-				//Add currentNode's children to Stack
-				for (std::shared_ptr<Node> child_node : node->child_nodes) {
-					dfs_node_stack.push(child_node);
-				}
+			//Model Matrices
+			if (dataType.modelMatrix) {
+				data.modelMatrices_copy_infos.push_back({ .srcOffset = data.model_matrices.size() * sizeof(glm::mat4), .dstOffset = node->getID() * sizeof(glm::mat4), .size = sizeof(glm::mat4) });
+				data.model_matrices.push_back(node->get_WorldTransform());
+			}
 
-				//Model Matrices
-				if ((dataType & DeviceBufferType::ModelMatrix) == DeviceBufferType::ModelMatrix) {
-					data.modelMatrices_copy_infos.push_back({ .srcOffset = data.model_matrices.size() * sizeof(glm::mat4), .dstOffset = node->getID() * sizeof(glm::mat4), .size = sizeof(glm::mat4) });
-					data.model_matrices.push_back(node->get_WorldTransform());
-				}
+			//Check if Node represents Mesh
+			if (node->mesh != nullptr) {
+				std::shared_ptr<Mesh>& currentMesh = node->mesh;
 
-				//Check if Node represents Mesh
-				if (node->mesh != nullptr) {
-					std::shared_ptr<Mesh>& currentMesh = node->mesh;
+				//Iterate through it's primitives and add their data to 
+				for (Mesh::Primitive primitive : currentMesh->primitives) {
+					//Indirect Draw Command
+					if (dataType.indirectDraw) {
+						VkDrawIndexedIndirectCommand indirect_command{};
+						indirect_command.firstIndex = data.indices.size();
+						indirect_command.indexCount = primitive.indices.size();
+						indirect_command.vertexOffset = data.positions.size();
+						indirect_command.firstInstance = 0;
+						indirect_command.instanceCount = 1;
 
-					//Iterate through it's primitives and add their data to 
-					for (Mesh::Primitive primitive : currentMesh->primitives) {
-						//Indirect Draw Command
-						if ((dataType & DeviceBufferType::IndirectDraw) == DeviceBufferType::IndirectDraw) {
-							VkDrawIndexedIndirectCommand indirect_command{};
-							indirect_command.firstIndex = data.indices.size();
-							indirect_command.indexCount = primitive.indices.size();
-							indirect_command.vertexOffset = data.positions.size();
-							indirect_command.firstInstance = 0;
-							indirect_command.instanceCount = 1;
+						_primID_to_drawCmd[primitive.getID()] = indirect_command; //Add to primID mapping structure
 
-							_primID_to_drawCmd[primitive.getID()] = indirect_command; //Add to primID mapping structure
+						data.indirect_commands.push_back(indirect_command);
 
-							if (scene_idx == payload.current_scene_idx) { //If Primitive is part of current scene, add its draw command to draw command buffer
-								data.indirect_commands.push_back(indirect_command);
-
-								//Primitive Ids
-								if ((dataType & DeviceBufferType::PrimitiveID) == DeviceBufferType::PrimitiveID) {
-									data.primitiveIds.push_back(primitive.getID());
-								}
-							}
+						//Primitive Ids
+						if (dataType.primID) {
+							data.primitiveIds.push_back(primitive.getID());
 						}
+					}
 
-						//Vertex's Position and other Vertex Attributes
-						if ((dataType & DeviceBufferType::Vertex) == DeviceBufferType::Vertex) {
-							for (Mesh::Primitive::Vertex vertex : primitive.vertices) {
-								RenderShader::VertexAttributes attribute;
-								attribute.normal = vertex.normal;
-								attribute.tangent = vertex.tangent;
-								if (vertex.colors.empty())
-									attribute.color = glm::vec3(1.0f, 1.0f, 1.0f);
-								else
-									attribute.color = vertex.colors[0]; //Get Color_0
-								if (vertex.uvs.empty())
-									attribute.uv = glm::vec2(-1.0f, -1.0f);
-								else
-									attribute.uv = vertex.uvs[0]; //Get TexCoord_0
-
-								data.positions.push_back(vertex.position);
-								data.attributes.push_back(attribute);
-							}
-						}
-
-						//Indices
-						if ((dataType & DeviceBufferType::Index) == DeviceBufferType::Index) {
-							data.indices.insert(data.indices.end(), primitive.indices.begin(), primitive.indices.end());
-						}
-
-						//PrimitiveInfo
-						if ((dataType & DeviceBufferType::PrimitiveInfo) == DeviceBufferType::PrimitiveInfo) {
-							data.primInfo_copy_infos.push_back({ .srcOffset = data.primitiveInfos.size() * sizeof(RenderShader::PrimitiveInfo), .dstOffset = primitive.getID() * sizeof(RenderShader::PrimitiveInfo), .size = sizeof(RenderShader::PrimitiveInfo) });
-							RenderShader::PrimitiveInfo prmInfo{};
-							if (primitive.material.expired() != true)
-								prmInfo.mat_id = primitive.material.lock()->getID();
+					//Vertex's Position and other Vertex Attributes
+					if (dataType.vertex) {
+						for (Mesh::Primitive::Vertex vertex : primitive.vertices) {
+							RenderShader::VertexAttributes attribute;
+							attribute.normal = vertex.normal;
+							attribute.tangent = vertex.tangent;
+							if (vertex.colors.empty())
+								attribute.color = glm::vec3(1.0f, 1.0f, 1.0f);
 							else
-								prmInfo.mat_id = 0;
-							prmInfo.model_matrix_id = node->getID();
-							data.primitiveInfos.push_back(prmInfo);
+								attribute.color = vertex.colors[0]; //Get Color_0
+							if (vertex.uvs.empty())
+								attribute.uv = glm::vec2(-1.0f, -1.0f);
+							else
+								attribute.uv = vertex.uvs[0]; //Get TexCoord_0
+
+							data.positions.push_back(vertex.position);
+							data.attributes.push_back(attribute);
 						}
+					}
+
+					//Indices
+					if (dataType.index) {
+						data.indices.insert(data.indices.end(), primitive.indices.begin(), primitive.indices.end());
+					}
+
+					//PrimitiveInfo
+					if (dataType.primInfo) {
+						data.primInfo_copy_infos.push_back({ .srcOffset = data.primitiveInfos.size() * sizeof(RenderShader::PrimitiveInfo), .dstOffset = primitive.getID() * sizeof(RenderShader::PrimitiveInfo), .size = sizeof(RenderShader::PrimitiveInfo) });
+						RenderShader::PrimitiveInfo prmInfo{};
+						if (primitive.material.expired() != true)
+							prmInfo.mat_id = primitive.material.lock()->getID();
+						else
+							prmInfo.mat_id = 0;
+						prmInfo.model_matrix_id = node->getID();
+						data.primitiveInfos.push_back(prmInfo);
 					}
 				}
 			}
-			scene_idx++;
 		}
 
 		//Add Copy Infos for data that is not added to specific id locations (but just as lists).
-		if ((dataType & DeviceBufferType::Vertex) == DeviceBufferType::Vertex) {
+		if (dataType.vertex) {
 			data.pos_copy_info = { .srcOffset = 0, .dstOffset = 0, .size = sizeof(glm::vec3) * data.positions.size() };
 			data.attrib_copy_info = { .srcOffset = 0, .dstOffset = 0, .size = sizeof(RenderShader::VertexAttributes) * data.attributes.size() };
 		}
-		if ((dataType & DeviceBufferType::Index) == DeviceBufferType::Index)
+		if (dataType.index)
 			data.index_copy_info = { .srcOffset = 0, .dstOffset = 0, .size = sizeof(uint32_t) * data.indices.size() };
-		if ((dataType & DeviceBufferType::IndirectDraw) == DeviceBufferType::IndirectDraw)
+		if (dataType.indirectDraw)
 			data.indirect_copy_info = { .srcOffset = 0, .dstOffset = 0, .size = sizeof(VkDrawIndexedIndirectCommand) * data.indirect_commands.size() };
-		if ((dataType & DeviceBufferType::PrimitiveID) == DeviceBufferType::PrimitiveID)
+		if (dataType.primID)
 			data.primId_copy_info = { .srcOffset = 0, .dstOffset = 0, .size = sizeof(int32_t) * data.primitiveIds.size() };
 	}
 
 	//Get Materials
-	if ((dataType & DeviceBufferType::Material) == DeviceBufferType::Material) {
+	if (dataType.material) {
 		data.materials.clear();
 		data.material_copy_infos.clear();
 
@@ -838,7 +863,7 @@ void RenderSystem::extract_render_data(const GraphicsDataPayload& payload, Devic
 	}
 
 	//Get Textures
-	if ((dataType & DeviceBufferType::Texture) == DeviceBufferType::Texture) {
+	if (dataType.texture) {
 		data.textures.clear();
 		data.texture_copy_infos.clear();
 
