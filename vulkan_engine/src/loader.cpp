@@ -243,10 +243,11 @@ void loadGLTFFile(VulkanContext& vkContext, GraphicsDataPayload& dataPayload, st
 			dataPayload.current_scene_idx = scenes_offset + i;
 		}
 
-		if (!asset.scenes[i].name.empty()) //If Scene has name, assign name in payload. If not, name it after the File + scene index;
-			scene.name = asset.scenes[i].name;
+		scene.name = filePath.stem().string() + "_";
+		if (!asset.scenes[i].name.empty()) //If Scene has name, assign name as "FileName_Name" in payload. If not, name it "FileName_Scene#;
+			scene.name += asset.scenes[i].name;
 		else
-			scene.name = filePath.stem().string() + std::format("_{}", i);
+			scene.name += std::format("Scene{}", i);
 
 		//Load Nodes. Perform DFS to get all the nodes in the scene
 		std::stack<size_t> DFS_node_index_stack; //Maps the correct nodes to traverse for DFS

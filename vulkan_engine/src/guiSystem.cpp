@@ -45,7 +45,7 @@ void GUISystem::run(GUIParameters& param, GraphicsDataPayload& graphics_payload)
 			ImGui::EndCombo();
 		}
 
-		ImGui::SeparatorText("Node Tree");
+		//ImGui::SeparatorText("Node Tree");
 		ImGui::End();
 	}
 
