@@ -168,7 +168,7 @@ private:
 	std::vector<VkVertexInputAttributeDescription>_attribueDescriptions;
 
 	//DEBUG - Device Data Updates
-	std::unordered_map<std::string, int> _deviceBufferTypesCounter; //Used for keeping track of how many buffers need to updated for each type (across the frames). Doesnt use None and All flag cause this and the enum are a bad design it seems
+	std::unordered_map<std::string, int> _deviceBufferTypesCounter; //Used for keeping track of how many buffers need to updated for each type (across the frames). Plan to change since using string as key is pretty bad
 	RenderShaderData _stagingUpdateData; //Use to stage render data for updates
 
 	//DEBUG - Primitive Vertex Input Data Tracker. Might delete
