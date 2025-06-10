@@ -21,16 +21,17 @@ struct Material;
 struct Texture;
 
 struct GraphicsDataPayload{
-	Scene* current_scene = nullptr; //The scene to load
+	size_t current_scene_idx = 0; //The scene to load
 	std::vector<Scene> scenes{};
 	//Default Data resides in index 0 for all these resources.
-	//Note order and location should be preserved for images and samplers as maps directly to GPU memory and textures use location index to point to respective one.
+	//Note order and location should be preserved for images and samplers as maps directly to GPU memory and textures use location index to point to respective textureImage and Sampler (Instead of IDs)
 	std::vector<VkSampler> samplers{}; //Global Samplers. 
 	std::vector<AllocatedImage> images{}; //Global Images accessible by Textures
 	std::vector<std::shared_ptr<Texture>> textures{}; //Global Textures
 	std::vector<std::shared_ptr<Material>> materials{}; //Global Materials
 
 	glm::mat4 camera_transform;
+	glm::mat4 proj_transform;
 };
 
 struct Scene {

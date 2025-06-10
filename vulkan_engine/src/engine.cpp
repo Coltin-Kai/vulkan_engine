@@ -30,21 +30,28 @@ void Engine::init() {
 	_window = SDL_CreateWindow("Engine", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, _windowExtent.width, _windowExtent.height, window_flags);
 	SDL_SetRelativeMouseMode(SDL_TRUE); //Traps Mouse and records relative mouse movement
 	
-	_device.init(_window, _windowExtent);
-	setup_depthImage();
+	//Initialize Vulkan Context
+	_vkContext.init(_window);
+
+	//Initalize Systems
+	_renderSys.init(_windowExtent);
+	_guiSys.init(_window, _renderSys.get_swapChainFormat());
+
 	setup_default_data();
 	//LAZY CODE STUFF
 	//-Load File Data
-	loadGLTFFile(_device, _payload, "C:\\Github\\vulkan_engine\\vulkan_engine\\assets\\Sample_Models\\BoomBox\\BoomBox.gltf"); //Exception expected to be thrown since allocated data in payload is not released
+	loadGLTFFile(_vkContext, _payload, "C:\\Github\\vulkan_engine\\vulkan_engine\\assets\\Sample_Models\\BoomBox\\BoomBox.gltf"); //Exception expected to be thrown since allocated data in payload is not released
 	
 	_camera = Camera({ 0.0f, 0.0f, 0.15f });
 	_camera.update_view_matrix();
 	_payload.camera_transform = _camera.get_view_matrix();
+	_payload.proj_transform = glm::perspective(glm::radians(45.0f), _windowExtent.width / (float)_windowExtent.height, 50.0f, 0.01f);
+	_payload.proj_transform[1][1] *= -1;
 
 	//Bind Images and Samplers
-	_device.bind_descriptors(_payload);
+	_renderSys.bind_descriptors(_payload);
 	//Upload Draw Data
-	_device.setup_drawContexts(_payload);
+	_renderSys.setup_drawContexts(_payload);
 }
 
 void Engine::run() {
@@ -85,10 +92,14 @@ void Engine::run() {
 			int w;
 			int h;
 			SDL_GetWindowSize(_window, &w, &h);
-			VkExtent2D windowExtent;
-			windowExtent.width = w;
-			windowExtent.height = h;
-			_device.resize_swapchain(windowExtent);
+			_windowExtent.width = w;
+			_windowExtent.height = h;
+			_renderSys.resize_swapchain(_windowExtent);
+			_payload.proj_transform = glm::perspective(glm::radians(45.0f), _windowExtent.width / (float)_windowExtent.height, 50.0f, 0.01f);
+			_payload.proj_transform[1][1] *= -1;
+			DeviceBufferType dataType;
+			dataType.viewProjMatrix = true;
+			_renderSys.signal_to_updateDeviceBuffer(dataType);
 			windowResized = false;
 		}
 		
@@ -101,176 +112,71 @@ void Engine::run() {
 		if (_camera.processInput(static_cast<uint32_t>(rel_mouse_x), static_cast<uint32_t>(rel_mouse_y), keys)) { //If camera received input/change in input
 			_camera.update_view_matrix();
 			_payload.camera_transform = _camera.get_view_matrix();
-			_device.signal_to_updateDeviceBuffer(DeviceBufferType::ViewProjMatrix);
+			DeviceBufferType dataType;
+			dataType.viewProjMatrix = true;
+			_renderSys.signal_to_updateDeviceBuffer(dataType);
 		}
 
-		//Device Data Updates
-		_device.updateSignaledDeviceBuffers(_payload);
+		VkResult result;
+		_guiSys.run(_guiParam, _payload);
 
-		//IMGUI Rendering
-		ImGui_ImplVulkan_NewFrame();
-		ImGui_ImplSDL2_NewFrame();
-		ImGui::NewFrame();
-		ImGui::ShowDemoWindow();
-		ImGui::Render();
+		if (_guiParam.fileOpened) {
+			_guiParam.fileOpened = false;
+			loadGLTFFile(_vkContext, _payload, _guiParam.OpenedFilePath); //Testing this
+			DeviceBufferType dataType;
+			dataType.setAll();
+			_renderSys.signal_to_updateDeviceBuffer(dataType);
+			_renderSys.bind_descriptors(_payload);
+		}
 
-		//DRAW
-		draw();
+		if (_guiParam.sceneChanged) {
+			_guiParam.sceneChanged = false;
+			//_renderSys.signal_to_updateDeviceBuffer(DeviceBufferType::ModelMatrix | DeviceBufferType::IndirectDraw | DeviceBufferType::PrimitiveID | DeviceBufferType::Vertex | DeviceBufferType::Index | DeviceBufferType::PrimitiveInfo);
+			DeviceBufferType dataType;
+			dataType.modelMatrix = true;
+			dataType.indirectDraw = true;
+			dataType.primID = true;
+			dataType.primInfo = true;
+			dataType.vertex = true;
+			dataType.index = true;
+			_renderSys.signal_to_updateDeviceBuffer(dataType); //Need to fix stuff to ensure that it only updates what is neccesary instead of All
+		}
+
+		//Render System Device Data/Render Data Updates
+		_renderSys.updateSignaledDeviceBuffers(_payload);
+
+		result = _renderSys.run();
+		if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+			windowResized = true;
+			continue;
+		}
 	}
 }
 
 void Engine::cleanup() {
-	vkDeviceWaitIdle(_device._device);
-
-	//Depth Image
-	_device.destroy_image(_depthImage);
+	vkDeviceWaitIdle(_vkContext.device);
 
 	//Payload Cleanup
 	for (VkSampler& sampler : _payload.samplers) {
-		_device.destroy_sampler(sampler);
+		_vkContext.destroy_sampler(sampler);
 	}
 
 	for (AllocatedImage& image : _payload.images) {
-		_device.destroy_image(image);
+		_vkContext.destroy_image(image);
 	}
 	
 	//Deletion Queue
 	_mainDeletionQueue.flush();
 
+	//RenderingSystem Cleanup
+	_guiSys.shutdown();
+	_renderSys.shutdown();
+
 	//Vulkan Cleanup
-	_device.shutdown();
+	_vkContext.shutdown();
 
 	//SDL Cleanup
 	SDL_DestroyWindow(_window);
-}
-
-void Engine::draw() {
-	VkResult result;
-	VkCommandBuffer cmd = _device.startFrame(result);
-	Image swapchainImage = _device.get_currentSwapchainImage();
-
-	if (result == VK_ERROR_OUT_OF_DATE_KHR) { //Failed to acquire swapchain image
-		windowResized = true;
-		return;
-	}
-	else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
-		throw std::runtime_error("Failed to acquire Swap Chain Images");
-
-	//Transition Images for Drawing
-	vkutil::transition_image(cmd, swapchainImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
-	vkutil::transition_image(cmd, _depthImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
-
-	//Clear Color
-	VkClearColorValue clearValue = { {0.5f, 0.5f, 0.5f, 0.5f} };
-
-	VkImageSubresourceRange clearRange = vkutil::image_subresource_range(VK_IMAGE_ASPECT_COLOR_BIT);
-
-	vkCmdClearColorImage(cmd, swapchainImage.image, VK_IMAGE_LAYOUT_GENERAL, &clearValue, 1, &clearRange);
-
-	//Draw
-	draw_geometry(cmd, swapchainImage);
-
-	//Draw GUI
-	draw_imgui(cmd, swapchainImage);
-
-	//Transition for Presentation
-	vkutil::transition_image(cmd, swapchainImage.image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
-
-	_device.endFrame(result);
-
-	if (result == VK_ERROR_OUT_OF_DATE_KHR)
-		windowResized = true;
-	else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
-		throw std::runtime_error("Failed to Present!");
-}
-
-void Engine::draw_geometry(VkCommandBuffer cmd, const Image& swapchainImage) {
-	VkRenderingAttachmentInfo colorAttachment = vkutil::attachment_info(swapchainImage.imageView, nullptr, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
-	VkRenderingAttachmentInfo depthAttachment = vkutil::depth_attachment_info(_depthImage.imageView, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
-
-	VkExtent2D swapchainExtent = _device.get_swapChainExtent();
-
-	VkRenderingInfo renderInfo = vkutil::rendering_info(swapchainExtent, &colorAttachment, &depthAttachment);
-	vkCmdBeginRendering(cmd, &renderInfo);
-
-	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _device._pipeline);
-
-	//Set Dynamic States
-	VkViewport viewport{};
-	viewport.x = 0;
-	viewport.y = 0;
-	viewport.width = swapchainExtent.width;
-	viewport.height = swapchainExtent.height;
-	viewport.minDepth = 0.0f;
-	viewport.maxDepth = 1.0f;
-
-	vkCmdSetViewport(cmd, 0, 1, &viewport);
-
-	VkRect2D scissor{};
-	scissor.offset.x = 0;
-	scissor.offset.y = 0;
-	scissor.extent.width = swapchainExtent.width;
-	scissor.extent.height = swapchainExtent.height;
-
-	vkCmdSetScissor(cmd, 0, 1, &scissor);
-
-	//Bind Descriptor Set
-	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _device._pipelineLayout, 0, 1, &_device._descriptorSet, 0, nullptr);
-
-	//Bind Vertex Input Buffers
-	std::vector<VkBuffer> vertexBuffers = _device.get_vertexBuffers(); //Jank Debug code will move vector to drawContext structure itself
-	std::vector<VkDeviceSize> vertexOffsets = { 0, 0 };
-	vkCmdBindVertexBuffers(cmd, 0, vertexBuffers.size(), vertexBuffers.data(), vertexOffsets.data());
-	vkCmdBindIndexBuffer(cmd, _device.get_indexBuffer(), 0, VK_INDEX_TYPE_UINT32);
-
-	//Push Constants
-	RenderShader::PushConstants pushconstants = _device.get_pushConstants();
-	vkCmdPushConstants(cmd, _device._pipelineLayout, VK_SHADER_STAGE_ALL_GRAPHICS, 0, sizeof(RenderShader::PushConstants), &pushconstants);
-
-	//Draw
-	vkCmdDrawIndexedIndirect(cmd, _device.get_indirectDrawBuffer(), 0, _device.get_drawCount(), sizeof(VkDrawIndexedIndirectCommand));
-
-	vkCmdEndRendering(cmd);
-}
-
-void Engine::draw_imgui(VkCommandBuffer cmd, const Image& swapchainImage) {
-	VkRenderingAttachmentInfo colorAttachment = vkutil::attachment_info(swapchainImage.imageView, nullptr, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
-	VkRenderingInfo renderInfo = vkutil::rendering_info(_device.get_swapChainExtent(), &colorAttachment, nullptr);
-
-	vkCmdBeginRendering(cmd, &renderInfo);
-
-	ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
-
-	vkCmdEndRendering(cmd);
-}
-
-void Engine::setup_depthImage() {
-	/*
-	_depthImage.format = VK_FORMAT_D32_SFLOAT;
-	VkExtent3D extent{};
-	extent.width = _swapchain.extent.width;
-	extent.height = _swapchain.extent.height;
-	extent.depth = 1; 
-	_depthImage.extent = extent;
-
-	VkImageCreateInfo depth_image_info = vkutil::image_create_info(_depthImage.format, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, _depthImage.extent);
-	
-	VmaAllocationCreateInfo depth_image_alloc_info{};
-	depth_image_alloc_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-	depth_image_alloc_info.requiredFlags = VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
-	vmaCreateImage(_allocator, &depth_image_info, &depth_image_alloc_info, &_depthImage.image, &_depthImage.allocation, nullptr);
-
-	VkImageViewCreateInfo depth_image_view_info = vkutil::imageview_create_info(_depthImage.format, _depthImage.image, VK_IMAGE_ASPECT_DEPTH_BIT);
-
-	VK_CHECK(vkCreateImageView(_device, &depth_image_view_info, nullptr, &_depthImage.imageView));
-	*/
-	VkExtent2D swapchainExtent = _device.get_swapChainExtent();
-	VkExtent3D depthExtent;
-	depthExtent.width = swapchainExtent.width;
-	depthExtent.height = swapchainExtent.height;
-	depthExtent.depth = 1;
-	_depthImage = _device.create_image("Depth Image", depthExtent, VK_FORMAT_D32_SFLOAT, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, false);
 }
 
 void Engine::setup_default_data() {
@@ -279,8 +185,8 @@ void Engine::setup_default_data() {
 	extent.width = 1;
 	extent.height = 1;
 	extent.depth = 1;
-	AllocatedImage default_image = _device.create_image("Default Image", extent, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, true);
-	_device.update_image(default_image,(void*)&default_data, extent);
+	AllocatedImage default_image = _vkContext.create_image("Default Image", extent, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, true);
+	_vkContext.update_image(default_image,(void*)&default_data, extent);
 	_payload.images.push_back(default_image);
 
 	VkSampler default_sampler;
@@ -291,7 +197,7 @@ void Engine::setup_default_data() {
 	sampler_info.magFilter = VK_FILTER_LINEAR;
 	sampler_info.minFilter = VK_FILTER_LINEAR;
 	sampler_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-	default_sampler = _device.create_sampler(sampler_info);
+	default_sampler = _vkContext.create_sampler(sampler_info);
 	_payload.samplers.push_back(default_sampler);
 
 	Texture default_texture{};

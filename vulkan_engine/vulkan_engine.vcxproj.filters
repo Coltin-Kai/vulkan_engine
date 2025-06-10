@@ -40,6 +40,9 @@
     <Filter Include="Source Files\ThirdParty\stbImage">
       <UniqueIdentifier>{4f42be0d-7b5d-48f7-b8c1-f8a22e9260c5}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Header Files\ThirdParty\imgui-filebrowser">
+      <UniqueIdentifier>{6b5c9bda-9022-452b-ae6f-a43356740695}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\main.cpp">
@@ -90,7 +93,13 @@
     <ClCompile Include="src\Camera.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="src\myDevice.cpp">
+    <ClCompile Include="src\renderSystem.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\guiSystem.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\vulkanContext.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -152,11 +161,20 @@
     <ClInclude Include="include\shader_types.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="include\myDevice.h">
+    <ClInclude Include="include\renderSystem.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="include\thirdparty_defines.h">
       <Filter>Header Files\ThirdParty</Filter>
+    </ClInclude>
+    <ClInclude Include="include\guiSystem.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\vulkanContext.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\imfilebrowser.h">
+      <Filter>Header Files\ThirdParty\imgui-filebrowser</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

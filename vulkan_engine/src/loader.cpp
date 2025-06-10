@@ -9,7 +9,7 @@
 #include <iostream>
 #include <stack>
 
-void loadGLTFFile(MyDevice& device, GraphicsDataPayload& dataPayload, std::filesystem::path filePath) { //WIP, want to make it so that it properly add to existing data payload to allow loading multiple scenes.
+void loadGLTFFile(VulkanContext& vkContext, GraphicsDataPayload& dataPayload, std::filesystem::path filePath) { 
 	//Parser and GLTF LOading Code
 	fastgltf::Parser parser;
 
@@ -24,11 +24,9 @@ void loadGLTFFile(MyDevice& device, GraphicsDataPayload& dataPayload, std::files
 
 	fastgltf::Asset asset = std::move(expected_asset.get());
 
-	//Index/ID offsets. To offset id for already existing data in the payload's data vectors (Default data and existing data)
+	//Index offsets. To offset index for already existing data in the payload's data vectors (Default data and existing data)
 	size_t textureImage_index_offset = dataPayload.images.size();
 	size_t samplers_index_offset = dataPayload.samplers.size();
-	size_t texture_index_offset = dataPayload.textures.size();
-	size_t material_index_offset = dataPayload.materials.size();
 
 	//Load Texture Samplers
 	std::vector<VkSampler> temp_samplers; //Temp vectors used to correctly point other element's members according to index from GLTF file.
@@ -46,17 +44,17 @@ void loadGLTFFile(MyDevice& device, GraphicsDataPayload& dataPayload, std::files
 		samplerInfo.minFilter = extract_filter(sampler.minFilter.value_or(fastgltf::Filter::Nearest));
 		samplerInfo.mipmapMode = extract_mipmap_mode(sampler.minFilter.value_or(fastgltf::Filter::Nearest));
 		
-		temp_samplers[temp_samplers.size() - 1] = device.create_sampler(samplerInfo);
+		temp_samplers[temp_samplers.size() - 1] = vkContext.create_sampler(samplerInfo);
 	}
 
-	dataPayload.samplers.insert(dataPayload.samplers.end(), temp_samplers.begin(), temp_samplers.end()); //Add Sampelrs to Payload
+	dataPayload.samplers.insert(dataPayload.samplers.end(), temp_samplers.begin(), temp_samplers.end()); //Add Samplers to Payload
 
 	//Load Images
 	std::vector<AllocatedImage> temp_images;
 	temp_images.reserve(asset.images.size());
 
 	for (fastgltf::Image& image : asset.images) {
-		std::optional<AllocatedImage> img = load_image(device, asset, image);
+		std::optional<AllocatedImage> img = load_image(vkContext, asset, image);
 
 		if (img.has_value()) {
 			temp_images.push_back(img.value());
@@ -241,11 +239,15 @@ void loadGLTFFile(MyDevice& device, GraphicsDataPayload& dataPayload, std::files
 		dataPayload.scenes.emplace_back();
 		Scene& scene = dataPayload.scenes[scenes_offset + i];
 		
-		if (asset.defaultScene.has_value() && i == asset.defaultScene.value()) { //Set Current/Default Scene
-			dataPayload.current_scene = &scene;
+		if (asset.defaultScene.has_value() && i == asset.defaultScene.value()) { //Set Current/Default Scene from this file if it exists
+			dataPayload.current_scene_idx = scenes_offset + i;
 		}
 
-		scene.name = asset.scenes[i].name;
+		scene.name = filePath.stem().string() + "_";
+		if (!asset.scenes[i].name.empty()) //If Scene has name, assign name as "FileName_Name" in payload. If not, name it "FileName_Scene#;
+			scene.name += asset.scenes[i].name;
+		else
+			scene.name += std::format("Scene{}", i);
 
 		//Load Nodes. Perform DFS to get all the nodes in the scene
 		std::stack<size_t> DFS_node_index_stack; //Maps the correct nodes to traverse for DFS
@@ -348,7 +350,7 @@ glm::mat4 translate_to_glm_mat4(fastgltf::math::fmat4x4 gltf_mat4) {
 	return result_transform;
 }
 
-std::optional<AllocatedImage> load_image(MyDevice& device, fastgltf::Asset& asset, fastgltf::Image& image) {
+std::optional<AllocatedImage> load_image(VulkanContext& vkContext, fastgltf::Asset& asset, fastgltf::Image& image) {
 	AllocatedImage newImage{};
 	int width, height, nrChannels;
 	
@@ -374,8 +376,8 @@ std::optional<AllocatedImage> load_image(MyDevice& device, fastgltf::Asset& asse
 				imageSize.width = width;
 				imageSize.height = height;
 				imageSize.depth = 1;
-				newImage = device.create_image(name, imageSize, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, false);
-				device.update_image(newImage, data, imageSize);
+				newImage = vkContext.create_image(name, imageSize, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, false);
+				vkContext.update_image(newImage, data, imageSize);
 
 				stbi_image_free(data);
 			}
@@ -389,8 +391,8 @@ std::optional<AllocatedImage> load_image(MyDevice& device, fastgltf::Asset& asse
 				imageSize.height = height;
 				imageSize.depth = 1;
 
-				newImage = device.create_image(name, imageSize, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, false);
-				device.update_image(newImage, data, imageSize);
+				newImage = vkContext.create_image(name, imageSize, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, false);
+				vkContext.update_image(newImage, data, imageSize);
 
 				stbi_image_free(data);
 			}
@@ -404,8 +406,8 @@ std::optional<AllocatedImage> load_image(MyDevice& device, fastgltf::Asset& asse
 				imageSize.height = height;
 				imageSize.depth = 1;
 
-				newImage = device.create_image(name, imageSize, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, false);
-				device.update_image(newImage, data, imageSize);
+				newImage = vkContext.create_image(name, imageSize, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, false);
+				vkContext.update_image(newImage, data, imageSize);
 
 				stbi_image_free(data);
 			}
@@ -425,8 +427,8 @@ std::optional<AllocatedImage> load_image(MyDevice& device, fastgltf::Asset& asse
 						imageSize.height = height;
 						imageSize.depth = 1;
 
-						newImage = device.create_image(name, imageSize, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, false);
-						device.update_image(newImage, data, imageSize);
+						newImage = vkContext.create_image(name, imageSize, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, false);
+						vkContext.update_image(newImage, data, imageSize);
 
 						stbi_image_free(data);
 					}
