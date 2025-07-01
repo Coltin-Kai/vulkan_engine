@@ -63,21 +63,128 @@ layout(set = 0, binding = 1) uniform sampler samplers[MAX_SAMPLER_COUNT]; //Inde
 layout(location = 0) flat in int inPrimID;
 layout(location = 1) in vec3 inColor; //Color_0
 layout(location = 2) in vec2 inUV; //TexCoord_0
+layout(location = 3) in vec3 inFragPos;
+layout(location = 4) in vec3 inNormal;
 
 layout(location = 0) out vec4 outFragColor;
+
+const float PI = 3.14159265359;
+
+struct PointLight {
+	vec3 pos;
+	vec3 color;
+};
+
+float BRDF_NormalDistributionFunction(vec3 normal, vec3 halfwayVector, float roughness);
+float BRDF_GeometryAttenuationFunction(vec3 normal, vec3 viewDir, vec3 lightDir, float roughness);
+float BRDF_GeometrySchlickGGX(float NdotV, float roughness);
+vec3 BRDF_fresnelFunction(float cosTheta, vec3 base_reflectivity);
 
 void main() {
 	PrimitiveInfo primitive = primInfoBuffer.primitiveInfos[inPrimID];
 	Material mat = matBuffer.materials[primitive.mat_id];
 
-	//BaseColor
+	vec3 baseColor;
+	vec3 normal = inNormal;
+	float metallic;
+	float roughness;
+	float ao;
+
+	//Sample Textures
+	//-BaseColor
 	Texture baseColor_texture = texBuffer.textures[mat.baseColor_texture_id];
-	vec2 baseColor_texcoord;
 	if (mat.baseColor_texcoord_id == -1) //If Texcoord doesn't exist, just return vertex color.
-		outFragColor = vec4(inColor, 1.0f);
-	else {
-		if (mat.baseColor_texcoord_id == 0) //If it uses TexCorrd_0, grab from vertex input
-			baseColor_texcoord = inUV;
-		outFragColor = vec4(texture(sampler2D(texture_images[baseColor_texture.textureImage_id], samplers[baseColor_texture.sampler_id]), baseColor_texcoord).rgb * inColor, 1.0f) * mat.baseColor_factor;
+		baseColor = inColor;
+	else if (mat.baseColor_texcoord_id == 0) { //If it uses TexCorrd_0, grab from vertex input
+			vec2 baseColor_texcoord = inUV;
+			baseColor = (vec4(texture(sampler2D(texture_images[baseColor_texture.textureImage_id], samplers[baseColor_texture.sampler_id]), baseColor_texcoord).rgb * inColor, 1.0f) * mat.baseColor_factor).rgb; //Sampled Texture Value * Associated Factor
 	}
+
+	baseColor = pow(baseColor, 2.2); //Convert Texture Colors to Linear Space
+
+	//Direct Lighting Calculations
+	PointLight lights[2]; //Hard-Coded Pointlights
+	lights[0].pos = vec3(1.0f, 1.0f, 1.0f);
+	lights[0].color = vec3(1.0f, 1.0f, 1.0f);
+	lights[1].pos = vec3(-1.0f, 1.0f, 1.0f);
+	lights[1].color = vec3(1.0f, 0.0f, 0.0f);
+
+	normal = normalize(normal);
+	vec3 viewDir = normalize(camPos - inFragPos); //!!! Have to pass camera Position as uniform
+
+	vec3 base_reflectivity = vec3(0.04);
+	base_reflectivity = mix(base_reflectivity, baseColor, metallic);
+
+	vec3 irradiance = vec3(0.0f);
+	for (int i = 0; i < 2; i++) { //Calculate irradiance of Point Lights
+		vec3 lightDir = normalize(lights[i].pos - inFragPos);
+		vec3 halfwayVector = normalize(viewDir + lightDir);
+		float lightDistance = length(lights[i].pos - inFragPos);
+		float attenuation = 1.0 / (lightDistance * lightDistance);
+		vec3 radiance = lights[i].color * attenuation; //Light's Radiance
+
+		//Cook-Torrance BRDF
+		float NDF = BRDF_NormalDistributionFunction(normal, halfwayVector, roughness);
+		float G = BRDF_GeometryAttenuationFunction(normal, viewDir, lightDir, roughness);
+		vec3 F = BRDF_fresnelFunction(max(dot(halfwayVector, viewDir), 0.0), base_reflectivity);
+
+		vec3 kS = F; //Ratio of reflected light
+		vec3 kD = vec3(1.0) - kS; //Ratio of refracted light
+		kD *= 1.0 - metallic; 
+
+		vec3 numerator = NDF * G * F;
+		float denominator = 4.0 * max(dot(normal, viewDir), 0.0) * max(dot(normal, lightDir), 0.0) + 0.0001;
+		vec3 specular = numerator / denominator;
+
+		float NdotL = max(dot(normal, lightDir), 0.0);
+		irradiance += (kD * baseColor / PI + specular) * radiance * NdotL;
+	}
+	
+	//Final Color Adjustments
+	vec3 ambientFactor = vec3(0.03) * ao; //Ambient Lighting
+	vec3 finalColor = (ambientFactor * baseColor) + irradiance; 
+	finalColor = finalColor / (finalColor + vec3(1.0)); //Reinhard Tone Mapping
+	finalColor = pow(finalColor, vec3(1.0/2.2)); //Gamma Correction
+
+	outFragColor = vec4(finalColor, 1.0);
+}
+
+//Returns value of how much of the surface's microfacets diverge from the alignment with the halfway-vector
+float BRDF_NormalDistributionFunction(vec3 normal, vec3 halfwayVector, float roughness) {
+	//Trowbridge-Reitz GGX
+	float roughness2 = roughness * roughness;
+	float NdotH = max(dot(normal, halfwayVector), 0.0);
+	float NdotH2 = NdotH * NdotH;
+
+	float denom = (NdotH2 * (roughness2 - 1.0) + 1.0);
+	denom = PI * denom * denom;
+
+	return roughness2 / denom;
+}
+
+//Returns value of how much the microfacets shadow each other.
+float BRDF_GeometryAttenuationFunction(vec3 normal, vec3 viewDir, vec3 lightDir, float roughness) {
+	//Smith's Shadowing Function
+	float NdotV = max(dot(normal, viewDir), 0.0);
+	float NdotL = max(dot(normal, lightDir), 0.0);
+	float ggx1 = BRDF_GeometrySchlickGGX(NdotV, roughness); //Geometry Obstruction from View Direction
+	float ggx2 = BRDF_GeometrySchlickGGX(NdotL, roughness); //Geometry Shadowing from Light Direction
+
+	return ggx1 * ggx2;
+}
+
+//Returns value of geometry of obstruction involving a direction vector and surface roughness
+float BRDF_GeometrySchlickGGX(float NdotV, float roughness) {
+//Schlick-GGX (GGX and Schlick-Beckmann approximation)
+	float r = (roughness + 1.0);
+	float k = (r * r) / 8.0;
+
+	float denom = NdotV * (1.0 - k) + k;
+
+	return NdotV / denom;
+}
+
+//Returns the value (as a vector) of how much the surface relfects based on viewing angle.
+vec3 BRDF_fresnelFunction(float cosTheta, vec3 base_reflectivity) {
+	return base_reflectivity + (1.0 - base_reflectivity) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }

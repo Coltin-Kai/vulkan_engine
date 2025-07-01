@@ -69,6 +69,8 @@ layout(location = 4) in vec2 uv; //TEXCOORD_0
 layout(location = 0) out int outPrimID; //Passing drawID to fragShader
 layout(location = 1) out vec3 outColor;
 layout(location = 2) out vec2 outUV;
+layout(location = 3) out vec3 outFragPos;
+layout(location = 4) out vec3 outNormal;
 
 void main() {
 	int primID = primIdBuffer.prim_ids[gl_DrawID];
@@ -76,5 +78,7 @@ void main() {
 	outPrimID = primID;
 	outColor = color;
 	outUV = uv;
+	outFragPos = (modelsBuffer.model[primitive.model_matrix_id] * vec4(inPosition, 1.0f)).xyz;
+	outNormal = inNormal;
 	gl_Position = viewprojBuffer.proj * viewprojBuffer.view * modelsBuffer.model[primitive.model_matrix_id] * vec4(inPosition, 1.0f);
 }
