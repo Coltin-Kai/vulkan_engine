@@ -32,6 +32,7 @@ struct GraphicsDataPayload{
 
 	glm::mat4 camera_transform;
 	glm::mat4 proj_transform;
+	glm::vec3 cam_pos;
 };
 
 struct Scene {

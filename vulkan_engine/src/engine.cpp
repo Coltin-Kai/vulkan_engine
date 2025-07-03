@@ -112,6 +112,7 @@ void Engine::run() {
 		if (_camera.processInput(static_cast<uint32_t>(rel_mouse_x), static_cast<uint32_t>(rel_mouse_y), keys)) { //If camera received input/change in input
 			_camera.update_view_matrix();
 			_payload.camera_transform = _camera.get_view_matrix();
+			_payload.cam_pos = _camera.pos;
 			DeviceBufferType dataType;
 			dataType.viewProjMatrix = true;
 			_renderSys.signal_to_updateDeviceBuffer(dataType);

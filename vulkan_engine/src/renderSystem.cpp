@@ -852,12 +852,48 @@ void RenderSystem::extract_render_data(const GraphicsDataPayload& payload, Devic
 		for (std::shared_ptr<Material> material : payload.materials) {
 			data.material_copy_infos.push_back({ .srcOffset = data.materials.size() * sizeof(RenderShader::Material), .dstOffset = material->getID() * sizeof(RenderShader::Material), .size = sizeof(RenderShader::Material) });
 			RenderShader::Material mat{};
+
+			//Base Color
 			if (material->baseColor_texture.expired() != true)
 				mat.baseColor_texture_id = material->baseColor_texture.lock()->getID();
 			else
-				mat.baseColor_texture_id = 0;
+				mat.baseColor_texture_id = -1;
 			mat.baseColor_texCoord_id = material->baseColor_coord_index;
 			mat.baseColor_factor = material->baseColor_Factor;
+
+			//Normal
+			if (material->normal_texture.expired() != true)
+				mat.normal_texture_id = material->normal_texture.lock()->getID();
+			else
+				mat.normal_texture_id = -1;
+			mat.normal_texcoord_id = material->normal_coord_index;
+			mat.normal_scale = material->normal_scale;
+
+			//Metal-Rough
+			if (material->metal_rough_texture.expired() != true)
+				mat.metal_rough_texture_id = material->metal_rough_texture.lock()->getID();
+			else
+				mat.metal_rough_texture_id = -1;
+			mat.metal_rough_texcoord_id = material->metal_rough_coord_index;
+			mat.metallic_factor = material->metallic_Factor;
+			mat.roughness_factor = material->roughness_Factor;
+
+			//Occlusion
+			if (material->occlusion_texture.expired() != true)
+				mat.occlusion_texture_id = material->occlusion_texture.lock()->getID();
+			else
+				mat.occlusion_texture_id = -1;
+			mat.occlusion_texcoord_id = material->occlusion_coord_index;
+			mat.occlusion_strength = material->occlusion_strength;
+
+			//Emission
+			if (material->emission_texture.expired() != true)
+				mat.emission_texture_id = material->emission_texture.lock()->getID();
+			else
+				mat.emission_texture_id = -1;
+			mat.emission_texcoord_id = material->emission_coord_index;
+			mat.emission_factor = material->emission_Factor;
+
 			data.materials.push_back(mat);
 		}
 	}
