@@ -22,6 +22,23 @@ namespace RenderShader {
 		uint32_t baseColor_texture_id;
 		int32_t baseColor_texCoord_id;
 		glm::vec4 baseColor_factor;
+
+		uint32_t normal_texture_id;
+		int32_t normal_texcoord_id;
+		float normal_scale;
+
+		uint32_t metal_rough_texture_id;
+		int32_t metal_rough_texcoord_id;
+		float metallic_factor;
+		float roughness_factor;
+
+		uint32_t occlusion_texture_id;
+		int32_t occlusion_texcoord_id;
+		float occlusion_strength;
+
+		uint32_t emission_texture_id;
+		int32_t emission_texcoord_id;
+		glm::vec3 emission_factor;
 	};
 
 	struct Texture {

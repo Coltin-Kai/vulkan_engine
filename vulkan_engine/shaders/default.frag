@@ -15,6 +15,23 @@ struct Material {
 	int baseColor_texture_id;
 	int baseColor_texcoord_id;
 	vec4 baseColor_factor;
+
+	int normal_texture_id;
+	int normal_texcoord_id;
+	float normal_scale;
+
+	int metal_rough_texture_id;
+	int metal_rough_texcoord_id;
+	float metallic_factor;
+	float roughness_factor;
+
+	int occlusion_texture_id;
+	int occlusion_texcoord_id;
+	float occlusion_strength;
+
+	int emission_texture_id;
+	int emission_texcoord_id;
+	vec3 emission_factor;
 };
 
 struct Texture {
@@ -30,9 +47,10 @@ layout(scalar, buffer_reference, buffer_reference_align = 4) buffer PrimitiveInf
 	PrimitiveInfo primitiveInfos[]; //Index with prim_id
 };
 
-layout(scalar, buffer_reference, buffer_reference_align = 4) buffer ViewProjMatrixBuffer {
+layout(scalar, buffer_reference, buffer_reference_align = 4) buffer ViewProjMatrixBuffer { //Probably rename this to be like camera or something related
 	mat4 view;
 	mat4 proj;
+	vec3 camPos;
 };
 
 layout(scalar, buffer_reference, buffer_reference_align = 4) buffer ModelMatricesBuffer {
@@ -85,7 +103,7 @@ void main() {
 	Material mat = matBuffer.materials[primitive.mat_id];
 
 	vec3 baseColor;
-	vec3 normal = inNormal;
+	vec3 normal;
 	float metallic;
 	float roughness;
 	float ao;
@@ -97,10 +115,41 @@ void main() {
 		baseColor = inColor;
 	else if (mat.baseColor_texcoord_id == 0) { //If it uses TexCorrd_0, grab from vertex input
 			vec2 baseColor_texcoord = inUV;
-			baseColor = (vec4(texture(sampler2D(texture_images[baseColor_texture.textureImage_id], samplers[baseColor_texture.sampler_id]), baseColor_texcoord).rgb * inColor, 1.0f) * mat.baseColor_factor).rgb; //Sampled Texture Value * Associated Factor
+			baseColor = texture(sampler2D(texture_images[baseColor_texture.textureImage_id], samplers[baseColor_texture.sampler_id]), baseColor_texcoord).rgb * inColor * mat.baseColor_factor.rgb; //Sampled Texture Value * Associated Factor. Not sure i need to multiple with inColor
 	}
 
-	baseColor = pow(baseColor, 2.2); //Convert Texture Colors to Linear Space
+	baseColor = pow(baseColor, vec3(2.2)); //Convert Texture Colors to Linear Space
+
+	//-Normal !!!More Code needed to include tangent and stuff
+	Texture normal_texture = texBuffer.textures[mat.normal_texture_id];
+	if (mat.normal_texcoord_id == -1)
+		normal = inNormal;
+	else if (mat.normal_texcoord_id == 0) {
+		vec2 normal_texcoord = inUV;
+		normal = texture(sampler2D(texture_images[normal_texture.textureImage_id], samplers[normal_texture.sampler_id]), normal_texcoord).rgb * mat.normal_scale;
+	}
+
+	//-Metal_Roughness 
+	Texture metal_roughness_texture = texBuffer.textures[mat.metal_rough_texture_id];
+	if (mat.metal_rough_texcoord_id == -1) {
+		metallic = 0.0;
+		roughness = 0.5;
+	}
+	else if (mat.metal_rough_texcoord_id == 0) {
+		vec2 metal_rough_texcoord = inUV;
+		metallic = texture(sampler2D(texture_images[metal_roughness_texture.textureImage_id], samplers[metal_roughness_texture.sampler_id]), metal_rough_texcoord).b * mat.metallic_factor;
+		roughness = texture(sampler2D(texture_images[metal_roughness_texture.textureImage_id], samplers[metal_roughness_texture.sampler_id]), metal_rough_texcoord).g * mat.roughness_factor;
+	}
+
+	//Occlusion
+	Texture occlusion_texture = texBuffer.textures[mat.occlusion_texture_id];
+	if (mat.occlusion_texcoord_id == -1) {
+		ao = 0.5;
+	}
+	else if (mat.occlusion_texcoord_id == 0) {
+		vec2 occlusion_texcoord = inUV;
+		ao = texture(sampler2D(texture_images[occlusion_texture.textureImage_id], samplers[occlusion_texture.sampler_id]), occlusion_texcoord).r * mat.occlusion_strength;
+	}
 
 	//Direct Lighting Calculations
 	PointLight lights[2]; //Hard-Coded Pointlights
@@ -110,7 +159,7 @@ void main() {
 	lights[1].color = vec3(1.0f, 0.0f, 0.0f);
 
 	normal = normalize(normal);
-	vec3 viewDir = normalize(camPos - inFragPos); //!!! Have to pass camera Position as uniform
+	vec3 viewDir = normalize(viewprojBuffer.camPos - inFragPos); //!!! Have to pass camera Position as uniform
 
 	vec3 base_reflectivity = vec3(0.04);
 	base_reflectivity = mix(base_reflectivity, baseColor, metallic);
