@@ -89,6 +89,7 @@ layout(location = 1) out vec3 outColor;
 layout(location = 2) out vec2 outUV;
 layout(location = 3) out vec3 outFragPos;
 layout(location = 4) out vec3 outNormal;
+layout(location = 5) out vec4 outTangent;
 
 void main() {
 	int primID = primIdBuffer.prim_ids[gl_DrawID];
@@ -98,5 +99,6 @@ void main() {
 	outUV = uv;
 	outFragPos = (modelsBuffer.model[primitive.model_matrix_id] * vec4(inPosition, 1.0f)).xyz;
 	outNormal = inNormal;
+	outTangent = tangent;
 	gl_Position = viewprojBuffer.proj * viewprojBuffer.view * modelsBuffer.model[primitive.model_matrix_id] * vec4(inPosition, 1.0f);
 }
