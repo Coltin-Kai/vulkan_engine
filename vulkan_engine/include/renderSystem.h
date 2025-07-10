@@ -27,7 +27,19 @@ constexpr unsigned int UNIFORM_DESCRIPTOR_COUNT = 500;
 constexpr uint32_t MAX_SAMPLED_IMAGE_COUNT = 100;
 constexpr uint32_t MAX_SAMPLER_COUNT = 100;
 
-struct DeviceBufferType { //Probably want to rename. Represents what type of data to update. Plan to make it into a properly working flag
+enum class DeviceBufferType {
+	ViewProj,
+	Indirect,
+	PrimID,
+	PrimInfo,
+	Model,
+	Index,
+	Vertex,
+	Material,
+	Texture
+};
+
+struct DeviceBufferTypeFlags {
 	bool viewProjMatrix = false;
 	bool indirectDraw = false;
 	bool primID = false;
@@ -78,7 +90,7 @@ public:
 	void resize_swapchain(VkExtent2D windowExtent);
 	void bind_descriptors(GraphicsDataPayload& payload);
 	void setup_drawContexts(const GraphicsDataPayload& payload);
-	void signal_to_updateDeviceBuffer(DeviceBufferType bufferType);
+	void signal_to_updateDeviceBuffers(DeviceBufferTypeFlags deviceBufferTypes);
 	void updateSignaledDeviceBuffers(const GraphicsDataPayload& payload);
 private:
 	struct Swapchain {
@@ -168,7 +180,7 @@ private:
 	std::vector<VkVertexInputAttributeDescription>_attribueDescriptions;
 
 	//DEBUG - Device Data Updates
-	std::unordered_map<std::string, int> _deviceBufferTypesCounter; //Used for keeping track of how many buffers need to updated for each type (across the frames). Plan to change since using string as key is pretty bad
+	std::unordered_map<DeviceBufferType, int> _deviceBufferTypesCounter; //Used for keeping track of how many buffers need to updated for each type (across the frames). Plan to change since using string as key is pretty bad
 	RenderShaderData _stagingUpdateData; //Use to stage render data for updates
 
 	//DEBUG - Primitive Vertex Input Data Tracker. Might delete
@@ -201,5 +213,5 @@ private:
 	void destroy_swapchain();
 
 	//Graphics Payload
-	void extract_render_data(const GraphicsDataPayload& payload, DeviceBufferType dataType, RenderShaderData& data); //Extracts The specified type of data from payload and output to RenderShaderData param
+	void extract_render_data(const GraphicsDataPayload& payload, DeviceBufferTypeFlags dataType, RenderShaderData& data); //Extracts The specified type of data from payload and output to RenderShaderData param
 };

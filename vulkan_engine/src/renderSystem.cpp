@@ -12,15 +12,15 @@ void RenderSystem::init(VkExtent2D windowExtent) {
 
 	setup_depthImage();
 
-	_deviceBufferTypesCounter["viewProjMatrix"] = 0;
-	_deviceBufferTypesCounter["indirectDraw"] = 0;
-	_deviceBufferTypesCounter["primID"] = 0;
-	_deviceBufferTypesCounter["primInfo"] = 0;
-	_deviceBufferTypesCounter["modelMatrix"] = 0;
-	_deviceBufferTypesCounter["index"] = 0;
-	_deviceBufferTypesCounter["vertex"] = 0;
-	_deviceBufferTypesCounter["material"] = 0;
-	_deviceBufferTypesCounter["texture"] = 0;
+	_deviceBufferTypesCounter[DeviceBufferType::ViewProj] = 0;
+	_deviceBufferTypesCounter[DeviceBufferType::Indirect] = 0;
+	_deviceBufferTypesCounter[DeviceBufferType::PrimID] = 0;
+	_deviceBufferTypesCounter[DeviceBufferType::PrimInfo] = 0;
+	_deviceBufferTypesCounter[DeviceBufferType::Model] = 0;
+	_deviceBufferTypesCounter[DeviceBufferType::Index] = 0;
+	_deviceBufferTypesCounter[DeviceBufferType::Vertex] = 0;
+	_deviceBufferTypesCounter[DeviceBufferType::Material] = 0;
+	_deviceBufferTypesCounter[DeviceBufferType::Texture] = 0;
 }
 
 VkResult RenderSystem::run() {
@@ -252,7 +252,7 @@ void RenderSystem::init_descriptorSet() {
 
 void RenderSystem::setup_drawContexts(const GraphicsDataPayload& payload) { 
 	RenderShaderData renderData;
-	DeviceBufferType dataType;
+	DeviceBufferTypeFlags dataType;
 	dataType.setAll();
 	extract_render_data(payload, dataType, renderData);
 
@@ -350,109 +350,109 @@ uint32_t RenderSystem::get_drawCount() {
 	return currentDrawContext.drawCount;
 }
 
-void RenderSystem::signal_to_updateDeviceBuffer(DeviceBufferType bufferType) {
+void RenderSystem::signal_to_updateDeviceBuffers(DeviceBufferTypeFlags bufferType) {
 	//Update COunter associated with type of data
 	if (bufferType.viewProjMatrix)
-		_deviceBufferTypesCounter["viewProjMatrix"] = FRAMES_TOTAL;
+		_deviceBufferTypesCounter[DeviceBufferType::ViewProj] = FRAMES_TOTAL;
 	if (bufferType.indirectDraw)
-		_deviceBufferTypesCounter["indirectDraw"] = FRAMES_TOTAL;
+		_deviceBufferTypesCounter[DeviceBufferType::Indirect] = FRAMES_TOTAL;
 	if (bufferType.primID)
-		_deviceBufferTypesCounter["primID"] = FRAMES_TOTAL;
+		_deviceBufferTypesCounter[DeviceBufferType::PrimID] = FRAMES_TOTAL;
 	if (bufferType.primInfo)
-		_deviceBufferTypesCounter["primInfo"] = FRAMES_TOTAL;
+		_deviceBufferTypesCounter[DeviceBufferType::PrimInfo] = FRAMES_TOTAL;
 	if (bufferType.modelMatrix)
-		_deviceBufferTypesCounter["modelMatrix"] = FRAMES_TOTAL;
+		_deviceBufferTypesCounter[DeviceBufferType::Model] = FRAMES_TOTAL;
 	if (bufferType.index)
-		_deviceBufferTypesCounter["index"] = FRAMES_TOTAL;
+		_deviceBufferTypesCounter[DeviceBufferType::Index] = FRAMES_TOTAL;
 	if (bufferType.vertex)
-		_deviceBufferTypesCounter["vertex"] = FRAMES_TOTAL;
+		_deviceBufferTypesCounter[DeviceBufferType::Vertex] = FRAMES_TOTAL;
 	if (bufferType.material)
-		_deviceBufferTypesCounter["material"] = FRAMES_TOTAL;
+		_deviceBufferTypesCounter[DeviceBufferType::Material] = FRAMES_TOTAL;
 	if (bufferType.texture)
-		_deviceBufferTypesCounter["texture"] = FRAMES_TOTAL;
+		_deviceBufferTypesCounter[DeviceBufferType::Texture] = FRAMES_TOTAL;
 }
 
 void RenderSystem::updateSignaledDeviceBuffers(const GraphicsDataPayload& payload) {
-	DeviceBufferType dataType;
+	DeviceBufferTypeFlags dataType;
 	//FIgure out which render data type flags were signaled
-	if (_deviceBufferTypesCounter["viewProjMatrix"] == FRAMES_TOTAL)
+	if (_deviceBufferTypesCounter[DeviceBufferType::ViewProj] == FRAMES_TOTAL)
 		dataType.viewProjMatrix = true;
-	if (_deviceBufferTypesCounter["indirectDraw"] == FRAMES_TOTAL)
+	if (_deviceBufferTypesCounter[DeviceBufferType::Indirect] == FRAMES_TOTAL)
 		dataType.indirectDraw = true;
-	if (_deviceBufferTypesCounter["primID"] == FRAMES_TOTAL)
+	if (_deviceBufferTypesCounter[DeviceBufferType::PrimID] == FRAMES_TOTAL)
 		dataType.primID = true;
-	if (_deviceBufferTypesCounter["primInfo"] == FRAMES_TOTAL)
+	if (_deviceBufferTypesCounter[DeviceBufferType::PrimInfo] == FRAMES_TOTAL)
 		dataType.primInfo = true;
-	if (_deviceBufferTypesCounter["modelMatrix"] == FRAMES_TOTAL)
+	if (_deviceBufferTypesCounter[DeviceBufferType::Model] == FRAMES_TOTAL)
 		dataType.modelMatrix = true;
-	if (_deviceBufferTypesCounter["index"] == FRAMES_TOTAL)
+	if (_deviceBufferTypesCounter[DeviceBufferType::Index] == FRAMES_TOTAL)
 		dataType.index = true;
-	if (_deviceBufferTypesCounter["vertex"] == FRAMES_TOTAL)
+	if (_deviceBufferTypesCounter[DeviceBufferType::Vertex] == FRAMES_TOTAL)
 		dataType.vertex = true;
-	if (_deviceBufferTypesCounter["material"] == FRAMES_TOTAL)
+	if (_deviceBufferTypesCounter[DeviceBufferType::Material] == FRAMES_TOTAL)
 		dataType.material = true;
-	if (_deviceBufferTypesCounter["texture"] == FRAMES_TOTAL)
+	if (_deviceBufferTypesCounter[DeviceBufferType::Texture] == FRAMES_TOTAL)
 		dataType.texture = true;
 
 	//Stage Data of those that were only recently signaled to be updated
 	extract_render_data(payload, dataType, _stagingUpdateData);
 
 	//Updatae Buffers
-	if (_deviceBufferTypesCounter["viewProjMatrix"] > 0) {
+	if (_deviceBufferTypesCounter[DeviceBufferType::ViewProj] > 0) {
 		size_t viewSize = sizeof(RenderShader::ViewProj);
 		_vkContext.update_buffer(get_current_frame().drawContext.viewprojMatrixBuffer, &_stagingUpdateData.viewproj, viewSize, _stagingUpdateData.viewprojMatrix_copy_info);
-		_deviceBufferTypesCounter["viewProjMatrix"]--;
+		_deviceBufferTypesCounter[DeviceBufferType::ViewProj]--;
 	}
 
-	if (_deviceBufferTypesCounter["indirectDraw"] > 0) {
+	if (_deviceBufferTypesCounter[DeviceBufferType::Indirect] > 0) {
 		get_current_frame().drawContext.drawCount = _stagingUpdateData.indirect_commands.size();
 		size_t indirectSize = sizeof(VkDrawIndexedIndirectCommand) * _stagingUpdateData.indirect_commands.size();
 		_vkContext.update_buffer(get_current_frame().drawContext.indirectDrawCommandsBuffer, _stagingUpdateData.indirect_commands.data(), indirectSize, _stagingUpdateData.indirect_copy_info);
-		_deviceBufferTypesCounter["indirectDraw"]--;
+		_deviceBufferTypesCounter[DeviceBufferType::Indirect]--;
 	}
 	
-	if (_deviceBufferTypesCounter["primID"] > 0) {
+	if (_deviceBufferTypesCounter[DeviceBufferType::PrimID] > 0) {
 		size_t primIDsize = sizeof(int32_t) * _stagingUpdateData.primitiveIds.size();
 		_vkContext.update_buffer(get_current_frame().drawContext.primitiveIdsBuffer, _stagingUpdateData.primitiveIds.data(), primIDsize, _stagingUpdateData.primId_copy_info);
-		_deviceBufferTypesCounter["primID"]--;
+		_deviceBufferTypesCounter[DeviceBufferType::PrimID]--;
 	}
 
-	if (_deviceBufferTypesCounter["primInfo"] > 0) {
+	if (_deviceBufferTypesCounter[DeviceBufferType::PrimInfo] > 0) {
 		size_t primInfoSize = sizeof(RenderShader::PrimitiveInfo) * _stagingUpdateData.primitiveInfos.size();
 		_vkContext.update_buffer(get_current_frame().drawContext.primitiveInfosBuffer, _stagingUpdateData.primitiveInfos.data(), primInfoSize, _stagingUpdateData.primInfo_copy_infos);
-		_deviceBufferTypesCounter["primInfo"]--;
+		_deviceBufferTypesCounter[DeviceBufferType::PrimInfo]--;
 	}
 
-	if (_deviceBufferTypesCounter["modelMatrix"] > 0) {
+	if (_deviceBufferTypesCounter[DeviceBufferType::Model] > 0) {
 		size_t modetSize = sizeof(glm::mat4) * _stagingUpdateData.model_matrices.size();
 		_vkContext.update_buffer(get_current_frame().drawContext.modelMatricesBuffer, _stagingUpdateData.model_matrices.data(), modetSize, _stagingUpdateData.modelMatrices_copy_infos);
-		_deviceBufferTypesCounter["modelMatrix"]--;
+		_deviceBufferTypesCounter[DeviceBufferType::Model]--;
 	}
 
-	if (_deviceBufferTypesCounter["index"] > 0) {
+	if (_deviceBufferTypesCounter[DeviceBufferType::Index] > 0) {
 		size_t indiceSize = sizeof(uint32_t) * _stagingUpdateData.indices.size();
 		_vkContext.update_buffer(get_current_frame().drawContext.indexBuffer, _stagingUpdateData.indices.data(), indiceSize, _stagingUpdateData.index_copy_info);
-		_deviceBufferTypesCounter["index"]--;
+		_deviceBufferTypesCounter[DeviceBufferType::Index]--;
 	}
 
-	if (_deviceBufferTypesCounter["vertex"] > 0) {
+	if (_deviceBufferTypesCounter[DeviceBufferType::Vertex] > 0) {
 		size_t vertexPosSize = sizeof(glm::vec3) * _stagingUpdateData.positions.size();
 		size_t vertexAttribSize = sizeof(RenderShader::VertexAttributes) * _stagingUpdateData.attributes.size();
 		_vkContext.update_buffer(get_current_frame().drawContext.vertexPosBuffer, _stagingUpdateData.positions.data(), vertexPosSize, _stagingUpdateData.pos_copy_info);
 		_vkContext.update_buffer(get_current_frame().drawContext.vertexOtherAttribBuffer, _stagingUpdateData.attributes.data(), vertexAttribSize, _stagingUpdateData.attrib_copy_info);
-		_deviceBufferTypesCounter["vertex"]--;
+		_deviceBufferTypesCounter[DeviceBufferType::Vertex]--;
 	}
 
-	if (_deviceBufferTypesCounter["material"] > 0) {
+	if (_deviceBufferTypesCounter[DeviceBufferType::Material] > 0) {
 		size_t matSize = sizeof(RenderShader::Material) * _stagingUpdateData.materials.size();
 		_vkContext.update_buffer(get_current_frame().drawContext.materialsBuffer, _stagingUpdateData.materials.data(), matSize, _stagingUpdateData.material_copy_infos);
-		_deviceBufferTypesCounter["material"]--;
+		_deviceBufferTypesCounter[DeviceBufferType::Material]--;
 	}
 
-	if (_deviceBufferTypesCounter["texture"] > 0) {
+	if (_deviceBufferTypesCounter[DeviceBufferType::Texture] > 0) {
 		size_t textureSize = sizeof(RenderShader::Texture) * _stagingUpdateData.textures.size();
 		_vkContext.update_buffer(get_current_frame().drawContext.texturesBuffer, _stagingUpdateData.textures.data(), textureSize, _stagingUpdateData.texture_copy_infos);
-		_deviceBufferTypesCounter["texture"]--;
+		_deviceBufferTypesCounter[DeviceBufferType::Texture]--;
 	}
 }
 
@@ -616,7 +616,7 @@ void RenderSystem::draw_geometry(VkCommandBuffer cmd, const Image& swapchainImag
 	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _pipelineLayout, 0, 1, &_descriptorSet, 0, nullptr);
 
 	//Bind Vertex Input Buffers
-	std::vector<VkBuffer> vertexBuffers = get_vertexBuffers(); //Jank Debug code will move vector to drawContext structure itself
+	std::vector<VkBuffer> vertexBuffers = get_vertexBuffers();
 	std::vector<VkDeviceSize> vertexOffsets = { 0, 0 };
 	vkCmdBindVertexBuffers(cmd, 0, vertexBuffers.size(), vertexBuffers.data(), vertexOffsets.data());
 	vkCmdBindIndexBuffer(cmd, get_indexBuffer(), 0, VK_INDEX_TYPE_UINT32);
@@ -704,7 +704,7 @@ void RenderSystem::destroy_swapchain() {
 		vkDestroyImageView(_vkContext.device, _swapchain.images[i].imageView, nullptr);
 }
 
-void RenderSystem::extract_render_data(const GraphicsDataPayload& payload, DeviceBufferType dataType, RenderShaderData& data) {
+void RenderSystem::extract_render_data(const GraphicsDataPayload& payload, DeviceBufferTypeFlags dataType, RenderShaderData& data) {
 	//View and Proj Matrix
 	if (dataType.viewProjMatrix) {
 		data.viewproj.view = payload.camera_transform;

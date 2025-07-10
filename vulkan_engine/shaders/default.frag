@@ -156,9 +156,9 @@ void main() {
 
 	//Direct Lighting Calculations
 	PointLight lights[2]; //Hard-Coded Pointlights
-	lights[0].pos = vec3(1.0f, 1.0f, 1.0f);
+	lights[0].pos = vec3(0.5f, 0.5f, 0.5f);
 	lights[0].color = vec3(1.0f, 1.0f, 1.0f);
-	lights[1].pos = vec3(-1.0f, 1.0f, 1.0f);
+	lights[1].pos = vec3(-0.5f, 0.5f, 0.5f);
 	lights[1].color = vec3(1.0f, 0.0f, 0.0f);
 
 	normal = normalize(normal);
@@ -173,7 +173,7 @@ void main() {
 		vec3 halfwayVector = normalize(viewDir + lightDir);
 		float lightDistance = length(lights[i].pos - inFragPos);
 		float attenuation = 1.0 / (lightDistance * lightDistance);
-		vec3 radiance = lights[i].color * attenuation * 5.0; //Light's Radiance
+		vec3 radiance = lights[i].color * attenuation; //Light's Radiance
 
 		//Cook-Torrance BRDF
 		float NDF = BRDF_NormalDistributionFunction(normal, halfwayVector, roughness);

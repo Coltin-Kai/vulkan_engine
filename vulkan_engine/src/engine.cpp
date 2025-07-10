@@ -97,9 +97,9 @@ void Engine::run() {
 			_renderSys.resize_swapchain(_windowExtent);
 			_payload.proj_transform = glm::perspective(glm::radians(45.0f), _windowExtent.width / (float)_windowExtent.height, 50.0f, 0.01f);
 			_payload.proj_transform[1][1] *= -1;
-			DeviceBufferType dataType;
+			DeviceBufferTypeFlags dataType;
 			dataType.viewProjMatrix = true;
-			_renderSys.signal_to_updateDeviceBuffer(dataType);
+			_renderSys.signal_to_updateDeviceBuffers(dataType);
 			windowResized = false;
 		}
 		
@@ -113,9 +113,9 @@ void Engine::run() {
 			_camera.update_view_matrix();
 			_payload.camera_transform = _camera.get_view_matrix();
 			_payload.cam_pos = _camera.pos;
-			DeviceBufferType dataType;
+			DeviceBufferTypeFlags dataType;
 			dataType.viewProjMatrix = true;
-			_renderSys.signal_to_updateDeviceBuffer(dataType);
+			_renderSys.signal_to_updateDeviceBuffers(dataType);
 		}
 
 		VkResult result;
@@ -124,23 +124,23 @@ void Engine::run() {
 		if (_guiParam.fileOpened) {
 			_guiParam.fileOpened = false;
 			loadGLTFFile(_vkContext, _payload, _guiParam.OpenedFilePath); //Testing this
-			DeviceBufferType dataType;
+			DeviceBufferTypeFlags dataType;
 			dataType.setAll();
-			_renderSys.signal_to_updateDeviceBuffer(dataType);
+			_renderSys.signal_to_updateDeviceBuffers(dataType);
 			_renderSys.bind_descriptors(_payload);
 		}
 
 		if (_guiParam.sceneChanged) {
 			_guiParam.sceneChanged = false;
 			//_renderSys.signal_to_updateDeviceBuffer(DeviceBufferType::ModelMatrix | DeviceBufferType::IndirectDraw | DeviceBufferType::PrimitiveID | DeviceBufferType::Vertex | DeviceBufferType::Index | DeviceBufferType::PrimitiveInfo);
-			DeviceBufferType dataType;
+			DeviceBufferTypeFlags dataType;
 			dataType.modelMatrix = true;
 			dataType.indirectDraw = true;
 			dataType.primID = true;
 			dataType.primInfo = true;
 			dataType.vertex = true;
 			dataType.index = true;
-			_renderSys.signal_to_updateDeviceBuffer(dataType); //Need to fix stuff to ensure that it only updates what is neccesary instead of All
+			_renderSys.signal_to_updateDeviceBuffers(dataType); //Need to fix stuff to ensure that it only updates what is neccesary instead of All
 		}
 
 		//Render System Device Data/Render Data Updates
