@@ -39,6 +39,12 @@ struct Texture {
 	int sampler_id;
 };
 
+struct PointLight {
+	vec3 pos;
+	vec3 color;
+	float power;
+};
+
 layout(scalar, buffer_reference, buffer_reference_align = 4) buffer PrimitiveIdsBuffer { 
 	int prim_ids[]; //Index with glDrawID
 };
@@ -65,6 +71,10 @@ layout(scalar, buffer_reference, buffer_reference_align = 4) buffer TexturesBuff
 	Texture textures[];
 };
 
+layout(scalar, buffer_reference, buffer_reference_align = 4) buffer LightsBuffer {
+	PointLight lights[];
+};
+
 layout(push_constant) uniform PushConstants {
 	PrimitiveIdsBuffer primIdBuffer;
 	PrimitiveInfosBuffer primInfoBuffer;
@@ -72,6 +82,7 @@ layout(push_constant) uniform PushConstants {
 	ModelMatricesBuffer modelsBuffer;
 	MaterialsBuffer matBuffer;
 	TexturesBuffer texBuffer;
+	LightsBuffer lightBuffer;
 };
 
 layout(set = 0, binding = 0) uniform texture2D texture_images[MAX_TEXTURE2D_COUNT]; //Index with Texture::textureImage_id
@@ -88,11 +99,6 @@ layout(location = 5) in vec4 inTangent;
 layout(location = 0) out vec4 outFragColor;
 
 const float PI = 3.14159265359;
-
-struct PointLight {
-	vec3 pos;
-	vec3 color;
-};
 
 float BRDF_NormalDistributionFunction(vec3 normal, vec3 halfwayVector, float roughness);
 float BRDF_GeometryAttenuationFunction(vec3 normal, vec3 viewDir, vec3 lightDir, float roughness);
@@ -121,7 +127,7 @@ void main() {
 
 	baseColor = pow(baseColor, vec3(2.2)); //Convert Texture Colors to Linear Space
 
-	//-Normal !!!More Code needed to include tangent and stuff
+	//-Normal
 	Texture normal_texture = texBuffer.textures[mat.normal_texture_id];
 	if (mat.normal_texcoord_id == -1)
 		normal = inNormal;
@@ -155,11 +161,6 @@ void main() {
 	}
 
 	//Direct Lighting Calculations
-	PointLight lights[2]; //Hard-Coded Pointlights
-	lights[0].pos = vec3(0.5f, 0.5f, 0.5f);
-	lights[0].color = vec3(1.0f, 1.0f, 1.0f);
-	lights[1].pos = vec3(-0.5f, 0.5f, 0.5f);
-	lights[1].color = vec3(1.0f, 0.0f, 0.0f);
 
 	normal = normalize(normal);
 	vec3 viewDir = normalize(viewprojBuffer.camPos - inFragPos); //!!! Have to pass camera Position as uniform
@@ -169,11 +170,11 @@ void main() {
 
 	vec3 irradiance = vec3(0.0f);
 	for (int i = 0; i < 2; i++) { //Calculate irradiance of Point Lights
-		vec3 lightDir = normalize(lights[i].pos - inFragPos);
+		vec3 lightDir = normalize(lightBuffer.lights[i].pos - inFragPos);
 		vec3 halfwayVector = normalize(viewDir + lightDir);
-		float lightDistance = length(lights[i].pos - inFragPos);
+		float lightDistance = length(lightBuffer.lights[i].pos - inFragPos);
 		float attenuation = 1.0 / (lightDistance * lightDistance);
-		vec3 radiance = lights[i].color * attenuation; //Light's Radiance
+		vec3 radiance = lightBuffer.lights[i].color * lightBuffer.lights[i].power * attenuation; //Light's Radiance
 
 		//Cook-Torrance BRDF
 		float NDF = BRDF_NormalDistributionFunction(normal, halfwayVector, roughness);

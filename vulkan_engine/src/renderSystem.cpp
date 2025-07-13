@@ -21,6 +21,7 @@ void RenderSystem::init(VkExtent2D windowExtent) {
 	_deviceBufferTypesCounter[DeviceBufferType::Vertex] = 0;
 	_deviceBufferTypesCounter[DeviceBufferType::Material] = 0;
 	_deviceBufferTypesCounter[DeviceBufferType::Texture] = 0;
+	_deviceBufferTypesCounter[DeviceBufferType::Light] = 0;
 }
 
 VkResult RenderSystem::run() {
@@ -62,6 +63,7 @@ void RenderSystem::shutdown() {
 		_vkContext.destroy_buffer(frame.drawContext.primitiveInfosBuffer);
 		_vkContext.destroy_buffer(frame.drawContext.materialsBuffer);
 		_vkContext.destroy_buffer(frame.drawContext.texturesBuffer);
+		_vkContext.destroy_buffer(frame.drawContext.lightsBuffer);
 	}
 
 	//Cleanup Swapchain
@@ -269,6 +271,7 @@ void RenderSystem::setup_drawContexts(const GraphicsDataPayload& payload) {
 	size_t alloc_primInfo_size = sizeof(RenderShader::PrimitiveInfo) * renderData.primitiveInfos.size();
 	size_t alloc_materials_size = sizeof(RenderShader::Material) * renderData.materials.size();
 	size_t alloc_textures_size = sizeof(RenderShader::Texture) * renderData.textures.size();
+	size_t alloc_lights_size = sizeof(RenderShader::PointLight) * renderData.pointLights.size();
 
 	int i = 1;
 	for (Frame& frame : _frames) {
@@ -282,12 +285,14 @@ void RenderSystem::setup_drawContexts(const GraphicsDataPayload& payload) {
 		currentDrawContext.vertexOtherAttribBuffer = _vkContext.create_buffer(std::format("Vertex Other Attributes Buffer {}", i).c_str(), buffer_size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, allocFlags);
 		currentDrawContext.indexBuffer = _vkContext.create_buffer(std::format("Index Buffer {}", i).c_str(), buffer_size, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, allocFlags);
 		//BDA Buffers
-		currentDrawContext.viewprojMatrixBuffer = _vkContext.create_buffer(std::format("View and Projection Matrix Buffer {}", i).c_str(), buffer_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, allocFlags); //Careful as if the alloc size is 0. Will cause errors
-		currentDrawContext.modelMatricesBuffer = _vkContext.create_buffer(std::format("Model Matrices Buffer {}", i).c_str(), buffer_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, allocFlags);
-		currentDrawContext.primitiveIdsBuffer = _vkContext.create_buffer(std::format("Primitive IDs Buffer {}", i).c_str(), buffer_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, allocFlags);
-		currentDrawContext.primitiveInfosBuffer = _vkContext.create_buffer(std::format("Primitive Infos Buffer {}", i).c_str(), buffer_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, allocFlags);
-		currentDrawContext.materialsBuffer = _vkContext.create_buffer(std::format("Materials Buffer {}", i).c_str(), buffer_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, allocFlags);
-		currentDrawContext.texturesBuffer = _vkContext.create_buffer(std::format("Textures Buffer {}", i).c_str(), buffer_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, allocFlags);
+		VkBufferUsageFlags storageUsageFlags = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+		currentDrawContext.viewprojMatrixBuffer = _vkContext.create_buffer(std::format("View and Projection Matrix Buffer {}", i).c_str(), buffer_size, storageUsageFlags, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, allocFlags); //Careful as if the alloc size is 0. Will cause errors
+		currentDrawContext.modelMatricesBuffer = _vkContext.create_buffer(std::format("Model Matrices Buffer {}", i).c_str(), buffer_size, storageUsageFlags, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, allocFlags);
+		currentDrawContext.primitiveIdsBuffer = _vkContext.create_buffer(std::format("Primitive IDs Buffer {}", i).c_str(), buffer_size, storageUsageFlags, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, allocFlags);
+		currentDrawContext.primitiveInfosBuffer = _vkContext.create_buffer(std::format("Primitive Infos Buffer {}", i).c_str(), buffer_size, storageUsageFlags, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, allocFlags);
+		currentDrawContext.materialsBuffer = _vkContext.create_buffer(std::format("Materials Buffer {}", i).c_str(), buffer_size, storageUsageFlags, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, allocFlags);
+		currentDrawContext.texturesBuffer = _vkContext.create_buffer(std::format("Textures Buffer {}", i).c_str(), buffer_size, storageUsageFlags, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, allocFlags);
+		currentDrawContext.lightsBuffer = _vkContext.create_buffer(std::format("Lights Buffer {}", i).c_str(), buffer_size, storageUsageFlags, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, allocFlags);
 
 		VkBufferDeviceAddressInfo address_info{ .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO };
 		address_info.buffer = currentDrawContext.viewprojMatrixBuffer.buffer;
@@ -302,6 +307,8 @@ void RenderSystem::setup_drawContexts(const GraphicsDataPayload& payload) {
 		currentDrawContext.materialsBufferAddress = vkGetBufferDeviceAddress(_vkContext.device, &address_info);
 		address_info.buffer = currentDrawContext.texturesBuffer.buffer;
 		currentDrawContext.texturesBufferAddress = vkGetBufferDeviceAddress(_vkContext.device, &address_info);
+		address_info.buffer = currentDrawContext.lightsBuffer.buffer;
+		currentDrawContext.lightsBufferAddress = vkGetBufferDeviceAddress(_vkContext.device, &address_info);
 		
 		//Copy Data to the Buffers
 		_vkContext.update_buffer(currentDrawContext.indirectDrawCommandsBuffer, renderData.indirect_commands.data(), alloc_indirect_size, renderData.indirect_copy_info);
@@ -314,6 +321,7 @@ void RenderSystem::setup_drawContexts(const GraphicsDataPayload& payload) {
 		_vkContext.update_buffer(currentDrawContext.primitiveInfosBuffer, renderData.primitiveInfos.data(), alloc_primInfo_size, renderData.primInfo_copy_infos);
 		_vkContext.update_buffer(currentDrawContext.materialsBuffer, renderData.materials.data(), alloc_materials_size, renderData.material_copy_infos);
 		_vkContext.update_buffer(currentDrawContext.texturesBuffer, renderData.textures.data(), alloc_textures_size, renderData.texture_copy_infos);
+		_vkContext.update_buffer(currentDrawContext.lightsBuffer, renderData.pointLights.data(), alloc_lights_size, renderData.light_copy_info);
 		i++;
 	}
 }
@@ -337,6 +345,7 @@ RenderShader::PushConstants RenderSystem::get_pushConstants() {
 	pushconstants.modelMatricesBufferAddress = currentDrawContext.modelMatricesBufferAddress;
 	pushconstants.materialsBufferAddress = currentDrawContext.materialsBufferAddress;
 	pushconstants.texturesBufferAddress = currentDrawContext.texturesBufferAddress;
+	pushconstants.lightsBufferAddress = currentDrawContext.lightsBufferAddress;
 	return pushconstants;
 }
 
@@ -370,6 +379,8 @@ void RenderSystem::signal_to_updateDeviceBuffers(DeviceBufferTypeFlags bufferTyp
 		_deviceBufferTypesCounter[DeviceBufferType::Material] = FRAMES_TOTAL;
 	if (bufferType.texture)
 		_deviceBufferTypesCounter[DeviceBufferType::Texture] = FRAMES_TOTAL;
+	if (bufferType.light)
+		_deviceBufferTypesCounter[DeviceBufferType::Light] = FRAMES_TOTAL;
 }
 
 void RenderSystem::updateSignaledDeviceBuffers(const GraphicsDataPayload& payload) {
@@ -393,6 +404,8 @@ void RenderSystem::updateSignaledDeviceBuffers(const GraphicsDataPayload& payloa
 		dataType.material = true;
 	if (_deviceBufferTypesCounter[DeviceBufferType::Texture] == FRAMES_TOTAL)
 		dataType.texture = true;
+	if (_deviceBufferTypesCounter[DeviceBufferType::Light] == FRAMES_TOTAL)
+		dataType.light = true;
 
 	//Stage Data of those that were only recently signaled to be updated
 	extract_render_data(payload, dataType, _stagingUpdateData);
@@ -454,6 +467,12 @@ void RenderSystem::updateSignaledDeviceBuffers(const GraphicsDataPayload& payloa
 		_vkContext.update_buffer(get_current_frame().drawContext.texturesBuffer, _stagingUpdateData.textures.data(), textureSize, _stagingUpdateData.texture_copy_infos);
 		_deviceBufferTypesCounter[DeviceBufferType::Texture]--;
 	}
+
+	if (_deviceBufferTypesCounter[DeviceBufferType::Light] > 0) {
+		size_t lightSize = sizeof(RenderShader::PointLight) * _stagingUpdateData.pointLights.size();
+		_vkContext.update_buffer(get_current_frame().drawContext.lightsBuffer, _stagingUpdateData.pointLights.data(), lightSize, _stagingUpdateData.light_copy_info);
+		_deviceBufferTypesCounter[DeviceBufferType::Light]--;
+	}
 }
 
 void RenderSystem::init_graphicsPipeline() {
@@ -474,7 +493,7 @@ void RenderSystem::init_graphicsPipeline() {
 	VkPushConstantRange range{};
 	range.stageFlags = VK_SHADER_STAGE_ALL_GRAPHICS;
 	range.offset = 0;
-	range.size = 48;
+	range.size = 56; //REMEMBER TO CHANGE THIS WHEN ADDING MORE BUFFERS/PUSH CONSTANTS
 
 	VkPipelineLayoutCreateInfo pipeline_layout_info = vkutil::pipeline_layout_create_info();
 	pipeline_layout_info.setLayoutCount = 1;
@@ -704,12 +723,22 @@ void RenderSystem::destroy_swapchain() {
 		vkDestroyImageView(_vkContext.device, _swapchain.images[i].imageView, nullptr);
 }
 
+//Extract data from Payload to RenderShaderData
 void RenderSystem::extract_render_data(const GraphicsDataPayload& payload, DeviceBufferTypeFlags dataType, RenderShaderData& data) {
-	//View and Proj Matrix
+	//View and Proj Matrix and Camera Pos
 	if (dataType.viewProjMatrix) {
 		data.viewproj.view = payload.camera_transform;
 		data.viewproj.proj = payload.proj_transform;
+		data.viewproj.pos = payload.cam_pos;
 		data.viewprojMatrix_copy_info = { .srcOffset = 0, .dstOffset = 0, .size = sizeof(glm::mat4) * 2 };
+	}
+
+	if (dataType.light) {
+		data.pointLights.clear();
+		for (PointLight pointLight : payload.pointLights) {
+			data.pointLights.push_back({ .pos = pointLight.pos, .color = pointLight.color, .power = pointLight.power });
+		}
+		data.light_copy_info = { .srcOffset = 0, .dstOffset = 0, .size = sizeof(RenderShader::PointLight) * data.pointLights.size() };
 	}
 
 	//Navigate each scene, and each scene's root nodes, and through each root node's children

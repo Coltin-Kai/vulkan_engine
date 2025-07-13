@@ -19,6 +19,7 @@ struct Node;
 struct Mesh;
 struct Material;
 struct Texture;
+struct PointLight;
 
 struct GraphicsDataPayload{
 	size_t current_scene_idx = 0; //The scene to load
@@ -29,6 +30,7 @@ struct GraphicsDataPayload{
 	std::vector<AllocatedImage> images{}; //Global Images accessible by Textures
 	std::vector<std::shared_ptr<Texture>> textures{}; //Global Textures
 	std::vector<std::shared_ptr<Material>> materials{}; //Global Materials
+	std::vector<PointLight> pointLights{};
 
 	glm::mat4 camera_transform;
 	glm::mat4 proj_transform;
@@ -180,4 +182,10 @@ struct Texture {
 private:
 	inline static uint32_t available_id = 0;
 	uint32_t id;
+};
+
+struct PointLight {
+	glm::vec3 pos;
+	glm::vec3 color;
+	float power;
 };

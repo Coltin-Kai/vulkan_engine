@@ -39,6 +39,12 @@ struct Texture {
 	int sampler_id;
 };
 
+struct PointLight {
+	vec3 pos;
+	vec3 color;
+	float power;
+};
+
 layout(scalar, buffer_reference, buffer_reference_align = 4) buffer PrimitiveIdsBuffer { 
 	int prim_ids[]; //Index with glDrawID
 };
@@ -65,6 +71,10 @@ layout(scalar, buffer_reference, buffer_reference_align = 4) buffer TexturesBuff
 	Texture textures[];
 };
 
+layout(scalar, buffer_reference, buffer_reference_align = 4) buffer LightsBuffer {
+	PointLight lights[];
+};
+
 layout(push_constant) uniform PushConstants {
 	PrimitiveIdsBuffer primIdBuffer;
 	PrimitiveInfosBuffer primInfoBuffer;
@@ -72,6 +82,7 @@ layout(push_constant) uniform PushConstants {
 	ModelMatricesBuffer modelsBuffer;
 	MaterialsBuffer matBuffer;
 	TexturesBuffer texBuffer;
+	LightsBuffer lightBuffer;
 };
 
 layout(set = 0, binding = 0) uniform texture2D texture_images[MAX_TEXTURE2D_COUNT]; //Index with Texture::textureImage_id

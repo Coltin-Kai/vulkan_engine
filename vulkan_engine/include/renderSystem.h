@@ -36,7 +36,8 @@ enum class DeviceBufferType {
 	Index,
 	Vertex,
 	Material,
-	Texture
+	Texture,
+	Light
 };
 
 struct DeviceBufferTypeFlags {
@@ -49,6 +50,7 @@ struct DeviceBufferTypeFlags {
 	bool vertex = false;
 	bool material = false;
 	bool texture = false;
+	bool light = false;
 
 	void setAll() {
 		viewProjMatrix = true;
@@ -60,6 +62,7 @@ struct DeviceBufferTypeFlags {
 		vertex = true;
 		material = true;
 		texture = true;
+		light = true;
 	}
 };
 
@@ -123,6 +126,8 @@ private:
 		VkDeviceAddress materialsBufferAddress;
 		AllocatedBuffer texturesBuffer;
 		VkDeviceAddress texturesBufferAddress;
+		AllocatedBuffer lightsBuffer;
+		VkDeviceAddress lightsBufferAddress;
 	};
 
 	//Represents all the types of data needed to populate Draw Context's Buffers used in Render Shader and Drawing. Need this in order to format most of the data as continous memory for memcpying + Easy to pass all the data from the extract function using a struct
@@ -137,6 +142,7 @@ private:
 		std::vector<RenderShader::PrimitiveInfo> primitiveInfos;
 		std::vector<RenderShader::Material> materials;
 		std::vector<RenderShader::Texture> textures;
+		std::vector<RenderShader::PointLight> pointLights;
 
 		//Copy Infos, dictates how the extracted data should be copied into the buffers
 		VkBufferCopy indirect_copy_info;
@@ -145,6 +151,7 @@ private:
 		VkBufferCopy index_copy_info;
 		VkBufferCopy viewprojMatrix_copy_info;
 		VkBufferCopy primId_copy_info;
+		VkBufferCopy light_copy_info;
 		//-Use multiple copy infos in order to place each data using ID-offsets
 		std::vector<VkBufferCopy> modelMatrices_copy_infos; 
 		std::vector<VkBufferCopy> primInfo_copy_infos;

@@ -52,6 +52,12 @@ namespace RenderShader {
 		glm::vec3 pos;
 	};
 
+	struct PointLight {
+		glm::vec3 pos;
+		glm::vec3 color;
+		float power;
+	};
+
 	struct PushConstants {
 		VkDeviceAddress primitiveIdsBufferAddress;
 		VkDeviceAddress primitiveInfosBufferAddress;
@@ -59,5 +65,6 @@ namespace RenderShader {
 		VkDeviceAddress modelMatricesBufferAddress;
 		VkDeviceAddress materialsBufferAddress;
 		VkDeviceAddress texturesBufferAddress;
+		VkDeviceAddress lightsBufferAddress;
 	};
 }
