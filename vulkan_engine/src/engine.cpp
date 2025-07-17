@@ -49,8 +49,8 @@ void Engine::init() {
 	_payload.proj_transform[1][1] *= -1;
 
 	//Light
-	_payload.pointLights.push_back({ .pos = glm::vec3(0.5f, 0.5f, 0.5f), .color = glm::vec3(1.0f, 1.0f, 1.0f), .power = 5.0f });
-	_payload.pointLights.push_back({ .pos = glm::vec3(-0.5f, 0.5f, 0.5f) , .color = glm::vec3(1.0f, 0.0f, 0.0f), .power = 5.0f });
+	_payload.pointLights.push_back({ .pos = glm::vec3(0.0f, 2.0f, -2.0f), .color = glm::vec3(1.0f, 1.0f, 1.0f), .power = 100.0f });
+	_payload.pointLights.push_back({ .pos = glm::vec3(-2.0f, 2.0f, 2.0f) , .color = glm::vec3(1.0f, 0.0f, 0.0f), .power = 100.0f });
 
 	//Bind Images and Samplers
 	_renderSys.bind_descriptors(_payload);

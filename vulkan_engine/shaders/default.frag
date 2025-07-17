@@ -161,15 +161,14 @@ void main() {
 	}
 
 	//Direct Lighting Calculations
-
 	normal = normalize(normal);
-	vec3 viewDir = normalize(viewprojBuffer.camPos - inFragPos); //!!! Have to pass camera Position as uniform
+	vec3 viewDir = normalize(viewprojBuffer.camPos - inFragPos);
 
 	vec3 base_reflectivity = vec3(0.04);
 	base_reflectivity = mix(base_reflectivity, baseColor, metallic);
 
 	vec3 irradiance = vec3(0.0f);
-	for (int i = 0; i < 2; i++) { //Calculate irradiance of Point Lights
+	for (int i = 0; i < 2; i++) { //Calculate irradiance of Point Lights !!!Make sure to change for dynamic buffer size
 		vec3 lightDir = normalize(lightBuffer.lights[i].pos - inFragPos);
 		vec3 halfwayVector = normalize(viewDir + lightDir);
 		float lightDistance = length(lightBuffer.lights[i].pos - inFragPos);
@@ -205,14 +204,15 @@ void main() {
 //Returns value of how much of the surface's microfacets diverge from the alignment with the halfway-vector
 float BRDF_NormalDistributionFunction(vec3 normal, vec3 halfwayVector, float roughness) {
 	//Trowbridge-Reitz GGX
-	float roughness2 = roughness * roughness;
+	float a = roughness * roughness; //Squaring roughness produces more correct results apparently
+	float a2 = a * a;
 	float NdotH = max(dot(normal, halfwayVector), 0.0);
 	float NdotH2 = NdotH * NdotH;
 
-	float denom = (NdotH2 * (roughness2 - 1.0) + 1.0);
+	float denom = (NdotH2 * (a2 - 1.0) + 1.0);
 	denom = PI * denom * denom;
 
-	return roughness2 / denom;
+	return a2 / denom;
 }
 
 //Returns value of how much the microfacets shadow each other.
@@ -230,7 +230,7 @@ float BRDF_GeometryAttenuationFunction(vec3 normal, vec3 viewDir, vec3 lightDir,
 float BRDF_GeometrySchlickGGX(float NdotV, float roughness) {
 //Schlick-GGX (GGX and Schlick-Beckmann approximation)
 	float r = (roughness + 1.0);
-	float k = (r * r) / 8.0;
+	float k = (r * r) / 8.0; 
 
 	float denom = NdotV * (1.0 - k) + k;
 
