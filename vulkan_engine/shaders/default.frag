@@ -6,6 +6,8 @@
 const uint MAX_TEXTURE2D_COUNT = 100;
 const uint MAX_SAMPLER_COUNT = 100;
 
+const uint MAX_POINTLIGHT_COUNT = 100;
+
 struct PrimitiveInfo {
 	uint mat_id;
 	uint model_matrix_id;
@@ -72,7 +74,8 @@ layout(scalar, buffer_reference, buffer_reference_align = 4) buffer TexturesBuff
 };
 
 layout(scalar, buffer_reference, buffer_reference_align = 4) buffer LightsBuffer {
-	PointLight lights[];
+	int pointLightCount;
+	PointLight lights[MAX_POINTLIGHT_COUNT];
 };
 
 layout(push_constant) uniform PushConstants {
@@ -141,7 +144,7 @@ void main() {
 	//-Metal_Roughness 
 	Texture metal_roughness_texture = texBuffer.textures[mat.metal_rough_texture_id];
 	if (mat.metal_rough_texcoord_id == -1) {
-		metallic = 0.0;
+		metallic = 0.1;
 		roughness = 0.5;
 	}
 	else if (mat.metal_rough_texcoord_id == 0) {
@@ -168,7 +171,7 @@ void main() {
 	base_reflectivity = mix(base_reflectivity, baseColor, metallic);
 
 	vec3 irradiance = vec3(0.0f);
-	for (int i = 0; i < 2; i++) { //Calculate irradiance of Point Lights !!!Make sure to change for dynamic buffer size
+	for (int i = 0; i < lightBuffer.pointLightCount; i++) { //Calculate irradiance of Point Lights !!!Make sure to change for dynamic size array lengths of lights!!!
 		vec3 lightDir = normalize(lightBuffer.lights[i].pos - inFragPos);
 		vec3 halfwayVector = normalize(viewDir + lightDir);
 		float lightDistance = length(lightBuffer.lights[i].pos - inFragPos);

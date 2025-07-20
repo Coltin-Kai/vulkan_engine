@@ -51,7 +51,7 @@ bool Camera::processInput(int32_t rel_mouse_x, int32_t rel_mouse_y, const uint8_
 	}
 
 	//Walk Around
-	const float movementSpeed = 0.0005f * static_cast<float>(deltaFrameTime);
+	const float movementSpeed = 0.001f * static_cast<float>(deltaFrameTime);
 	
 	if (keys[SDL_SCANCODE_W]) {
 		inputChangeDetected = true;

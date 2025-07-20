@@ -19,11 +19,11 @@
 #include "shader_types.h"
 #include "pipeline.h"
 #include <unordered_map>
+#include <array>
 
 constexpr unsigned int FRAMES_TOTAL = 2;
 
 //-Descriptor Settings
-constexpr unsigned int UNIFORM_DESCRIPTOR_COUNT = 500;
 constexpr uint32_t MAX_SAMPLED_IMAGE_COUNT = 100;
 constexpr uint32_t MAX_SAMPLER_COUNT = 100;
 
@@ -142,7 +142,8 @@ private:
 		std::vector<RenderShader::PrimitiveInfo> primitiveInfos;
 		std::vector<RenderShader::Material> materials;
 		std::vector<RenderShader::Texture> textures;
-		std::vector<RenderShader::PointLight> pointLights;
+		uint32_t pointLightsCount = 0; //Actual number of data in pointLights (Since std::array doesnt actually track its number of valid elements)
+		std::array<RenderShader::PointLight, MAX_POINTLIGHT_COUNT> pointLights;
 
 		//Copy Infos, dictates how the extracted data should be copied into the buffers
 		VkBufferCopy indirect_copy_info;

@@ -271,7 +271,7 @@ void RenderSystem::setup_drawContexts(const GraphicsDataPayload& payload) {
 	size_t alloc_primInfo_size = sizeof(RenderShader::PrimitiveInfo) * renderData.primitiveInfos.size();
 	size_t alloc_materials_size = sizeof(RenderShader::Material) * renderData.materials.size();
 	size_t alloc_textures_size = sizeof(RenderShader::Texture) * renderData.textures.size();
-	size_t alloc_lights_size = sizeof(RenderShader::PointLight) * renderData.pointLights.size();
+	size_t alloc_lights_size = sizeof(RenderShader::Lights);
 
 	int i = 1;
 	for (Frame& frame : _frames) {
@@ -321,7 +321,11 @@ void RenderSystem::setup_drawContexts(const GraphicsDataPayload& payload) {
 		_vkContext.update_buffer(currentDrawContext.primitiveInfosBuffer, renderData.primitiveInfos.data(), alloc_primInfo_size, renderData.primInfo_copy_infos);
 		_vkContext.update_buffer(currentDrawContext.materialsBuffer, renderData.materials.data(), alloc_materials_size, renderData.material_copy_infos);
 		_vkContext.update_buffer(currentDrawContext.texturesBuffer, renderData.textures.data(), alloc_textures_size, renderData.texture_copy_infos);
-		_vkContext.update_buffer(currentDrawContext.lightsBuffer, renderData.pointLights.data(), alloc_lights_size, renderData.light_copy_info);
+
+		RenderShader::Lights lights;
+		lights.pointLightCount = renderData.pointLightsCount;
+		std::copy(renderData.pointLights.begin(), renderData.pointLights.end(), lights.pointLights);
+		_vkContext.update_buffer(currentDrawContext.lightsBuffer, (void*)&lights, alloc_lights_size, renderData.light_copy_info);
 		i++;
 	}
 }
@@ -469,8 +473,11 @@ void RenderSystem::updateSignaledDeviceBuffers(const GraphicsDataPayload& payloa
 	}
 
 	if (_deviceBufferTypesCounter[DeviceBufferType::Light] > 0) {
-		size_t lightSize = sizeof(RenderShader::PointLight) * _stagingUpdateData.pointLights.size();
-		_vkContext.update_buffer(get_current_frame().drawContext.lightsBuffer, _stagingUpdateData.pointLights.data(), lightSize, _stagingUpdateData.light_copy_info);
+		size_t lightSize = sizeof(RenderShader::Lights);
+		RenderShader::Lights lights;
+		lights.pointLightCount = _stagingUpdateData.pointLightsCount;
+		std::copy(_stagingUpdateData.pointLights.begin(), _stagingUpdateData.pointLights.end(), lights.pointLights);
+		_vkContext.update_buffer(get_current_frame().drawContext.lightsBuffer, (void*)&lights, lightSize, _stagingUpdateData.light_copy_info);
 		_deviceBufferTypesCounter[DeviceBufferType::Light]--;
 	}
 }
@@ -734,11 +741,15 @@ void RenderSystem::extract_render_data(const GraphicsDataPayload& payload, Devic
 	}
 
 	if (dataType.light) {
-		data.pointLights.clear();
-		for (PointLight pointLight : payload.pointLights) {
-			data.pointLights.push_back({ .pos = pointLight.pos, .color = pointLight.color, .power = pointLight.power });
+		uint32_t pointLightsCount = 0;
+		auto pointLight_it = data.pointLights.begin();
+		for (const PointLight& pointLight : payload.pointLights) {
+			*pointLight_it = { .pos = pointLight.pos, .color = pointLight.color, .power = pointLight.power };
+			pointLightsCount++;
+			pointLight_it++;
 		}
-		data.light_copy_info = { .srcOffset = 0, .dstOffset = 0, .size = sizeof(RenderShader::PointLight) * data.pointLights.size() };
+		data.pointLightsCount = pointLightsCount;
+		data.light_copy_info = { .srcOffset = 0, .dstOffset = 0, .size = sizeof(RenderShader::Lights) };
 	}
 
 	//Navigate each scene, and each scene's root nodes, and through each root node's children

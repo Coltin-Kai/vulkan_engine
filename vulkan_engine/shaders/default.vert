@@ -6,6 +6,8 @@
 const uint MAX_TEXTURE2D_COUNT = 100;
 const uint MAX_SAMPLER_COUNT = 100;
 
+const uint MAX_POINTLIGHT_COUNT = 100;
+
 struct PrimitiveInfo {
 	uint mat_id;
 	uint model_matrix_id;
@@ -72,7 +74,8 @@ layout(scalar, buffer_reference, buffer_reference_align = 4) buffer TexturesBuff
 };
 
 layout(scalar, buffer_reference, buffer_reference_align = 4) buffer LightsBuffer {
-	PointLight lights[];
+	int pointLightCount;
+	PointLight lights[MAX_POINTLIGHT_COUNT];
 };
 
 layout(push_constant) uniform PushConstants {

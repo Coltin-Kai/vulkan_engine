@@ -5,6 +5,8 @@
 #pragma once
 #include <stdint.h>
 
+constexpr uint32_t MAX_POINTLIGHT_COUNT = 100;
+
 namespace RenderShader {
 	struct VertexAttributes { //Other than Position, Vertex Color, and UV
 		glm::vec3 normal;
@@ -56,6 +58,11 @@ namespace RenderShader {
 		glm::vec3 pos;
 		glm::vec3 color;
 		float power;
+	};
+
+	struct Lights {
+		uint32_t pointLightCount;
+		PointLight pointLights[MAX_POINTLIGHT_COUNT];
 	};
 
 	struct PushConstants {
