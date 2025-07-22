@@ -117,6 +117,7 @@ void main() {
 	float metallic;
 	float roughness;
 	float ao;
+	vec3 emission;
 
 	//Sample Textures
 	//-BaseColor
@@ -163,6 +164,16 @@ void main() {
 		ao = texture(sampler2D(texture_images[occlusion_texture.textureImage_id], samplers[occlusion_texture.sampler_id]), occlusion_texcoord).r * mat.occlusion_strength;
 	}
 
+	//Emission
+	Texture emission_texture = texBuffer.textures[mat.emission_texture_id];
+	if (mat.emission_texcoord_id == -1) {
+		emission = vec3(0.0, 0.0, 0.0);
+	}
+	else if (mat.emission_texcoord_id == 0) {
+		vec2 emission_texcoord = inUV;
+		emission = texture(sampler2D(texture_images[emission_texture.textureImage_id], samplers[emission_texture.sampler_id]), emission_texcoord).rgb * mat.emission_factor;
+	}
+
 	//Direct Lighting Calculations
 	normal = normalize(normal);
 	vec3 viewDir = normalize(viewprojBuffer.camPos - inFragPos);
@@ -200,7 +211,7 @@ void main() {
 	vec3 finalColor = (ambientFactor * baseColor) + irradiance; 
 	finalColor = finalColor / (finalColor + vec3(1.0)); //Reinhard Tone Mapping
 	finalColor = pow(finalColor, vec3(1.0/2.2)); //Gamma Correction
-
+	finalColor += emission; //Add Emission (temp)
 	outFragColor = vec4(finalColor, 1.0);
 }
 

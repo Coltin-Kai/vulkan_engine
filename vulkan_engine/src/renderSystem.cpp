@@ -85,7 +85,7 @@ VkFormat RenderSystem::get_swapChainFormat() {
 void RenderSystem::init_swapchain(VkExtent2D windowExtent) {
 	vkb::SwapchainBuilder builder{ _vkContext.physicalDevice, _vkContext.device, _vkContext.surface };
 
-	_swapchain.format = VK_FORMAT_B8G8R8A8_UNORM;
+	_swapchain.format = VK_FORMAT_B8G8R8A8_UNORM; //Might change when needed to implement high precision stuff.
 
 	builder.set_desired_format(VkSurfaceFormatKHR{ .format = _swapchain.format, .colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR });
 	builder.set_desired_present_mode(VK_PRESENT_MODE_FIFO_KHR);
