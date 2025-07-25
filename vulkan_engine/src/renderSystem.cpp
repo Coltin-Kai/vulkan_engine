@@ -953,6 +953,7 @@ void RenderSystem::extract_render_data(const GraphicsDataPayload& payload, Devic
 	}
 }
 
+//Hold all the setup code for creating the pipelines and rendering to create the hdrMap
 void RenderSystem::setup_hdrMap() {
 	//Temp have file loading here. Might move loading code to loader.h/loader.cpp. And have only engine class actually initiate the load and pass the data to renderSystem.
 	//Load HDR Equirectangular Image
@@ -1003,4 +1004,123 @@ void RenderSystem::setup_hdrMap() {
 	imgViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 
 	_hdrCubeMap = _vkContext.create_image("HDR CubeMap", imgInfo, allocInfo, imgViewInfo);
+
+	//Setup Shaders and Pipeline to Transform Equirectangular to Cubemap
+	//-Vertex Input Bindings
+	std::vector<VkVertexInputBindingDescription> cubeMap_vertexInputBindings = { {} };
+
+	cubeMap_vertexInputBindings[0].binding = 0;
+	cubeMap_vertexInputBindings[0].stride = sizeof(glm::vec3);
+	cubeMap_vertexInputBindings[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+	//-Vertex Input Attribute
+	std::vector<VkVertexInputAttributeDescription> cubeMap_vertexInputAttributes = { {} };
+
+	//--Position
+	cubeMap_vertexInputAttributes[0].binding = 0;
+	cubeMap_vertexInputAttributes[0].location = 0;
+	cubeMap_vertexInputAttributes[0].format = VK_FORMAT_R32G32B32_SFLOAT;
+	cubeMap_vertexInputAttributes[0].offset = 0;
+
+	//-Descriptor Pool and Set
+	VkDescriptorPool cubeMap_descriptorPool;
+	VkDescriptorSetLayout cubeMap_descriptorSetLayout;
+	VkDescriptorSet cubeMap_descriptorSet;
+
+	//--Create Descriptor Pool
+	std::vector<VkDescriptorPoolSize> poolSizes = {
+		{.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = 1 }
+	};
+
+	VkDescriptorPoolCreateInfo poolInfo{};
+	poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+	poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
+	poolInfo.pPoolSizes = poolSizes.data();
+	poolInfo.maxSets = 1;
+
+	if (vkCreateDescriptorPool(_vkContext.device, &poolInfo, nullptr, &cubeMap_descriptorPool) != VK_SUCCESS)
+		throw std::runtime_error("Failed to create CubeMap Descriptor Pool");
+
+	//--Set Layout Bindings
+	std::vector<VkDescriptorSetLayoutBinding> layout_bindings = {
+		{.binding = 0, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = 1,
+		.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT, .pImmutableSamplers = nullptr },
+	};
+
+	//--Set Binding Flags
+	std::vector<VkDescriptorBindingFlags> binding_flags = {};
+
+	VkDescriptorSetLayoutBindingFlagsCreateInfo set_binding_flags{};
+	set_binding_flags.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
+	set_binding_flags.bindingCount = static_cast<uint32_t>(binding_flags.size());
+	set_binding_flags.pBindingFlags = binding_flags.data();
+
+	//--Now Create Descriptor Set Layout
+	VkDescriptorSetLayoutCreateInfo layoutInfo{};
+	layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	layoutInfo.pNext = &set_binding_flags;
+	layoutInfo.bindingCount = static_cast<uint32_t>(layout_bindings.size());
+	layoutInfo.pBindings = layout_bindings.data();
+
+	if (vkCreateDescriptorSetLayout(_vkContext.device, &layoutInfo, nullptr, &cubeMap_descriptorSetLayout) != VK_SUCCESS)
+		throw std::runtime_error("Failed to Create Cubemap Descriptor Set Layout");
+
+	//--Create Descriptor Set
+	VkDescriptorSetAllocateInfo descriptorSetallocInfo{};
+	descriptorSetallocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	descriptorSetallocInfo.descriptorPool = cubeMap_descriptorPool;
+	descriptorSetallocInfo.descriptorSetCount = 1;
+	descriptorSetallocInfo.pSetLayouts = &cubeMap_descriptorSetLayout;
+
+	if (vkAllocateDescriptorSets(_vkContext.device, &descriptorSetallocInfo, &cubeMap_descriptorSet) != VK_SUCCESS)
+		throw std::runtime_error("Failed to allocate Cubemap Descriptor Set");
+
+	//-Pipeline
+	VkPipelineLayout cubeMap_pipelineLayout;
+	VkPipeline cubeMap_pipeline;
+
+	//--Load SHaders
+	VkShaderModule vertexShader;
+	if (!vkutil::load_shader_module("shaders/_", _vkContext.device, &vertexShader))
+		throw std::runtime_error("Error trying to create Cube Map Vertex Shader Module");
+	else
+		std::cout << "Cube Map Vertex Shader successfully loaded" << std::endl;
+
+	VkShaderModule fragShader;
+	if (!vkutil::load_shader_module("shaders/_", _vkContext.device, &fragShader))
+		throw std::runtime_error("error trying to create Cube Map Frag Shader Module");
+	else
+		std::cout << "Cube Map Fragment Shader successfully loaded" << std::endl;
+
+	//--Set Pipeline Layout - Descriptor Set
+	VkPipelineLayoutCreateInfo pipeline_layout_info = vkutil::pipeline_layout_create_info();
+	pipeline_layout_info.setLayoutCount = 1;
+	pipeline_layout_info.pSetLayouts = &cubeMap_descriptorSetLayout;
+	pipeline_layout_info.pushConstantRangeCount = 0;
+	pipeline_layout_info.pPushConstantRanges = nullptr;
+
+	VK_CHECK(vkCreatePipelineLayout(_vkContext.device, &pipeline_layout_info, nullptr, &cubeMap_pipelineLayout));
+
+	//--Build Pipeline
+	PipelineBuilder pipelineBuilder;
+	pipelineBuilder._pipelineLayout = cubeMap_pipelineLayout;
+	pipelineBuilder.set_shaders(vertexShader, fragShader);
+	pipelineBuilder.set_vertex_input(cubeMap_vertexInputBindings, cubeMap_vertexInputAttributes);
+	pipelineBuilder.set_input_topology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+	pipelineBuilder.set_polygon_mode(VK_POLYGON_MODE_FILL);
+	pipelineBuilder.set_cull_mode(VK_CULL_MODE_NONE, VK_FRONT_FACE_CLOCKWISE);
+	pipelineBuilder.set_multisampling_none();
+	pipelineBuilder.disable_blending();
+	pipelineBuilder.enable_depthtest(true, VK_COMPARE_OP_GREATER_OR_EQUAL);
+	pipelineBuilder.set_color_attachment_format(_swapchain.format);
+	pipelineBuilder.set_depth_format(VK_FORMAT_D32_SFLOAT);
+
+	cubeMap_pipeline = pipelineBuilder.build_pipeline(_vkContext.device);
+
+	vkDestroyShaderModule(_vkContext.device, vertexShader, nullptr);
+	vkDestroyShaderModule(_vkContext.device, fragShader, nullptr);
+
+	//Render Cubemap
+
+	//Dont forget to delete all objects after finishing the rendering of cubemap!!!
 }
