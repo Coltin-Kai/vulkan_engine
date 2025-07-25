@@ -952,3 +952,55 @@ void RenderSystem::extract_render_data(const GraphicsDataPayload& payload, Devic
 		}
 	}
 }
+
+void RenderSystem::setup_hdrMap() {
+	//Temp have file loading here. Might move loading code to loader.h/loader.cpp. And have only engine class actually initiate the load and pass the data to renderSystem.
+	//Load HDR Equirectangular Image
+	int width, height, nrChannels;
+
+	float* data = stbi_loadf("", &width, &height, &nrChannels, 0);
+
+	if (data) {
+		VkExtent3D imageSize;
+		imageSize.width = width;
+		imageSize.height = height;
+		imageSize.depth = 1;
+		_hdrImage = _vkContext.create_image("HDR Image", imageSize, VK_FORMAT_R16G16B16_SFLOAT, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, false);
+		_vkContext.update_image(_hdrImage, data, imageSize);
+
+		stbi_image_free(data);
+	}
+	else
+		std::cout << "failed to load HDR Image File" << std::endl;
+
+	//Setup Image CubeMap
+	VkImageCreateInfo imgInfo;
+	imgInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+	imgInfo.pNext = nullptr;
+	imgInfo.imageType = VK_IMAGE_TYPE_2D;
+	imgInfo.format = VK_FORMAT_R8G8B8_UNORM;
+	imgInfo.extent = { .width = 512, .height = 512, .depth = 1 };
+	imgInfo.mipLevels = 1;
+	imgInfo.arrayLayers = 6;
+	imgInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+	imgInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+	imgInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+	imgInfo.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
+
+	VmaAllocationCreateInfo allocInfo;
+	allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+	allocInfo.requiredFlags = VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+	VkImageViewCreateInfo imgViewInfo;
+	imgViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+	imgViewInfo.pNext = nullptr;
+	imgViewInfo.viewType = VK_IMAGE_VIEW_TYPE_CUBE;
+	imgViewInfo.format = VK_FORMAT_R8G8B8_UNORM;
+	imgViewInfo.subresourceRange.baseMipLevel = 0;
+	imgViewInfo.subresourceRange.levelCount = 1;
+	imgViewInfo.subresourceRange.baseArrayLayer = 0;
+	imgViewInfo.subresourceRange.layerCount = 6;
+	imgViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+
+	_hdrCubeMap = _vkContext.create_image("HDR CubeMap", imgInfo, allocInfo, imgViewInfo);
+}

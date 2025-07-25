@@ -278,7 +278,7 @@ AllocatedImage VulkanContext::create_image(const char* name, VkExtent3D size, Vk
 	return newImage;
 }
 
-AllocatedImage VulkanContext::create_image(const char* name, VkImageCreateInfo imageInfo, VmaAllocationCreateInfo allocInfo) {
+AllocatedImage VulkanContext::create_image(const char* name, VkImageCreateInfo imageInfo, VmaAllocationCreateInfo allocInfo, VkImageViewCreateInfo imageViewInfo) {
 	AllocatedImage newImage;
 	newImage.format = imageInfo.format;
 	newImage.extent = imageInfo.extent;
@@ -290,10 +290,9 @@ AllocatedImage VulkanContext::create_image(const char* name, VkImageCreateInfo i
 	if (newImage.format == VK_FORMAT_D32_SFLOAT)
 		aspectFlag = VK_IMAGE_ASPECT_DEPTH_BIT;
 
-	VkImageViewCreateInfo view_info = vkutil::imageview_create_info(newImage.format, newImage.image, aspectFlag);
-	view_info.subresourceRange.levelCount = imageInfo.mipLevels;
+	imageViewInfo.image = newImage.image;
 
-	VK_CHECK(vkCreateImageView(device, &view_info, nullptr, &newImage.imageView));
+	VK_CHECK(vkCreateImageView(device, &imageViewInfo, nullptr, &newImage.imageView));
 
 	return newImage;
 }

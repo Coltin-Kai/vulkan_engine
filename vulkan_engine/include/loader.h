@@ -20,4 +20,5 @@ VkPrimitiveTopology extract_topology_type(fastgltf::PrimitiveType type);
 
 glm::mat4 translate_to_glm_mat4(fastgltf::math::fmat4x4 gltf_mat4);
 
+//Extract Image Data from GLTF data
 std::optional<AllocatedImage> load_image(VulkanContext& vkContext, fastgltf::Asset& asset, fastgltf::Image& image);

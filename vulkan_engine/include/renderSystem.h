@@ -10,6 +10,7 @@
 #include "gtc/matrix_transform.hpp"
 #include "imgui_impl_sdl2.h"
 #include "imgui_impl_vulkan.h"
+#include "stb_image.h" //Temp Include until move HDR loading code to loader
 
 #include "vulkanContext.h"
 #include "vulkan_helper_types.h"
@@ -197,6 +198,10 @@ private:
 	//Depth Image
 	AllocatedImage _depthImage;
 
+	//DEBUG - HDR Image
+	AllocatedImage _hdrImage;
+	AllocatedImage _hdrCubeMap;
+
 	void init_swapchain(VkExtent2D windowExtent);
 	void init_frames();
 	void init_vertexInput();
@@ -222,4 +227,7 @@ private:
 
 	//Graphics Payload
 	void extract_render_data(const GraphicsDataPayload& payload, DeviceBufferTypeFlags dataType, RenderShaderData& data); //Extracts The specified type of data from payload and output to RenderShaderData param
+
+	//Skybox/Environment Map Functions
+	void setup_hdrMap();
 };
