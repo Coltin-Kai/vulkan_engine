@@ -199,5 +199,11 @@
     <None Include="shaders\cubemap.frag">
       <Filter>Resource Files\shaders</Filter>
     </None>
+    <None Include="shaders\cubemap_frag.spv">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\cubemap_vert.spv">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
   </ItemGroup>
 </Project>
