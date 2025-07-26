@@ -193,5 +193,11 @@
     <None Include="shaders\default_vert.spv">
       <Filter>Resource Files\shaders</Filter>
     </None>
+    <None Include="shaders\cubemap.vert">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\cubemap.frag">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
   </ItemGroup>
 </Project>

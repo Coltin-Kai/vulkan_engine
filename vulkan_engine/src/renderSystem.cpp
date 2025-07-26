@@ -959,7 +959,7 @@ void RenderSystem::setup_hdrMap() {
 	//Load HDR Equirectangular Image
 	int width, height, nrChannels;
 
-	float* data = stbi_loadf("", &width, &height, &nrChannels, 0);
+	float* data = stbi_loadf("C:\\Github\\vulkan_engine\\vulkan_engine\\assets\\HDR_Maps\\alps_field_4k.hdr", &width, &height, &nrChannels, 0);
 
 	if (data) {
 		VkExtent3D imageSize;
@@ -1029,6 +1029,7 @@ void RenderSystem::setup_hdrMap() {
 
 	//--Create Descriptor Pool
 	std::vector<VkDescriptorPoolSize> poolSizes = {
+		{.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .descriptorCount = 1 },
 		{.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = 1 }
 	};
 
@@ -1043,8 +1044,10 @@ void RenderSystem::setup_hdrMap() {
 
 	//--Set Layout Bindings
 	std::vector<VkDescriptorSetLayoutBinding> layout_bindings = {
+		{.binding = 0, .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .descriptorCount = 1,
+		.stageFlags = VK_SHADER_STAGE_VERTEX_BIT, .pImmutableSamplers = nullptr },
 		{.binding = 0, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = 1,
-		.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT, .pImmutableSamplers = nullptr },
+		.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT, .pImmutableSamplers = nullptr }
 	};
 
 	//--Set Binding Flags
@@ -1111,8 +1114,8 @@ void RenderSystem::setup_hdrMap() {
 	pipelineBuilder.set_cull_mode(VK_CULL_MODE_NONE, VK_FRONT_FACE_CLOCKWISE);
 	pipelineBuilder.set_multisampling_none();
 	pipelineBuilder.disable_blending();
-	pipelineBuilder.enable_depthtest(true, VK_COMPARE_OP_GREATER_OR_EQUAL);
-	pipelineBuilder.set_color_attachment_format(_swapchain.format);
+	pipelineBuilder.enable_depthtest(false, VK_COMPARE_OP_GREATER_OR_EQUAL);
+	pipelineBuilder.set_color_attachment_format(_);
 	pipelineBuilder.set_depth_format(VK_FORMAT_D32_SFLOAT);
 
 	cubeMap_pipeline = pipelineBuilder.build_pipeline(_vkContext.device);
@@ -1120,7 +1123,178 @@ void RenderSystem::setup_hdrMap() {
 	vkDestroyShaderModule(_vkContext.device, vertexShader, nullptr);
 	vkDestroyShaderModule(_vkContext.device, fragShader, nullptr);
 
-	//Render Cubemap
+	//Setup Neccesary Buffers for the Rendering CubeMap
+	AllocatedBuffer cubeMap_vertexBuffer;
+	AllocatedBuffer cubeMap_indexBuffer;
+	AllocatedBuffer cubeMap_uniformBuffer;
+	AllocatedImage cubeMap_frameBufferImage; //To Render to
+
+	std::vector<glm::vec3> unitCube_vertices = {
+		// Front face
+		{-1.0f, -1.0f, 1.0f},  // 0: bottom-left-front
+		{1.0f, -1.0f, 1.0f},   // 1: bottom-right-front
+		{1.0f, 1.0f, 1.0f},    // 2: top-right-front
+		{-1.0f, 1.0f, 1.0f},   // 3: top-left-front
+
+		// Back face
+		{-1.0f, -1.0f, -1.0f}, // 4: bottom-left-back
+		{1.0f, -1.0f, -1.0f},  // 5: bottom-right-back
+		{1.0f, 1.0f, -1.0f},   // 6: top-right-back
+		{-1.0f, 1.0f, -1.0f}   // 7: top-left-back
+	};
+	std::vector<uint32_t> unitCube_indices = {
+		// Front face
+		0, 1, 2, 0, 2, 3,
+
+		// Right face
+		1, 5, 6, 1, 6, 2,
+
+		// Back face
+		5, 4, 7, 5, 7, 6,
+
+		// Left face
+		4, 0, 3, 4, 3, 7,
+
+		// Top face
+		3, 2, 6, 3, 6, 7,
+
+		// Bottom face
+		4, 5, 1, 4, 1, 0
+	};
+
+	VmaAllocationCreateFlags allocFlags = VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT;
+	cubeMap_vertexBuffer = _vkContext.create_buffer("CubeMap Vertex Buffer", unitCube_vertices.size() * sizeof(glm::vec3), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, allocFlags);
+	cubeMap_indexBuffer = _vkContext.create_buffer("CubeMap Index Buffer", unitCube_indices.size() * sizeof(uint32_t), VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, allocFlags);
+	cubeMap_uniformBuffer = _vkContext.create_buffer("CubeMap Uniform Buffer", sizeof(glm::mat4) * 2, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, allocFlags);
+	cubeMap_frameBufferImage = _vkContext.create_image("CubeMap Frame Buffer Image", { .width = 512, .height = 512, .depth = 1 }, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, false);
+
+	VkBufferCopy bufferCpy = { .srcOffset = 0, .dstOffset = 0, .size = unitCube_vertices.size() * sizeof(glm::vec3) };
+	_vkContext.update_buffer(cubeMap_vertexBuffer, unitCube_vertices.data(), unitCube_vertices.size() * sizeof(glm::vec3), bufferCpy);
+	bufferCpy.size = unitCube_indices.size() * sizeof(uint32_t);
+	_vkContext.update_buffer(cubeMap_indexBuffer, unitCube_indices.data(), unitCube_indices.size() * sizeof(uint32_t), bufferCpy);
+
+	//Create Descriptors
+	std::vector<VkWriteDescriptorSet> descriptorWrites(2);
+
+	descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	descriptorWrites[0].dstSet = cubeMap_descriptorSet;
+	descriptorWrites[0].dstBinding = 0;
+	descriptorWrites[0].dstArrayElement = 0;
+	descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	descriptorWrites[0].descriptorCount = 1;
+	descriptorWrites[0].pBufferInfo = _;
+
+	descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	descriptorWrites[1].dstSet = cubeMap_descriptorSet;
+	descriptorWrites[1].dstBinding = 1;
+	descriptorWrites[1].dstArrayElement = 0;
+	descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	descriptorWrites[1].descriptorCount = 1;
+	descriptorWrites[1].pImageInfo = _;
+
+	vkUpdateDescriptorSets(_vkContext.device, descriptorWrites.size(), descriptorWrites.data(), 0, nullptr);
+
+	//Setup Commands and Syncing
+	VkCommandPool cubeMap_commandPool;
+	VkCommandBuffer cubeMap_commandBuffer;
+	VkFence cubeMap_renderFence; //Indicates that a render has finished
+
+	VkCommandPoolCreateInfo cmdPoolInfo{};
+	cmdPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+	cmdPoolInfo.pNext = nullptr;
+	cmdPoolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+	cmdPoolInfo.queueFamilyIndex = _vkContext.graphicsQueueFamily;
+
+	VkFenceCreateInfo fenceCreateInfo{};
+	fenceCreateInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+	fenceCreateInfo.pNext = nullptr;
+	fenceCreateInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+
+	VK_CHECK(vkCreateCommandPool(_vkContext.device, &cmdPoolInfo, nullptr, &cubeMap_commandPool));
+
+	VkCommandBufferAllocateInfo cmdAllocInfo{};
+	cmdAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	cmdAllocInfo.pNext = nullptr;
+	cmdAllocInfo.commandPool = cubeMap_commandPool;
+	cmdAllocInfo.commandBufferCount = 1;
+	cmdAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+
+	VK_CHECK(vkAllocateCommandBuffers(_vkContext.device, &cmdAllocInfo, &cubeMap_commandBuffer));
+
+	VK_CHECK(vkCreateFence(_vkContext.device, &fenceCreateInfo, nullptr, &cubeMap_renderFence));
+
+	//Render to create Cubemap
+	VkCommandBufferBeginInfo cmdBeginInfo{};
+	cmdBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	cmdBeginInfo.pNext = nullptr;
+	cmdBeginInfo.pInheritanceInfo = nullptr;
+	cmdBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+	VK_CHECK(vkBeginCommandBuffer(cubeMap_commandBuffer, &cmdBeginInfo));
+
+	//-Transition Images for Drawing
+	vkutil::transition_image(cubeMap_commandBuffer, _, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
+
+	//-Clear Color
+	VkClearColorValue clearValue = { {0.5f, 0.5f, 0.5f, 0.5f} };
+
+	VkImageSubresourceRange clearRange = vkutil::image_subresource_range(VK_IMAGE_ASPECT_COLOR_BIT);
+
+	vkCmdClearColorImage(cubeMap_commandBuffer, _, VK_IMAGE_LAYOUT_GENERAL, &clearValue, 1, &clearRange);
+
+	//-Draw
+	VkRenderingAttachmentInfo colorAttachment = vkutil::attachment_info(_, nullptr, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+
+	VkExtent2D frameBufferExtent = { .width = 512, .height = 512 };
+
+	VkRenderingInfo renderInfo = vkutil::rendering_info(frameBufferExtent, &colorAttachment, nullptr);
+
+	vkCmdBeginRendering(cubeMap_commandBuffer, &renderInfo);
+
+	vkCmdBindPipeline(cubeMap_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, cubeMap_pipeline);
+
+	//-Set Dynamic States
+	VkViewport viewport{};
+	viewport.x = 0;
+	viewport.y = 0;
+	viewport.width = frameBufferExtent.width;
+	viewport.height = frameBufferExtent.height;
+	viewport.minDepth = 0.0f;
+	viewport.maxDepth = 1.0f;
+
+	vkCmdSetViewport(cubeMap_commandBuffer, 0, 1, &viewport);
+
+	VkRect2D scissor{};
+	scissor.offset.x = 0;
+	scissor.offset.y = 0;
+	scissor.extent.width = frameBufferExtent.width;
+	scissor.extent.height = frameBufferExtent.height;
+
+	vkCmdSetScissor(cubeMap_commandBuffer, 0, 1, &scissor);
+
+	//-Bind Descriptor Set
+	vkCmdBindDescriptorSets(cubeMap_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, cubeMap_pipelineLayout, 0, 1, &cubeMap_descriptorSet, 0, nullptr);
+
+	//-Bind Vertex Input Buffers
+	std::vector<VkDeviceSize> vertexOffsets = { 0 };
+	vkCmdBindVertexBuffers(cubeMap_commandBuffer, 0, _, _, vertexOffsets.data());
+	vkCmdBindIndexBuffer(cubeMap_commandBuffer, _, _, _);
+
+	//-Draw
+	vkCmdDrawIndexed(cubeMap_commandBuffer, _, _, _, _, _);
+
+	vkCmdEndRendering(cubeMap_commandBuffer);
+
+	//-Submit to Queue
+	vkutil::transition_image(cubeMap_commandBuffer, _, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+
+	VK_CHECK(vkEndCommandBuffer(cubeMap_commandBuffer));
+
+	VkCommandBufferSubmitInfo cmdInfo = vkutil::command_buffer_submit_info(cubeMap_commandBuffer);
+
+	VkSubmitInfo2 submit = vkutil::submit_info(&cmdInfo, nullptr, nullptr);
+
+	VK_CHECK(vkQueueSubmit2(_vkContext.graphicsQueue, 1, &submit, cubeMap_renderFence));
 
 	//Dont forget to delete all objects after finishing the rendering of cubemap!!!
 }
