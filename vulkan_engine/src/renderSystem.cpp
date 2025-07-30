@@ -963,15 +963,15 @@ void RenderSystem::setup_hdrMap() {
 	VkSampler hdrImage_Sampler;
 	int width, height, nrChannels;
 
-	float* data = stbi_loadf("C:\\Github\\vulkan_engine\\vulkan_engine\\assets\\HDR_Maps\\alps_field_4k.hdr", &width, &height, &nrChannels, 0);
-
+	float* data = stbi_loadf("C:\\Github\\vulkan_engine\\vulkan_engine\\assets\\HDR_Maps\\alps_field_4k.hdr", &width, &height, &nrChannels, 4);
+	
 	if (data) {
 		VkExtent3D imageSize;
 		imageSize.width = width;
 		imageSize.height = height;
 		imageSize.depth = 1;
 		_hdrImage = _vkContext.create_image("HDR Image", imageSize, VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, false);
-		_vkContext.update_image(_hdrImage, data, imageSize);
+		_vkContext.update_image(_hdrImage, data, 2 * imageSize.width * imageSize.height * imageSize.depth * 4);
 
 		stbi_image_free(data);
 	}
@@ -980,7 +980,7 @@ void RenderSystem::setup_hdrMap() {
 		return;
 	}
 
-	VkSamplerCreateInfo samplerCreateInfo;
+	VkSamplerCreateInfo samplerCreateInfo{};
 	samplerCreateInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
 	samplerCreateInfo.maxLod = VK_LOD_CLAMP_NONE;
 	samplerCreateInfo.minLod = 0;
@@ -988,10 +988,10 @@ void RenderSystem::setup_hdrMap() {
 	samplerCreateInfo.minFilter = VK_FILTER_LINEAR;
 	samplerCreateInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
 
-	vkCreateSampler(_vkContext.device, &samplerCreateInfo, nullptr, &hdrImage_Sampler);
+	hdrImage_Sampler = _vkContext.create_sampler(samplerCreateInfo);
 
 	//Setup Image CubeMap
-	VkImageCreateInfo imgInfo;
+	VkImageCreateInfo imgInfo{};
 	imgInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
 	imgInfo.pNext = nullptr;
 	imgInfo.imageType = VK_IMAGE_TYPE_2D;
@@ -1004,11 +1004,11 @@ void RenderSystem::setup_hdrMap() {
 	imgInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 	imgInfo.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
 
-	VmaAllocationCreateInfo allocInfo;
+	VmaAllocationCreateInfo allocInfo{};
 	allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
 	allocInfo.requiredFlags = VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
-	VkImageViewCreateInfo imgViewInfo;
+	VkImageViewCreateInfo imgViewInfo{};
 	imgViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 	imgViewInfo.pNext = nullptr;
 	imgViewInfo.viewType = VK_IMAGE_VIEW_TYPE_CUBE;
@@ -1062,22 +1062,13 @@ void RenderSystem::setup_hdrMap() {
 	std::vector<VkDescriptorSetLayoutBinding> layout_bindings = {
 		{.binding = 0, .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .descriptorCount = 1,
 		.stageFlags = VK_SHADER_STAGE_VERTEX_BIT, .pImmutableSamplers = nullptr },
-		{.binding = 0, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = 1,
+		{.binding = 1, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = 1,
 		.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT, .pImmutableSamplers = nullptr }
 	};
-
-	//--Set Binding Flags
-	std::vector<VkDescriptorBindingFlags> binding_flags = {};
-
-	VkDescriptorSetLayoutBindingFlagsCreateInfo set_binding_flags{};
-	set_binding_flags.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
-	set_binding_flags.bindingCount = static_cast<uint32_t>(binding_flags.size());
-	set_binding_flags.pBindingFlags = binding_flags.data();
 
 	//--Now Create Descriptor Set Layout
 	VkDescriptorSetLayoutCreateInfo layoutInfo{};
 	layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-	layoutInfo.pNext = &set_binding_flags;
 	layoutInfo.bindingCount = static_cast<uint32_t>(layout_bindings.size());
 	layoutInfo.pBindings = layout_bindings.data();
 
@@ -1192,7 +1183,7 @@ void RenderSystem::setup_hdrMap() {
 	//Create Descriptors
 	std::vector<VkWriteDescriptorSet> descriptorWrites(2);
 
-	VkDescriptorBufferInfo uniformBufferInfo;
+	VkDescriptorBufferInfo uniformBufferInfo{};
 	uniformBufferInfo.buffer = cubeMap_uniformBuffer.buffer;
 	uniformBufferInfo.offset = 0;
 	uniformBufferInfo.range = sizeof(glm::mat4) * 2;
@@ -1205,7 +1196,7 @@ void RenderSystem::setup_hdrMap() {
 	descriptorWrites[0].descriptorCount = 1;
 	descriptorWrites[0].pBufferInfo = &uniformBufferInfo;
 
-	VkDescriptorImageInfo equirectangularMapInfo;
+	VkDescriptorImageInfo equirectangularMapInfo{};
 	equirectangularMapInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
 	equirectangularMapInfo.imageView = _hdrImage.imageView;
 	equirectangularMapInfo.sampler = hdrImage_Sampler;
@@ -1335,7 +1326,7 @@ void RenderSystem::setup_hdrMap() {
 
 	VkBufferCopy uniformBufferCpy = { .srcOffset = 0, .dstOffset = 0, .size = sizeof(CubeMapShader::TransformMatrices) };
 
-	VkImageCopy renderToCubeMapCpy;
+	VkImageCopy renderToCubeMapCpy{};
 	renderToCubeMapCpy.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 	renderToCubeMapCpy.srcSubresource.baseArrayLayer = 0;
 	renderToCubeMapCpy.srcSubresource.layerCount = 1;
@@ -1376,5 +1367,5 @@ void RenderSystem::setup_hdrMap() {
 	vkDestroyPipelineLayout(_vkContext.device, cubeMap_pipelineLayout, nullptr);
 	vkDestroyDescriptorSetLayout(_vkContext.device, cubeMap_descriptorSetLayout, nullptr);
 	vkDestroyDescriptorPool(_vkContext.device, cubeMap_descriptorPool, nullptr);
-	vkDestroySampler(_vkContext.device, hdrImage_Sampler, nullptr);
+	_vkContext.destroy_sampler(hdrImage_Sampler);
 }

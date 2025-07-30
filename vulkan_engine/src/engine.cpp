@@ -191,7 +191,7 @@ void Engine::setup_default_data() {
 	extent.height = 1;
 	extent.depth = 1;
 	AllocatedImage default_image = _vkContext.create_image("Default Image", extent, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, true);
-	_vkContext.update_image(default_image,(void*)&default_data, extent);
+	_vkContext.update_image(default_image,(void*)&default_data, extent.width * extent.height * extent.depth * 4);
 	_payload.images.push_back(default_image);
 
 	VkSampler default_sampler;

@@ -302,13 +302,7 @@ void VulkanContext::destroy_image(const AllocatedImage& image) {
 	vmaDestroyImage(allocator, image.image, image.allocation);
 }
 
-void VulkanContext::update_image(const AllocatedImage& image, void* srcData, VkExtent3D imageSize) {
-	size_t dataSize;
-	//Specifies Datasize based on Image Format using 8 bytes or 16 bytes. Tbh really only supports two formats. Might change it so that AllocatedImage specifies the size of its channels instead of checking the format since so many
-	if (image.format == VK_FORMAT_R16G16B16A16_SFLOAT)
-		dataSize = imageSize.width * imageSize.height * imageSize.depth * 4 * 2;
-	else
-		dataSize = imageSize.width * imageSize.height * imageSize.depth * 4;
+void VulkanContext::update_image(const AllocatedImage& image, void* srcData, size_t dataSize) {
 
 	VkMemoryPropertyFlags image_memProperties;
 	vmaGetAllocationMemoryProperties(allocator, image.allocation, &image_memProperties);
@@ -332,7 +326,7 @@ void VulkanContext::update_image(const AllocatedImage& image, void* srcData, VkE
 		copyRegion.imageSubresource.mipLevel = 0;
 		copyRegion.imageSubresource.baseArrayLayer = 0;
 		copyRegion.imageSubresource.layerCount = 1;
-		copyRegion.imageExtent = imageSize;
+		copyRegion.imageExtent = image.extent;
 
 		vkCmdCopyBufferToImage(cmd, stagingBuffer.buffer, image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
 
