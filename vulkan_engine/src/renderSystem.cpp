@@ -22,6 +22,9 @@ void RenderSystem::init(VkExtent2D windowExtent) {
 	_deviceBufferTypesCounter[DeviceBufferType::Material] = 0;
 	_deviceBufferTypesCounter[DeviceBufferType::Texture] = 0;
 	_deviceBufferTypesCounter[DeviceBufferType::Light] = 0;
+
+	setup_hdrMap();
+
 }
 
 VkResult RenderSystem::run() {
@@ -967,13 +970,15 @@ void RenderSystem::setup_hdrMap() {
 		imageSize.width = width;
 		imageSize.height = height;
 		imageSize.depth = 1;
-		_hdrImage = _vkContext.create_image("HDR Image", imageSize, VK_FORMAT_R16G16B16_SFLOAT, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, false);
+		_hdrImage = _vkContext.create_image("HDR Image", imageSize, VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, false);
 		_vkContext.update_image(_hdrImage, data, imageSize);
 
 		stbi_image_free(data);
 	}
-	else
+	else {
 		std::cout << "failed to load HDR Image File" << std::endl;
+		return;
+	}
 
 	VkSamplerCreateInfo samplerCreateInfo;
 	samplerCreateInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
@@ -990,7 +995,7 @@ void RenderSystem::setup_hdrMap() {
 	imgInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
 	imgInfo.pNext = nullptr;
 	imgInfo.imageType = VK_IMAGE_TYPE_2D;
-	imgInfo.format = VK_FORMAT_R8G8B8_UNORM;
+	imgInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
 	imgInfo.extent = { .width = 512, .height = 512, .depth = 1 };
 	imgInfo.mipLevels = 1;
 	imgInfo.arrayLayers = 6;
@@ -1007,7 +1012,7 @@ void RenderSystem::setup_hdrMap() {
 	imgViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 	imgViewInfo.pNext = nullptr;
 	imgViewInfo.viewType = VK_IMAGE_VIEW_TYPE_CUBE;
-	imgViewInfo.format = VK_FORMAT_R8G8B8_UNORM;
+	imgViewInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
 	imgViewInfo.subresourceRange.baseMipLevel = 0;
 	imgViewInfo.subresourceRange.levelCount = 1;
 	imgViewInfo.subresourceRange.baseArrayLayer = 0;
@@ -1314,15 +1319,62 @@ void RenderSystem::setup_hdrMap() {
 	VkCommandBufferSubmitInfo cmdInfo = vkutil::command_buffer_submit_info(cubeMap_commandBuffer);
 	VkSubmitInfo2 submit = vkutil::submit_info(&cmdInfo, nullptr, nullptr);
 
+	//-Set up Uniform Data and each Camera View to get each side.
+	CubeMapShader::TransformMatrices transMatrices;
+	transMatrices.proj = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 10.0f);
+	transMatrices.proj[1][1] *= -1;
+
+	glm::mat4 views[] = {
+		glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(1.0f,  0.0f,  0.0f), glm::vec3(0.0f, -1.0f,  0.0f)),
+		glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(-1.0f,  0.0f,  0.0f), glm::vec3(0.0f, -1.0f,  0.0f)),
+		glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f,  1.0f,  0.0f), glm::vec3(0.0f,  0.0f,  1.0f)),
+		glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, -1.0f,  0.0f), glm::vec3(0.0f,  0.0f, -1.0f)),
+		glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f,  0.0f,  1.0f), glm::vec3(0.0f, -1.0f,  0.0f)),
+		glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f,  0.0f, -1.0f), glm::vec3(0.0f, -1.0f,  0.0f))
+	};
+
+	VkBufferCopy uniformBufferCpy = { .srcOffset = 0, .dstOffset = 0, .size = sizeof(CubeMapShader::TransformMatrices) };
+
+	VkImageCopy renderToCubeMapCpy;
+	renderToCubeMapCpy.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	renderToCubeMapCpy.srcSubresource.baseArrayLayer = 0;
+	renderToCubeMapCpy.srcSubresource.layerCount = 1;
+	renderToCubeMapCpy.srcSubresource.mipLevel = 0;
+	renderToCubeMapCpy.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	renderToCubeMapCpy.dstSubresource.baseArrayLayer = 0;
+	renderToCubeMapCpy.dstSubresource.baseArrayLayer = 0;
+	renderToCubeMapCpy.dstSubresource.layerCount = 1;
+	renderToCubeMapCpy.dstSubresource.mipLevel = 0;
+	renderToCubeMapCpy.srcOffset = { .x = 0, .y = 0, .z = 0 };
+	renderToCubeMapCpy.dstOffset = { .x = 0, .y = 0, .z = 0 };
+	renderToCubeMapCpy.extent = { .width = 512, .height = 512, .depth = 1 };
+
+	//-Render each side
 	for (int i = 0; i < 6; i++) {
-		VK_CHECK(vkWaitForFences(_vkContext.device, 1, &cubeMap_renderFence, true, 1000000000));
 		VK_CHECK(vkResetFences(_vkContext.device, 1, &cubeMap_renderFence));
 
-
+		transMatrices.view = views[i];
+		_vkContext.update_buffer(cubeMap_uniformBuffer, &transMatrices, sizeof(CubeMapShader::TransformMatrices), uniformBufferCpy);
 
 		VK_CHECK(vkQueueSubmit2(_vkContext.graphicsQueue, 1, &submit, cubeMap_renderFence));
+
+		//Wait for Render to finish then copy render data to cubemap image
+		VK_CHECK(vkWaitForFences(_vkContext.device, 1, &cubeMap_renderFence, true, 1000000000));
+
+		renderToCubeMapCpy.dstSubresource.baseArrayLayer += i; //Specifies which layer to copy to in cubemap
+		_vkContext.update_image(_hdrCubeMap, cubeMap_frameBufferImage, 1, &renderToCubeMapCpy);
 	}
 
-
-	//Dont forget to delete all objects after finishing the rendering of cubemap!!!
+	//Delete Resources
+	vkDestroyFence(_vkContext.device, cubeMap_renderFence, nullptr);
+	vkDestroyCommandPool(_vkContext.device, cubeMap_commandPool, nullptr);
+	_vkContext.destroy_image(cubeMap_frameBufferImage);
+	_vkContext.destroy_buffer(cubeMap_uniformBuffer);
+	_vkContext.destroy_buffer(cubeMap_indexBuffer);
+	_vkContext.destroy_buffer(cubeMap_vertexBuffer);
+	vkDestroyPipeline(_vkContext.device, cubeMap_pipeline, nullptr);
+	vkDestroyPipelineLayout(_vkContext.device, cubeMap_pipelineLayout, nullptr);
+	vkDestroyDescriptorSetLayout(_vkContext.device, cubeMap_descriptorSetLayout, nullptr);
+	vkDestroyDescriptorPool(_vkContext.device, cubeMap_descriptorPool, nullptr);
+	vkDestroySampler(_vkContext.device, hdrImage_Sampler, nullptr);
 }

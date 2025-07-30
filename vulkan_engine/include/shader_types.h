@@ -7,7 +7,14 @@
 
 constexpr uint32_t MAX_POINTLIGHT_COUNT = 100;
 
-namespace RenderShader {
+namespace CubeMapShader {
+	struct TransformMatrices {
+		glm::mat4 view;
+		glm::mat4 proj;
+	};
+}
+
+namespace RenderShader { //Default Shader
 	struct VertexAttributes { //Other than Position, Vertex Color, and UV
 		glm::vec3 normal;
 		glm::vec4 tangent;

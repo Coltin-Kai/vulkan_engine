@@ -303,7 +303,12 @@ void VulkanContext::destroy_image(const AllocatedImage& image) {
 }
 
 void VulkanContext::update_image(const AllocatedImage& image, void* srcData, VkExtent3D imageSize) {
-	size_t dataSize = imageSize.width * imageSize.height * imageSize.depth * 4;
+	size_t dataSize;
+	//Specifies Datasize based on Image Format using 8 bytes or 16 bytes. Tbh really only supports two formats. Might change it so that AllocatedImage specifies the size of its channels instead of checking the format since so many
+	if (image.format == VK_FORMAT_R16G16B16A16_SFLOAT)
+		dataSize = imageSize.width * imageSize.height * imageSize.depth * 4 * 2;
+	else
+		dataSize = imageSize.width * imageSize.height * imageSize.depth * 4;
 
 	VkMemoryPropertyFlags image_memProperties;
 	vmaGetAllocationMemoryProperties(allocator, image.allocation, &image_memProperties);
@@ -331,7 +336,7 @@ void VulkanContext::update_image(const AllocatedImage& image, void* srcData, VkE
 
 		vkCmdCopyBufferToImage(cmd, stagingBuffer.buffer, image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
 
-		vkutil::transition_image(cmd, image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+		vkutil::transition_image(cmd, image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL); //!!!Might Delete. Dont think Im supposed to transition layout to this, especially if using this function on a variety types of images
 		submit_immediate_commands();
 
 		destroy_buffer(stagingBuffer);
@@ -339,6 +344,17 @@ void VulkanContext::update_image(const AllocatedImage& image, void* srcData, VkE
 	else {
 		throw std::runtime_error("Buffer Memory Property not a MyDevice Local or Host Visible");
 	}
+}
+
+void VulkanContext::update_image(const AllocatedImage& dstImage, const AllocatedImage& srcImage, uint32_t copyCount, const VkImageCopy* copyInfo) {
+	VkCommandBuffer cmd = start_immediate_recording();
+
+	vkutil::transition_image(cmd, srcImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+	vkutil::transition_image(cmd, dstImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+
+	vkCmdCopyImage(cmd, srcImage.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dstImage.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, copyCount, copyInfo);
+
+	submit_immediate_commands();
 }
 
 VkSampler VulkanContext::create_sampler(VkSamplerCreateInfo& samplerCreateInfo) {

@@ -44,13 +44,14 @@ public:
 	AllocatedBuffer create_buffer(const char* name, VkBufferCreateInfo bufferInfo, VmaAllocationCreateInfo allocInfo); //WHen Buffer Creation requires more specific details
 	void destroy_buffer(const AllocatedBuffer& buffer);
 	void update_buffer(const AllocatedBuffer& buffer, void* srcData, size_t srcDataSize, VkBufferCopy& copyInfo); //srcDataSize param maybe kind of redundant idk
-	void update_buffer(const AllocatedBuffer& buffer, void* srcData, size_t srcDataSize, std::vector<VkBufferCopy>& copyInfos);
+	void update_buffer(const AllocatedBuffer& buffer, void* srcData, size_t srcDataSize, std::vector<VkBufferCopy>& copyInfos); //!!!Might combine both variants by using size and pointer params like updateImage
 
 	//Image
 	AllocatedImage create_image(const char* name, VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped); //Only allocates 2D images on GPU normally used just for textures
 	AllocatedImage create_image(const char* name, VkImageCreateInfo imageInfo, VmaAllocationCreateInfo allocInfo, VkImageViewCreateInfo imageViewInfo); //When Image Creation requires more specific details
 	void destroy_image(const AllocatedImage& image);
-	void update_image(const AllocatedImage& image, void* srcData, VkExtent3D imageSize); //Uploads raw data to an image
+	void update_image(const AllocatedImage& image, void* srcData, VkExtent3D imageSize); //Uploads raw data to an image. !!!Might change params to use VkBufferImageCopy for more control over copy like the other updateImage function
+	void update_image(const AllocatedImage& dstImage, const AllocatedImage& srcImage, uint32_t copyCount, const VkImageCopy* copyInfo);
 
 	//Sampler
 	VkSampler create_sampler(VkSamplerCreateInfo& samplerCreateInfo);
