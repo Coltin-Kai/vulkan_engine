@@ -330,7 +330,7 @@ void VulkanContext::update_image(const AllocatedImage& image, void* srcData, siz
 
 		vkCmdCopyBufferToImage(cmd, stagingBuffer.buffer, image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
 
-		vkutil::transition_image(cmd, image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL); //!!!Might Delete. Dont think Im supposed to transition layout to this, especially if using this function on a variety types of images
+		vkutil::transition_image(cmd, image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL); //!!!Might Delete. Maybe dont want to have all Image updates to transition the image the shader read only optimal. Might want to try keep image transition to only go to how it was before updating
 		submit_immediate_commands();
 
 		destroy_buffer(stagingBuffer);

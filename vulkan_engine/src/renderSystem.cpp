@@ -1122,7 +1122,7 @@ void RenderSystem::setup_hdrMap() {
 	pipelineBuilder.set_multisampling_none();
 	pipelineBuilder.disable_blending();
 	pipelineBuilder.enable_depthtest(false, VK_COMPARE_OP_GREATER_OR_EQUAL);
-	pipelineBuilder.set_color_attachment_format(VK_FORMAT_B8G8R8A8_UNORM);
+	pipelineBuilder.set_color_attachment_format(VK_FORMAT_R8G8B8A8_UNORM);
 	pipelineBuilder.set_depth_format(VK_FORMAT_D32_SFLOAT);
 
 	cubeMap_pipeline = pipelineBuilder.build_pipeline(_vkContext.device);
@@ -1173,7 +1173,7 @@ void RenderSystem::setup_hdrMap() {
 	cubeMap_vertexBuffer = _vkContext.create_buffer("CubeMap Vertex Buffer", unitCube_vertices.size() * sizeof(glm::vec3), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, allocFlags);
 	cubeMap_indexBuffer = _vkContext.create_buffer("CubeMap Index Buffer", unitCube_indices.size() * sizeof(uint32_t), VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, allocFlags);
 	cubeMap_uniformBuffer = _vkContext.create_buffer("CubeMap Uniform Buffer", sizeof(glm::mat4) * 2, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, allocFlags);
-	cubeMap_frameBufferImage = _vkContext.create_image("CubeMap Frame Buffer Image", { .width = 512, .height = 512, .depth = 1 }, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, false);
+	cubeMap_frameBufferImage = _vkContext.create_image("CubeMap Frame Buffer Image", { .width = 512, .height = 512, .depth = 1 }, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, false);
 
 	VkBufferCopy bufferCpy = { .srcOffset = 0, .dstOffset = 0, .size = unitCube_vertices.size() * sizeof(glm::vec3) };
 	_vkContext.update_buffer(cubeMap_vertexBuffer, unitCube_vertices.data(), unitCube_vertices.size() * sizeof(glm::vec3), bufferCpy);
@@ -1197,7 +1197,7 @@ void RenderSystem::setup_hdrMap() {
 	descriptorWrites[0].pBufferInfo = &uniformBufferInfo;
 
 	VkDescriptorImageInfo equirectangularMapInfo{};
-	equirectangularMapInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+	equirectangularMapInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 	equirectangularMapInfo.imageView = _hdrImage.imageView;
 	equirectangularMapInfo.sampler = hdrImage_Sampler;
 
@@ -1245,7 +1245,6 @@ void RenderSystem::setup_hdrMap() {
 	cmdBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 	cmdBeginInfo.pNext = nullptr;
 	cmdBeginInfo.pInheritanceInfo = nullptr;
-	cmdBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
 	VK_CHECK(vkBeginCommandBuffer(cubeMap_commandBuffer, &cmdBeginInfo));
 
@@ -1294,7 +1293,7 @@ void RenderSystem::setup_hdrMap() {
 
 	//-Bind Vertex Input Buffers
 	std::vector<VkDeviceSize> vertexOffsets = { 0 };
-	vkCmdBindVertexBuffers(cubeMap_commandBuffer, 0, 0, &cubeMap_vertexBuffer.buffer, vertexOffsets.data());
+	vkCmdBindVertexBuffers(cubeMap_commandBuffer, 0, 1, &cubeMap_vertexBuffer.buffer, vertexOffsets.data());
 	vkCmdBindIndexBuffer(cubeMap_commandBuffer, cubeMap_indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
 
 	//-Draw
