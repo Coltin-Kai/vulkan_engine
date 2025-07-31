@@ -960,6 +960,7 @@ void RenderSystem::extract_render_data(const GraphicsDataPayload& payload, Devic
 void RenderSystem::setup_hdrMap() {
 	//Temp have file loading here. Might move loading code to loader.h/loader.cpp. And have only engine class actually initiate the load and pass the data to renderSystem.
 	//Load HDR Equirectangular Image + Create a Sampler
+	AllocatedImage hdrImage;
 	VkSampler hdrImage_Sampler;
 	int width, height, nrChannels;
 
@@ -970,8 +971,8 @@ void RenderSystem::setup_hdrMap() {
 		imageSize.width = width;
 		imageSize.height = height;
 		imageSize.depth = 1;
-		_hdrImage = _vkContext.create_image("HDR Image", imageSize, VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, false);
-		_vkContext.update_image(_hdrImage, data, 2 * imageSize.width * imageSize.height * imageSize.depth * 4);
+		hdrImage = _vkContext.create_image("HDR Image", imageSize, VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, false);
+		_vkContext.update_image(hdrImage, data, 2 * imageSize.width * imageSize.height * imageSize.depth * 4);
 
 		stbi_image_free(data);
 	}
@@ -1198,7 +1199,7 @@ void RenderSystem::setup_hdrMap() {
 
 	VkDescriptorImageInfo equirectangularMapInfo{};
 	equirectangularMapInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-	equirectangularMapInfo.imageView = _hdrImage.imageView;
+	equirectangularMapInfo.imageView = hdrImage.imageView;
 	equirectangularMapInfo.sampler = hdrImage_Sampler;
 
 	descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -1332,7 +1333,6 @@ void RenderSystem::setup_hdrMap() {
 	renderToCubeMapCpy.srcSubresource.mipLevel = 0;
 	renderToCubeMapCpy.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 	renderToCubeMapCpy.dstSubresource.baseArrayLayer = 0;
-	renderToCubeMapCpy.dstSubresource.baseArrayLayer = 0;
 	renderToCubeMapCpy.dstSubresource.layerCount = 1;
 	renderToCubeMapCpy.dstSubresource.mipLevel = 0;
 	renderToCubeMapCpy.srcOffset = { .x = 0, .y = 0, .z = 0 };
@@ -1351,7 +1351,7 @@ void RenderSystem::setup_hdrMap() {
 		//Wait for Render to finish then copy render data to cubemap image
 		VK_CHECK(vkWaitForFences(_vkContext.device, 1, &cubeMap_renderFence, true, 1000000000));
 
-		renderToCubeMapCpy.dstSubresource.baseArrayLayer += i; //Specifies which layer to copy to in cubemap
+		renderToCubeMapCpy.dstSubresource.baseArrayLayer = i; //Specifies which layer to copy to in cubemap
 		_vkContext.update_image(_hdrCubeMap, cubeMap_frameBufferImage, 1, &renderToCubeMapCpy);
 	}
 

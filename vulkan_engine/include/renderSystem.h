@@ -199,7 +199,6 @@ private:
 	AllocatedImage _depthImage;
 
 	//DEBUG - HDR Image
-	AllocatedImage _hdrImage;
 	AllocatedImage _hdrCubeMap;
 
 	void init_swapchain(VkExtent2D windowExtent);
