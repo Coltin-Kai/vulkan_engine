@@ -200,6 +200,8 @@ private:
 
 	//DEBUG - HDR Image
 	AllocatedImage _hdrCubeMap;
+	AllocatedImage _convolutedHdrCubeMap;
+	VkSampler _cubemapSampler; //For both hdr and convoluted cubemap
 
 	void init_swapchain(VkExtent2D windowExtent);
 	void init_frames();

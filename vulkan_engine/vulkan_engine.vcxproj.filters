@@ -205,5 +205,11 @@
     <None Include="shaders\cubemap_vert.spv">
       <Filter>Resource Files\shaders</Filter>
     </None>
+    <None Include="shaders\convCubeMap.vert">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\convCubeMap.frag">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
   </ItemGroup>
 </Project>
