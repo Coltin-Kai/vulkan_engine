@@ -30,11 +30,12 @@ void main() {
 			vec3 sampleVec = tangentSample.x * right + tangentSample.y * up + tangentSample.z * normal; //Transform the direction vector from tangent space to world space oriented around the normal
 
 			//Add sampled direction vector to toal irradiance
-			irradiance += texture(hdrCubeMap, sampleVec).rgb * cos(theta) * sin(theta); //Scale by cos(theta) to account for weaker light at larger angles. And sin(theta) to account for smaller sample areas in higher hemisphere areas
+			irradiance += texture(hdrCubeMap, sampleVec).rgb * cos(theta) * sin(theta); //Scale by cos(theta) to account for weaker radiance at larger angles. And sin(theta) to account for smaller sample areas in higher hemisphere areas
 			nrSamples++;
 		}
 	}
 
+	//-Divide by the total number of samples we used.
 	irradiance = PI * irradiance * (1.0 / float(nrSamples));
 
 	outFragColor = vec4(irradiance, 0.0);

@@ -39,6 +39,8 @@ VkResult RenderSystem::run() {
 
 void RenderSystem::shutdown() {
 	//HDR Cubemap
+	_vkContext.destroy_sampler(_cubemapSampler);
+	_vkContext.destroy_image(_convolutedHdrCubeMap);
 	_vkContext.destroy_image(_hdrCubeMap);
 
 	//Depth Image
@@ -1222,7 +1224,7 @@ void RenderSystem::setup_hdrMap() {
 	VkCommandPoolCreateInfo cmdPoolInfo{};
 	cmdPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
 	cmdPoolInfo.pNext = nullptr;
-	cmdPoolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+	cmdPoolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
 	cmdPoolInfo.queueFamilyIndex = _vkContext.graphicsQueueFamily;
 
 	VkFenceCreateInfo fenceCreateInfo{};
@@ -1357,7 +1359,11 @@ void RenderSystem::setup_hdrMap() {
 		_vkContext.update_image(_hdrCubeMap, cubeMap_frameBufferImage, 1, &renderToCubeMapCpy);
 	}
 
-	//--- Convoluted HDR Cubemap Setup --- Node: Uses a lot of variables used in previous section so expect a lot reused variables
+	/*
+	* 
+	* ----- Convoluted HDR Cubemap Setup ----- Note: Uses a lot of variables used in making of HDR Cube Map. Might combine with aboce to do all this in one command buffer submission overall.
+	*
+	*/
 
 	//Setup Cubemap Sampler used for both hdr and convo hdr map
 	VkSamplerCreateInfo convCubeMap_samplerCreateInfo{};
@@ -1371,7 +1377,6 @@ void RenderSystem::setup_hdrMap() {
 	_cubemapSampler = _vkContext.create_sampler(convCubeMap_samplerCreateInfo);
 
 	//Setup Convoluted HDR Cubemap
-	VkImageCreateInfo imgInfo{};
 	imgInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
 	imgInfo.pNext = nullptr;
 	imgInfo.imageType = VK_IMAGE_TYPE_2D;
@@ -1384,11 +1389,9 @@ void RenderSystem::setup_hdrMap() {
 	imgInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 	imgInfo.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
 
-	VmaAllocationCreateInfo allocInfo{};
 	allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
 	allocInfo.requiredFlags = VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
-	VkImageViewCreateInfo imgViewInfo{};
 	imgViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 	imgViewInfo.pNext = nullptr;
 	imgViewInfo.viewType = VK_IMAGE_VIEW_TYPE_CUBE;
@@ -1399,7 +1402,7 @@ void RenderSystem::setup_hdrMap() {
 	imgViewInfo.subresourceRange.layerCount = 6;
 	imgViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 
-	_hdrCubeMap = _vkContext.create_image("HDR CubeMap", imgInfo, allocInfo, imgViewInfo);
+	_convolutedHdrCubeMap = _vkContext.create_image("HDR CubeMap", imgInfo, allocInfo, imgViewInfo);
 
 	//Create Convoluted HDR Cubemap Pipeline
 	VkPipelineLayout convCubeMap_pipelineLayout;
@@ -1434,8 +1437,8 @@ void RenderSystem::setup_hdrMap() {
 
 	convCubeMap_pipeline = pipelineBuilder.build_pipeline(_vkContext.device);
 
-	vkDestroyShaderModule(_vkContext.device, vertexShader, nullptr);
-	vkDestroyShaderModule(_vkContext.device, fragShader, nullptr);
+	vkDestroyShaderModule(_vkContext.device, conv_vertexShader, nullptr);
+	vkDestroyShaderModule(_vkContext.device, conv_fragShader, nullptr);
 
 	//Change Descriptors to point to HDR Cubemap
 	VkDescriptorImageInfo hdrCubeMapInfo{};
@@ -1449,6 +1452,9 @@ void RenderSystem::setup_hdrMap() {
 	//Record new commands for Convulted Cubemap Rendering
 	VK_CHECK(vkResetCommandBuffer(cubeMap_commandBuffer, 0));
 	VK_CHECK(vkBeginCommandBuffer(cubeMap_commandBuffer, &cmdBeginInfo));
+
+	//-Transition HDR Cubemap to be ShaderReadOptimal. Not the best place to do this command since it's be redundant after doing it once when the command buffer is submitted multiple times
+	vkutil::transition_image(cubeMap_commandBuffer, _hdrCubeMap.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
 	//-Transition Images for Drawing
 	vkutil::transition_image(cubeMap_commandBuffer, cubeMap_frameBufferImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
