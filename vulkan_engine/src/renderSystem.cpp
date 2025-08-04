@@ -350,7 +350,7 @@ void RenderSystem::setup_drawContexts(const GraphicsDataPayload& payload) {
 		i++;
 
 		CubeMapShader::ViewTransformMatrices skybox_viewproj;
-		skybox_viewproj.view = renderData.viewproj.view;
+		skybox_viewproj.view = glm::mat4(glm::mat3(renderData.viewproj.view)); //Remove Translation Transform
 		skybox_viewproj.proj = renderData.viewproj.proj;
 		VkBufferCopy skyboxViewProj_copy_info{};
 		skyboxViewProj_copy_info.srcOffset = 0;
@@ -451,7 +451,7 @@ void RenderSystem::updateSignaledDeviceBuffers(const GraphicsDataPayload& payloa
 
 		//Skybox Buffer
 		CubeMapShader::ViewTransformMatrices skybox_viewprojMatrix;
-		skybox_viewprojMatrix.view = _stagingUpdateData.viewproj.view;
+		skybox_viewprojMatrix.view = glm::mat4(glm::mat3(_stagingUpdateData.viewproj.view));
 		skybox_viewprojMatrix.proj = _stagingUpdateData.viewproj.proj;
 
 		VkBufferCopy skyboxViewProj_copy_info{};
@@ -1116,7 +1116,7 @@ void RenderSystem::setup_hdrMap() {
 	imgInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
 	imgInfo.pNext = nullptr;
 	imgInfo.imageType = VK_IMAGE_TYPE_2D;
-	imgInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+	imgInfo.format = VK_FORMAT_B8G8R8A8_UNORM;
 	imgInfo.extent = { .width = 512, .height = 512, .depth = 1 };
 	imgInfo.mipLevels = 1;
 	imgInfo.arrayLayers = 6;
@@ -1133,7 +1133,7 @@ void RenderSystem::setup_hdrMap() {
 	imgViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 	imgViewInfo.pNext = nullptr;
 	imgViewInfo.viewType = VK_IMAGE_VIEW_TYPE_CUBE;
-	imgViewInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+	imgViewInfo.format = VK_FORMAT_B8G8R8A8_UNORM;
 	imgViewInfo.subresourceRange.baseMipLevel = 0;
 	imgViewInfo.subresourceRange.levelCount = 1;
 	imgViewInfo.subresourceRange.baseArrayLayer = 0;
@@ -1243,7 +1243,7 @@ void RenderSystem::setup_hdrMap() {
 	pipelineBuilder.set_multisampling_none();
 	pipelineBuilder.disable_blending();
 	pipelineBuilder.enable_depthtest(false, VK_COMPARE_OP_GREATER_OR_EQUAL);
-	pipelineBuilder.set_color_attachment_format(VK_FORMAT_R8G8B8A8_UNORM);
+	pipelineBuilder.set_color_attachment_format(VK_FORMAT_B8G8R8A8_UNORM);
 	pipelineBuilder.set_depth_format(VK_FORMAT_D32_SFLOAT);
 
 	cubeMap_pipeline = pipelineBuilder.build_pipeline(_vkContext.device);
@@ -1294,7 +1294,7 @@ void RenderSystem::setup_hdrMap() {
 	cubeMap_vertexBuffer = _vkContext.create_buffer("CubeMap Vertex Buffer", unitCube_vertices.size() * sizeof(glm::vec3), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, allocFlags);
 	cubeMap_indexBuffer = _vkContext.create_buffer("CubeMap Index Buffer", unitCube_indices.size() * sizeof(uint32_t), VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, allocFlags);
 	cubeMap_uniformBuffer = _vkContext.create_buffer("CubeMap Uniform Buffer", sizeof(glm::mat4) * 2, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, allocFlags);
-	cubeMap_frameBufferImage = _vkContext.create_image("CubeMap Frame Buffer Image", { .width = 512, .height = 512, .depth = 1 }, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, false);
+	cubeMap_frameBufferImage = _vkContext.create_image("CubeMap Frame Buffer Image", { .width = 512, .height = 512, .depth = 1 }, VK_FORMAT_B8G8R8A8_UNORM, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, false);
 
 	VkBufferCopy bufferCpy = { .srcOffset = 0, .dstOffset = 0, .size = unitCube_vertices.size() * sizeof(glm::vec3) };
 	_vkContext.update_buffer(cubeMap_vertexBuffer, unitCube_vertices.data(), unitCube_vertices.size() * sizeof(glm::vec3), bufferCpy);
@@ -1496,7 +1496,7 @@ void RenderSystem::setup_hdrMap() {
 	imgInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
 	imgInfo.pNext = nullptr;
 	imgInfo.imageType = VK_IMAGE_TYPE_2D;
-	imgInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+	imgInfo.format = VK_FORMAT_B8G8R8A8_UNORM;
 	imgInfo.extent = { .width = 512, .height = 512, .depth = 1 };
 	imgInfo.mipLevels = 1;
 	imgInfo.arrayLayers = 6;
@@ -1511,14 +1511,14 @@ void RenderSystem::setup_hdrMap() {
 	imgViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 	imgViewInfo.pNext = nullptr;
 	imgViewInfo.viewType = VK_IMAGE_VIEW_TYPE_CUBE;
-	imgViewInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+	imgViewInfo.format = VK_FORMAT_B8G8R8A8_UNORM;
 	imgViewInfo.subresourceRange.baseMipLevel = 0;
 	imgViewInfo.subresourceRange.levelCount = 1;
 	imgViewInfo.subresourceRange.baseArrayLayer = 0;
 	imgViewInfo.subresourceRange.layerCount = 6;
 	imgViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 
-	_convolutedHdrCubeMap = _vkContext.create_image("HDR CubeMap", imgInfo, allocInfo, imgViewInfo);
+	_convolutedHdrCubeMap = _vkContext.create_image("Convoluted HDR Cube Map", imgInfo, allocInfo, imgViewInfo);
 
 	//Create Convoluted HDR Cubemap Pipeline
 	VkPipelineLayout convCubeMap_pipelineLayout;
@@ -1664,9 +1664,21 @@ void RenderSystem::setup_skybox() {
 	poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
 	poolInfo.pPoolSizes = poolSizes.data();
 	poolInfo.maxSets = 1;
+	poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
 
 	if (vkCreateDescriptorPool(_vkContext.device, &poolInfo, nullptr, &_skyboxDescriptorPool) != VK_SUCCESS)
 		throw std::runtime_error("Failed to create Skybox Descriptor Pool");
+
+	//-Set Binding Flags
+	std::vector<VkDescriptorBindingFlags> binding_flags = {
+		VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT | VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_UNUSED_WHILE_PENDING_BIT,
+		VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT | VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_UNUSED_WHILE_PENDING_BIT
+	};
+
+	VkDescriptorSetLayoutBindingFlagsCreateInfo set_binding_flags{};
+	set_binding_flags.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
+	set_binding_flags.bindingCount = static_cast<uint32_t>(binding_flags.size());
+	set_binding_flags.pBindingFlags = binding_flags.data();
 
 	//-Set Layout Bindings
 	std::vector<VkDescriptorSetLayoutBinding> layout_bindings = {
@@ -1679,8 +1691,10 @@ void RenderSystem::setup_skybox() {
 	//-Now Create Descriptor Set Layout
 	VkDescriptorSetLayoutCreateInfo layoutInfo{};
 	layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	layoutInfo.pNext = &set_binding_flags;
 	layoutInfo.bindingCount = static_cast<uint32_t>(layout_bindings.size());
 	layoutInfo.pBindings = layout_bindings.data();
+	layoutInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
 
 	if (vkCreateDescriptorSetLayout(_vkContext.device, &layoutInfo, nullptr, &_skyboxDescriptorSetLayout) != VK_SUCCESS)
 		throw std::runtime_error("Failed to Create Skybox Descriptor Set Layout");
@@ -1729,7 +1743,7 @@ void RenderSystem::setup_skybox() {
 	pipelineBuilder.set_multisampling_none();
 	pipelineBuilder.disable_blending();
 	pipelineBuilder.enable_depthtest(true, VK_COMPARE_OP_GREATER_OR_EQUAL);
-	pipelineBuilder.set_color_attachment_format(VK_FORMAT_R8G8B8A8_UNORM);
+	pipelineBuilder.set_color_attachment_format(VK_FORMAT_B8G8R8A8_UNORM);
 	pipelineBuilder.set_depth_format(VK_FORMAT_D32_SFLOAT);
 
 	_skyboxPipeline = pipelineBuilder.build_pipeline(_vkContext.device);
