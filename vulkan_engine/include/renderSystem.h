@@ -104,7 +104,7 @@ private:
 		VkExtent2D extent;
 	};
 
-	//Big Structure that enxapsulates all data neccesary for one draw. Vertex and Index, UBO, SBO, etc. Maybe Represents the Current Scene
+	//Big Structure that encapsulates all resources neccesary for one draw. Vertex and Index, UBO, SBO, etc. Maybe Represents the Current Scene
 	struct DrawContext {
 		//Draw Resources
 		
@@ -114,7 +114,7 @@ private:
 		AllocatedBuffer vertexOtherAttribBuffer; //Global Buffer containing every vertex's other attributes besides position, uvs, vertex_colors.
 		AllocatedBuffer indexBuffer;
 
-		//Buffer Ressources
+		//Buffer Resources - Geometry Rendering
 		AllocatedBuffer primitiveIdsBuffer;
 		VkDeviceAddress primitiveIdsBufferAddress;
 		AllocatedBuffer primitiveInfosBuffer;
@@ -129,6 +129,9 @@ private:
 		VkDeviceAddress texturesBufferAddress;
 		AllocatedBuffer lightsBuffer;
 		VkDeviceAddress lightsBufferAddress;
+
+		//Buffer Resources - Skybox
+		AllocatedBuffer skybox_viewprojMatrixBuffer; 
 	};
 
 	//Represents all the types of data needed to populate Draw Context's Buffers used in Render Shader and Drawing. Need this in order to format most of the data as continous memory for memcpying + Easy to pass all the data from the extract function using a struct
@@ -198,10 +201,17 @@ private:
 	//Depth Image
 	AllocatedImage _depthImage;
 
-	//DEBUG - HDR Image
+	//DEBUG - HDR Cubemap
 	AllocatedImage _hdrCubeMap;
 	AllocatedImage _convolutedHdrCubeMap;
 	VkSampler _cubemapSampler; //For both hdr and convoluted cubemap
+	VkDescriptorPool _skyboxDescriptorPool;
+	VkDescriptorSetLayout _skyboxDescriptorSetLayout;
+	VkDescriptorSet _skyboxDescriptorSet;
+	VkPipelineLayout _skyboxPipelineLayout;
+	VkPipeline _skyboxPipeline;
+	AllocatedBuffer _skyboxVertexBuffer;
+	AllocatedBuffer _skyboxIndexBuffer;
 
 	void init_swapchain(VkExtent2D windowExtent);
 	void init_frames();
@@ -212,6 +222,7 @@ private:
 	//Draw
 	VkResult draw(); //Maybe move draw commands to rendersystem object.
 	void draw_geometry(VkCommandBuffer cmd, const Image& swapchainImage);
+	void draw_skybox(VkCommandBuffer cmd, const Image& swapchainImage);
 	void draw_gui(VkCommandBuffer cmd, const Image& swapchainImage);
 	
 	//DrawContext
@@ -231,4 +242,5 @@ private:
 
 	//Skybox/Environment Map Functions
 	void setup_hdrMap();
+	void setup_skybox(); 
 };

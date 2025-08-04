@@ -79,6 +79,8 @@
     <None Include="shaders\default.vert" />
     <None Include="shaders\default_frag.spv" />
     <None Include="shaders\default_vert.spv" />
+    <None Include="shaders\skybox.frag" />
+    <None Include="shaders\skybox.vert" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>16.0</VCProjectVersion>

@@ -8,7 +8,7 @@
 constexpr uint32_t MAX_POINTLIGHT_COUNT = 100;
 
 namespace CubeMapShader {
-	struct TransformMatrices {
+	struct ViewTransformMatrices {
 		glm::mat4 view;
 		glm::mat4 proj;
 	};

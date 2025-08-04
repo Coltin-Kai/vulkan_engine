@@ -24,6 +24,7 @@ void RenderSystem::init(VkExtent2D windowExtent) {
 	_deviceBufferTypesCounter[DeviceBufferType::Light] = 0;
 
 	setup_hdrMap();
+	setup_skybox();
 }
 
 VkResult RenderSystem::run() {
@@ -38,7 +39,13 @@ VkResult RenderSystem::run() {
 }
 
 void RenderSystem::shutdown() {
-	//HDR Cubemap
+	//HDR Cubemap + Skybox
+	_vkContext.destroy_buffer(_skyboxIndexBuffer);
+	_vkContext.destroy_buffer(_skyboxVertexBuffer);
+	vkDestroyPipeline(_vkContext.device, _skyboxPipeline, nullptr);
+	vkDestroyPipelineLayout(_vkContext.device, _skyboxPipelineLayout, nullptr);
+	vkDestroyDescriptorSetLayout(_vkContext.device, _skyboxDescriptorSetLayout, nullptr);
+	vkDestroyDescriptorPool(_vkContext.device, _skyboxDescriptorPool, nullptr);
 	_vkContext.destroy_sampler(_cubemapSampler);
 	_vkContext.destroy_image(_convolutedHdrCubeMap);
 	_vkContext.destroy_image(_hdrCubeMap);
@@ -71,6 +78,7 @@ void RenderSystem::shutdown() {
 		_vkContext.destroy_buffer(frame.drawContext.materialsBuffer);
 		_vkContext.destroy_buffer(frame.drawContext.texturesBuffer);
 		_vkContext.destroy_buffer(frame.drawContext.lightsBuffer);
+		_vkContext.destroy_buffer(frame.drawContext.skybox_viewprojMatrixBuffer);
 	}
 
 	//Cleanup Swapchain
@@ -266,8 +274,9 @@ void RenderSystem::setup_drawContexts(const GraphicsDataPayload& payload) {
 	extract_render_data(payload, dataType, renderData);
 
 	//Add Data to DrawContexts
-	const size_t buffer_size = 40000000;
-
+	const size_t buffer_size = 40000000; //Huge size for dynamic data buffers
+	
+	//Note: Shouldnt really be named alloc for most of them since the dnyamic data buffers will use the buffer_size variable for alloc a size and just use these variables for uploading initial data
 	size_t alloc_vertPos_size = sizeof(glm::vec3) * renderData.positions.size();
 	size_t alloc_vertAttrib_size = sizeof(RenderShader::VertexAttributes) * renderData.attributes.size();
 	size_t alloc_index_size = sizeof(uint32_t) * renderData.indices.size();
@@ -279,6 +288,7 @@ void RenderSystem::setup_drawContexts(const GraphicsDataPayload& payload) {
 	size_t alloc_materials_size = sizeof(RenderShader::Material) * renderData.materials.size();
 	size_t alloc_textures_size = sizeof(RenderShader::Texture) * renderData.textures.size();
 	size_t alloc_lights_size = sizeof(RenderShader::Lights);
+	size_t alloc_skyboxViewprojMatrix_size = sizeof(CubeMapShader::ViewTransformMatrices);
 
 	int i = 1;
 	for (Frame& frame : _frames) {
@@ -291,9 +301,10 @@ void RenderSystem::setup_drawContexts(const GraphicsDataPayload& payload) {
 		currentDrawContext.vertexPosBuffer = _vkContext.create_buffer(std::format("Vertex Position Buffer {}", i).c_str(), buffer_size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, allocFlags);
 		currentDrawContext.vertexOtherAttribBuffer = _vkContext.create_buffer(std::format("Vertex Other Attributes Buffer {}", i).c_str(), buffer_size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, allocFlags);
 		currentDrawContext.indexBuffer = _vkContext.create_buffer(std::format("Index Buffer {}", i).c_str(), buffer_size, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, allocFlags);
+		
 		//BDA Buffers
 		VkBufferUsageFlags storageUsageFlags = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-		currentDrawContext.viewprojMatrixBuffer = _vkContext.create_buffer(std::format("View and Projection Matrix Buffer {}", i).c_str(), buffer_size, storageUsageFlags, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, allocFlags); //Careful as if the alloc size is 0. Will cause errors
+		currentDrawContext.viewprojMatrixBuffer = _vkContext.create_buffer(std::format("View and Projection Matrix Buffer {}", i).c_str(), buffer_size, storageUsageFlags, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, allocFlags); //Careful as if the alloc size is 0. Will cause errors. Also Note: Some of these buffers are not dynamic, thus dont need to use buffer_size variable
 		currentDrawContext.modelMatricesBuffer = _vkContext.create_buffer(std::format("Model Matrices Buffer {}", i).c_str(), buffer_size, storageUsageFlags, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, allocFlags);
 		currentDrawContext.primitiveIdsBuffer = _vkContext.create_buffer(std::format("Primitive IDs Buffer {}", i).c_str(), buffer_size, storageUsageFlags, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, allocFlags);
 		currentDrawContext.primitiveInfosBuffer = _vkContext.create_buffer(std::format("Primitive Infos Buffer {}", i).c_str(), buffer_size, storageUsageFlags, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, allocFlags);
@@ -317,6 +328,9 @@ void RenderSystem::setup_drawContexts(const GraphicsDataPayload& payload) {
 		address_info.buffer = currentDrawContext.lightsBuffer.buffer;
 		currentDrawContext.lightsBufferAddress = vkGetBufferDeviceAddress(_vkContext.device, &address_info);
 		
+		//Uniform Buffers - Skybox
+		currentDrawContext.skybox_viewprojMatrixBuffer = _vkContext.create_buffer(std::format("Skybox View and Projection Matrix Buffer {}", i).c_str(), sizeof(CubeMapShader::ViewTransformMatrices), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, allocFlags);
+
 		//Copy Data to the Buffers
 		_vkContext.update_buffer(currentDrawContext.indirectDrawCommandsBuffer, renderData.indirect_commands.data(), alloc_indirect_size, renderData.indirect_copy_info);
 		_vkContext.update_buffer(currentDrawContext.vertexPosBuffer, renderData.positions.data(), alloc_vertPos_size, renderData.pos_copy_info);
@@ -329,11 +343,20 @@ void RenderSystem::setup_drawContexts(const GraphicsDataPayload& payload) {
 		_vkContext.update_buffer(currentDrawContext.materialsBuffer, renderData.materials.data(), alloc_materials_size, renderData.material_copy_infos);
 		_vkContext.update_buffer(currentDrawContext.texturesBuffer, renderData.textures.data(), alloc_textures_size, renderData.texture_copy_infos);
 
-		RenderShader::Lights lights;
+		RenderShader::Lights lights; //Have to Construct Structure first with appropriate data before uploading data
 		lights.pointLightCount = renderData.pointLightsCount;
 		std::copy(renderData.pointLights.begin(), renderData.pointLights.end(), lights.pointLights);
 		_vkContext.update_buffer(currentDrawContext.lightsBuffer, (void*)&lights, alloc_lights_size, renderData.light_copy_info);
 		i++;
+
+		CubeMapShader::ViewTransformMatrices skybox_viewproj;
+		skybox_viewproj.view = renderData.viewproj.view;
+		skybox_viewproj.proj = renderData.viewproj.proj;
+		VkBufferCopy skyboxViewProj_copy_info{};
+		skyboxViewProj_copy_info.srcOffset = 0;
+		skyboxViewProj_copy_info.dstOffset = 0;
+		skyboxViewProj_copy_info.size = sizeof(CubeMapShader::ViewTransformMatrices);
+		_vkContext.update_buffer(currentDrawContext.skybox_viewprojMatrixBuffer, (void*)&skybox_viewproj, alloc_skyboxViewprojMatrix_size, skyboxViewProj_copy_info);
 	}
 }
 
@@ -425,6 +448,19 @@ void RenderSystem::updateSignaledDeviceBuffers(const GraphicsDataPayload& payloa
 	if (_deviceBufferTypesCounter[DeviceBufferType::ViewProj] > 0) {
 		size_t viewSize = sizeof(RenderShader::ViewProj);
 		_vkContext.update_buffer(get_current_frame().drawContext.viewprojMatrixBuffer, &_stagingUpdateData.viewproj, viewSize, _stagingUpdateData.viewprojMatrix_copy_info);
+
+		//Skybox Buffer
+		CubeMapShader::ViewTransformMatrices skybox_viewprojMatrix;
+		skybox_viewprojMatrix.view = _stagingUpdateData.viewproj.view;
+		skybox_viewprojMatrix.proj = _stagingUpdateData.viewproj.proj;
+
+		VkBufferCopy skyboxViewProj_copy_info{};
+		skyboxViewProj_copy_info.srcOffset = 0;
+		skyboxViewProj_copy_info.dstOffset = 0;
+		skyboxViewProj_copy_info.size = sizeof(CubeMapShader::ViewTransformMatrices);
+
+		_vkContext.update_buffer(get_current_frame().drawContext.skybox_viewprojMatrixBuffer, &skybox_viewprojMatrix, sizeof(CubeMapShader::ViewTransformMatrices), skyboxViewProj_copy_info);
+
 		_deviceBufferTypesCounter[DeviceBufferType::ViewProj]--;
 	}
 
@@ -576,8 +612,11 @@ VkResult RenderSystem::draw() {
 
 	vkCmdClearColorImage(cmd, swapchainImage.image, VK_IMAGE_LAYOUT_GENERAL, &clearValue, 1, &clearRange);
 
-	//Draw
+	//Draw Geometry
 	draw_geometry(cmd, swapchainImage);
+
+	//Draw Skybox
+	draw_skybox(cmd, swapchainImage);
 
 	//Draw GUI
 	draw_gui(cmd, swapchainImage);
@@ -660,6 +699,83 @@ void RenderSystem::draw_geometry(VkCommandBuffer cmd, const Image& swapchainImag
 
 	//Draw
 	vkCmdDrawIndexedIndirect(cmd, get_indirectDrawBuffer(), 0, get_drawCount(), sizeof(VkDrawIndexedIndirectCommand));
+
+	vkCmdEndRendering(cmd);
+}
+
+void RenderSystem::draw_skybox(VkCommandBuffer cmd, const Image& swapchainImage) {
+	//Create/Update Descriptors 
+	std::vector<VkWriteDescriptorSet> descriptorWrites(2);
+
+	VkDescriptorBufferInfo uniformBufferInfo{};
+	uniformBufferInfo.buffer = get_current_frame().drawContext.skybox_viewprojMatrixBuffer.buffer;
+	uniformBufferInfo.offset = 0;
+	uniformBufferInfo.range = sizeof(glm::mat4) * 2;
+
+	descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	descriptorWrites[0].dstSet = _skyboxDescriptorSet;
+	descriptorWrites[0].dstBinding = 0;
+	descriptorWrites[0].dstArrayElement = 0;
+	descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	descriptorWrites[0].descriptorCount = 1;
+	descriptorWrites[0].pBufferInfo = &uniformBufferInfo;
+
+	VkDescriptorImageInfo equirectangularMapInfo{};
+	equirectangularMapInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	equirectangularMapInfo.imageView = _hdrCubeMap.imageView;
+	equirectangularMapInfo.sampler = _cubemapSampler;
+
+	descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	descriptorWrites[1].dstSet = _skyboxDescriptorSet;
+	descriptorWrites[1].dstBinding = 1;
+	descriptorWrites[1].dstArrayElement = 0;
+	descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	descriptorWrites[1].descriptorCount = 1;
+	descriptorWrites[1].pImageInfo = &equirectangularMapInfo;
+
+	vkUpdateDescriptorSets(_vkContext.device, descriptorWrites.size(), descriptorWrites.data(), 0, nullptr);
+
+	//Draw Commands
+	VkRenderingAttachmentInfo colorAttachment = vkutil::attachment_info(swapchainImage.imageView, nullptr, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+	VkRenderingAttachmentInfo depthAttachment = vkutil::depth_attachment_info(_depthImage.imageView, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
+
+	VkExtent2D swapchainExtent = get_swapChainExtent();
+
+	VkRenderingInfo renderInfo = vkutil::rendering_info(swapchainExtent, &colorAttachment, nullptr);
+
+	vkCmdBeginRendering(cmd, &renderInfo);
+
+	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _skyboxPipeline);
+
+	//-Set Dynamic States
+	VkViewport viewport{};
+	viewport.x = 0;
+	viewport.y = 0;
+	viewport.width = swapchainExtent.width;
+	viewport.height = swapchainExtent.height;
+	viewport.minDepth = 0.0f;
+	viewport.maxDepth = 1.0f;
+
+	vkCmdSetViewport(cmd, 0, 1, &viewport);
+
+	VkRect2D scissor{};
+	scissor.offset.x = 0;
+	scissor.offset.y = 0;
+	scissor.extent.width = swapchainExtent.width;
+	scissor.extent.height = swapchainExtent.height;
+
+	vkCmdSetScissor(cmd, 0, 1, &scissor);
+
+	//-Bind Descriptor Set
+	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _skyboxPipelineLayout, 0, 1, &_skyboxDescriptorSet, 0, nullptr);
+
+	//-Bind Vertex Input Buffers
+	std::vector<VkDeviceSize> vertexOffsets = { 0 };
+	vkCmdBindVertexBuffers(cmd, 0, 1, &_skyboxVertexBuffer.buffer, vertexOffsets.data());
+	vkCmdBindIndexBuffer(cmd, _skyboxIndexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
+
+	//-Draw
+	vkCmdDrawIndexed(cmd, 36, 1, 0, 0, 0);
 
 	vkCmdEndRendering(cmd);
 }
@@ -1315,7 +1431,7 @@ void RenderSystem::setup_hdrMap() {
 	VkSubmitInfo2 submit = vkutil::submit_info(&cmdInfo, nullptr, nullptr);
 
 	//-Set up Uniform Data and each Camera View to get each side.
-	CubeMapShader::TransformMatrices transMatrices;
+	CubeMapShader::ViewTransformMatrices transMatrices;
 	transMatrices.proj = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 10.0f);
 	transMatrices.proj[1][1] *= -1;
 
@@ -1328,7 +1444,7 @@ void RenderSystem::setup_hdrMap() {
 		glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f,  0.0f, -1.0f), glm::vec3(0.0f, -1.0f,  0.0f))
 	};
 
-	VkBufferCopy uniformBufferCpy = { .srcOffset = 0, .dstOffset = 0, .size = sizeof(CubeMapShader::TransformMatrices) };
+	VkBufferCopy uniformBufferCpy = { .srcOffset = 0, .dstOffset = 0, .size = sizeof(CubeMapShader::ViewTransformMatrices) };
 
 	VkImageCopy renderToCubeMapCpy{};
 	renderToCubeMapCpy.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -1348,7 +1464,7 @@ void RenderSystem::setup_hdrMap() {
 		VK_CHECK(vkResetFences(_vkContext.device, 1, &cubeMap_renderFence));
 
 		transMatrices.view = views[i];
-		_vkContext.update_buffer(cubeMap_uniformBuffer, &transMatrices, sizeof(CubeMapShader::TransformMatrices), uniformBufferCpy);
+		_vkContext.update_buffer(cubeMap_uniformBuffer, &transMatrices, sizeof(CubeMapShader::ViewTransformMatrices), uniformBufferCpy);
 
 		VK_CHECK(vkQueueSubmit2(_vkContext.graphicsQueue, 1, &submit, cubeMap_renderFence));
 
@@ -1361,7 +1477,7 @@ void RenderSystem::setup_hdrMap() {
 
 	/*
 	* 
-	* ----- Convoluted HDR Cubemap Setup ----- Note: Uses a lot of variables used in making of HDR Cube Map. Might combine with aboce to do all this in one command buffer submission overall.
+	* ----- Convoluted HDR Cubemap Setup ----- Note: Uses a lot of variables used in making of HDR Cube Map. Might combine with above to do create both maps all in one command buffer submission overall.
 	*
 	*/
 
@@ -1490,7 +1606,7 @@ void RenderSystem::setup_hdrMap() {
 		VK_CHECK(vkResetFences(_vkContext.device, 1, &cubeMap_renderFence));
 
 		transMatrices.view = views[i];
-		_vkContext.update_buffer(cubeMap_uniformBuffer, &transMatrices, sizeof(CubeMapShader::TransformMatrices), uniformBufferCpy);
+		_vkContext.update_buffer(cubeMap_uniformBuffer, &transMatrices, sizeof(CubeMapShader::ViewTransformMatrices), uniformBufferCpy);
 
 		VK_CHECK(vkQueueSubmit2(_vkContext.graphicsQueue, 1, &submit, cubeMap_renderFence));
 
@@ -1516,4 +1632,152 @@ void RenderSystem::setup_hdrMap() {
 	vkDestroyDescriptorPool(_vkContext.device, cubeMap_descriptorPool, nullptr);
 	_vkContext.destroy_sampler(hdrImage_Sampler);
 	_vkContext.destroy_image(hdrImage);
+}
+
+//Sets up the Resources needed to render a skybox
+void RenderSystem::setup_skybox() {
+	//Setup Shaders and Pipeline for Skybox Rendering
+	//-Vertex Input Bindings
+	std::vector<VkVertexInputBindingDescription> skybox_vertexInputBindings = { {} };
+
+	skybox_vertexInputBindings[0].binding = 0;
+	skybox_vertexInputBindings[0].stride = sizeof(glm::vec3);
+	skybox_vertexInputBindings[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+	//-Vertex Input Attribute
+	std::vector<VkVertexInputAttributeDescription> skybox_vertexInputAttributes = { {} };
+
+	//--Position
+	skybox_vertexInputAttributes[0].binding = 0;
+	skybox_vertexInputAttributes[0].location = 0;
+	skybox_vertexInputAttributes[0].format = VK_FORMAT_R32G32B32_SFLOAT;
+	skybox_vertexInputAttributes[0].offset = 0;
+
+	//-Create Descriptor Pool
+	std::vector<VkDescriptorPoolSize> poolSizes = {
+		{.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .descriptorCount = 1 },
+		{.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = 1 }
+	};
+
+	VkDescriptorPoolCreateInfo poolInfo{};
+	poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+	poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
+	poolInfo.pPoolSizes = poolSizes.data();
+	poolInfo.maxSets = 1;
+
+	if (vkCreateDescriptorPool(_vkContext.device, &poolInfo, nullptr, &_skyboxDescriptorPool) != VK_SUCCESS)
+		throw std::runtime_error("Failed to create Skybox Descriptor Pool");
+
+	//-Set Layout Bindings
+	std::vector<VkDescriptorSetLayoutBinding> layout_bindings = {
+		{.binding = 0, .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .descriptorCount = 1,
+		.stageFlags = VK_SHADER_STAGE_VERTEX_BIT, .pImmutableSamplers = nullptr },
+		{.binding = 1, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = 1,
+		.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT, .pImmutableSamplers = nullptr }
+	};
+
+	//-Now Create Descriptor Set Layout
+	VkDescriptorSetLayoutCreateInfo layoutInfo{};
+	layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	layoutInfo.bindingCount = static_cast<uint32_t>(layout_bindings.size());
+	layoutInfo.pBindings = layout_bindings.data();
+
+	if (vkCreateDescriptorSetLayout(_vkContext.device, &layoutInfo, nullptr, &_skyboxDescriptorSetLayout) != VK_SUCCESS)
+		throw std::runtime_error("Failed to Create Skybox Descriptor Set Layout");
+
+	//-Create Descriptor Set
+	VkDescriptorSetAllocateInfo descriptorSetallocInfo{};
+	descriptorSetallocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	descriptorSetallocInfo.descriptorPool = _skyboxDescriptorPool;
+	descriptorSetallocInfo.descriptorSetCount = 1;
+	descriptorSetallocInfo.pSetLayouts = &_skyboxDescriptorSetLayout;
+
+	if (vkAllocateDescriptorSets(_vkContext.device, &descriptorSetallocInfo, &_skyboxDescriptorSet) != VK_SUCCESS)
+		throw std::runtime_error("Failed to allocate Skybox Descriptor Set");
+
+	//-Pipeline
+	//--Load SHaders
+	VkShaderModule vertexShader;
+	if (!vkutil::load_shader_module("shaders/skybox_vert.spv", _vkContext.device, &vertexShader))
+		throw std::runtime_error("Error trying to create Skybox Vertex Shader Module");
+	else
+		std::cout << "Cube Map Vertex Shader successfully loaded" << std::endl;
+
+	VkShaderModule fragShader;
+	if (!vkutil::load_shader_module("shaders/skybox_frag.spv", _vkContext.device, &fragShader))
+		throw std::runtime_error("error trying to create Skybox Frag Shader Module");
+	else
+		std::cout << "Cube Map Fragment Shader successfully loaded" << std::endl;
+
+	//--Set Pipeline Layout - Descriptor Set
+	VkPipelineLayoutCreateInfo pipeline_layout_info = vkutil::pipeline_layout_create_info();
+	pipeline_layout_info.setLayoutCount = 1;
+	pipeline_layout_info.pSetLayouts = &_skyboxDescriptorSetLayout;
+	pipeline_layout_info.pushConstantRangeCount = 0;
+	pipeline_layout_info.pPushConstantRanges = nullptr;
+
+	VK_CHECK(vkCreatePipelineLayout(_vkContext.device, &pipeline_layout_info, nullptr, &_skyboxPipelineLayout));
+
+	//--Build Pipeline
+	PipelineBuilder pipelineBuilder;
+	pipelineBuilder._pipelineLayout = _skyboxPipelineLayout;
+	pipelineBuilder.set_shaders(vertexShader, fragShader);
+	pipelineBuilder.set_vertex_input(skybox_vertexInputBindings, skybox_vertexInputAttributes);
+	pipelineBuilder.set_input_topology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+	pipelineBuilder.set_polygon_mode(VK_POLYGON_MODE_FILL);
+	pipelineBuilder.set_cull_mode(VK_CULL_MODE_NONE, VK_FRONT_FACE_CLOCKWISE);
+	pipelineBuilder.set_multisampling_none();
+	pipelineBuilder.disable_blending();
+	pipelineBuilder.enable_depthtest(true, VK_COMPARE_OP_GREATER_OR_EQUAL);
+	pipelineBuilder.set_color_attachment_format(VK_FORMAT_R8G8B8A8_UNORM);
+	pipelineBuilder.set_depth_format(VK_FORMAT_D32_SFLOAT);
+
+	_skyboxPipeline = pipelineBuilder.build_pipeline(_vkContext.device);
+
+	vkDestroyShaderModule(_vkContext.device, vertexShader, nullptr);
+	vkDestroyShaderModule(_vkContext.device, fragShader, nullptr);
+
+	//Setup Neccesary Buffers for the Rendering CubeMap
+
+	std::vector<glm::vec3> unitCube_vertices = {
+		// Front face
+		{-1.0f, -1.0f, 1.0f},  // 0: bottom-left-front
+		{1.0f, -1.0f, 1.0f},   // 1: bottom-right-front
+		{1.0f, 1.0f, 1.0f},    // 2: top-right-front
+		{-1.0f, 1.0f, 1.0f},   // 3: top-left-front
+
+		// Back face
+		{-1.0f, -1.0f, -1.0f}, // 4: bottom-left-back
+		{1.0f, -1.0f, -1.0f},  // 5: bottom-right-back
+		{1.0f, 1.0f, -1.0f},   // 6: top-right-back
+		{-1.0f, 1.0f, -1.0f}   // 7: top-left-back
+	};
+	std::vector<uint32_t> unitCube_indices = {
+		// Front face
+		0, 1, 2, 0, 2, 3,
+
+		// Right face
+		1, 5, 6, 1, 6, 2,
+
+		// Back face
+		5, 4, 7, 5, 7, 6,
+
+		// Left face
+		4, 0, 3, 4, 3, 7,
+
+		// Top face
+		3, 2, 6, 3, 6, 7,
+
+		// Bottom face
+		4, 5, 1, 4, 1, 0
+	};
+
+	VmaAllocationCreateFlags allocFlags = VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT;
+	_skyboxVertexBuffer = _vkContext.create_buffer("Skybox Vertex Buffer", unitCube_vertices.size() * sizeof(glm::vec3), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, allocFlags);
+	_skyboxIndexBuffer = _vkContext.create_buffer("Skybox Index Buffer", unitCube_indices.size() * sizeof(uint32_t), VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, allocFlags);
+
+	VkBufferCopy bufferCpy = { .srcOffset = 0, .dstOffset = 0, .size = unitCube_vertices.size() * sizeof(glm::vec3) };
+	_vkContext.update_buffer(_skyboxVertexBuffer, unitCube_vertices.data(), unitCube_vertices.size() * sizeof(glm::vec3), bufferCpy);
+	bufferCpy.size = unitCube_indices.size() * sizeof(uint32_t);
+	_vkContext.update_buffer(_skyboxIndexBuffer, unitCube_indices.data(), unitCube_indices.size() * sizeof(uint32_t), bufferCpy);
 }

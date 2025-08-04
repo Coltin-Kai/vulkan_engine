@@ -43,6 +43,9 @@
     <Filter Include="Header Files\ThirdParty\imgui-filebrowser">
       <UniqueIdentifier>{6b5c9bda-9022-452b-ae6f-a43356740695}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Resource Files\shaders\compiled_shaders">
+      <UniqueIdentifier>{c5a15522-6b20-498d-8bf9-3d7f4f95cd09}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\main.cpp">
@@ -187,22 +190,10 @@
     <None Include="shaders\compile.bat">
       <Filter>Resource Files\shaders</Filter>
     </None>
-    <None Include="shaders\default_frag.spv">
-      <Filter>Resource Files\shaders</Filter>
-    </None>
-    <None Include="shaders\default_vert.spv">
-      <Filter>Resource Files\shaders</Filter>
-    </None>
     <None Include="shaders\cubemap.vert">
       <Filter>Resource Files\shaders</Filter>
     </None>
     <None Include="shaders\cubemap.frag">
-      <Filter>Resource Files\shaders</Filter>
-    </None>
-    <None Include="shaders\cubemap_frag.spv">
-      <Filter>Resource Files\shaders</Filter>
-    </None>
-    <None Include="shaders\cubemap_vert.spv">
       <Filter>Resource Files\shaders</Filter>
     </None>
     <None Include="shaders\convCubeMap.vert">
@@ -212,9 +203,27 @@
       <Filter>Resource Files\shaders</Filter>
     </None>
     <None Include="shaders\convCubeMap_frag.spv">
-      <Filter>Resource Files\shaders</Filter>
+      <Filter>Resource Files\shaders\compiled_shaders</Filter>
     </None>
     <None Include="shaders\convCubeMap_vert.spv">
+      <Filter>Resource Files\shaders\compiled_shaders</Filter>
+    </None>
+    <None Include="shaders\cubemap_frag.spv">
+      <Filter>Resource Files\shaders\compiled_shaders</Filter>
+    </None>
+    <None Include="shaders\cubemap_vert.spv">
+      <Filter>Resource Files\shaders\compiled_shaders</Filter>
+    </None>
+    <None Include="shaders\default_frag.spv">
+      <Filter>Resource Files\shaders\compiled_shaders</Filter>
+    </None>
+    <None Include="shaders\default_vert.spv">
+      <Filter>Resource Files\shaders\compiled_shaders</Filter>
+    </None>
+    <None Include="shaders\skybox.vert">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\skybox.frag">
       <Filter>Resource Files\shaders</Filter>
     </None>
   </ItemGroup>
