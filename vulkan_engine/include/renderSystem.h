@@ -165,7 +165,7 @@ private:
 	};
 
 	struct Frame {
-		VkCommandPool commandPool;
+		VkCommandPool commandPool; //Might move ownership of commandbools and buffers and related resources to vkcontext
 		VkCommandBuffer commandBuffer;
 
 		VkSemaphore swapchainSemaphore, renderSemaphore;

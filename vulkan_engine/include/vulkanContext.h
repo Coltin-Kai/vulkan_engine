@@ -50,8 +50,10 @@ public:
 	AllocatedImage create_image(const char* name, VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped); //Only allocates 2D images on GPU normally used just for textures
 	AllocatedImage create_image(const char* name, VkImageCreateInfo imageInfo, VmaAllocationCreateInfo allocInfo, VkImageViewCreateInfo imageViewInfo); //When Image Creation requires more specific details
 	void destroy_image(const AllocatedImage& image);
-	void update_image(const AllocatedImage& image, void* srcData, size_t dataSize); //Uploads raw data to an image. !!!Might change param to implement specific settings like vkbufferimagecopy param
-	void update_image(const AllocatedImage& dstImage, const AllocatedImage& srcImage, uint32_t copyCount, const VkImageCopy* copyInfo);
+	void update_image(AllocatedImage& image, void* srcData, size_t dataSize); //Uploads raw data to an image. !!!Might change param to implement specific settings like vkbufferimagecopy param
+	void update_image(AllocatedImage& dstImage, AllocatedImage& srcImage, uint32_t copyCount, const VkImageCopy* copyInfo);
+
+	void transition_image(VkCommandBuffer cmd, Image& image, VkImageLayout targetLayout);
 
 	//Sampler
 	VkSampler create_sampler(VkSamplerCreateInfo& samplerCreateInfo);

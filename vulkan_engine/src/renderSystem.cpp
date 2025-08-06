@@ -602,8 +602,8 @@ VkResult RenderSystem::draw() {
 	Image swapchainImage = get_currentSwapchainImage();
 
 	//Transition Images for Drawing
-	vkutil::transition_image(cmd, swapchainImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
-	vkutil::transition_image(cmd, _depthImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
+	_vkContext.transition_image(cmd, swapchainImage, VK_IMAGE_LAYOUT_GENERAL);
+	_vkContext.transition_image(cmd, _depthImage, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
 
 	//Clear Color
 	VkClearColorValue clearValue = { {0.5f, 0.5f, 0.5f, 0.5f} };
@@ -622,7 +622,7 @@ VkResult RenderSystem::draw() {
 	draw_gui(cmd, swapchainImage);
 
 	//Transition for Presentation
-	vkutil::transition_image(cmd, swapchainImage.image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+	_vkContext.transition_image(cmd, swapchainImage, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 
 	VK_CHECK(vkEndCommandBuffer(cmd));
 
@@ -1091,8 +1091,8 @@ void RenderSystem::setup_hdrMap() {
 		imageSize.width = width;
 		imageSize.height = height;
 		imageSize.depth = 1;
-		hdrImage = _vkContext.create_image("HDR Image", imageSize, VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, false);
-		_vkContext.update_image(hdrImage, data, 2 * imageSize.width * imageSize.height * imageSize.depth * 4);
+		hdrImage = _vkContext.create_image("HDR Image", imageSize, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, false);
+		_vkContext.update_image(hdrImage, data, 4 * imageSize.width * imageSize.height * imageSize.depth * 4);
 
 		stbi_image_free(data);
 	}
@@ -1370,7 +1370,7 @@ void RenderSystem::setup_hdrMap() {
 	VK_CHECK(vkBeginCommandBuffer(cubeMap_commandBuffer, &cmdBeginInfo));
 
 	//-Transition Images for Drawing
-	vkutil::transition_image(cubeMap_commandBuffer, cubeMap_frameBufferImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
+	_vkContext.transition_image(cubeMap_commandBuffer, cubeMap_frameBufferImage, VK_IMAGE_LAYOUT_GENERAL);
 
 	//-Clear Color
 	VkClearColorValue clearValue = { {0.5f, 0.5f, 0.5f, 0.5f} };
@@ -1422,7 +1422,7 @@ void RenderSystem::setup_hdrMap() {
 
 	vkCmdEndRendering(cubeMap_commandBuffer);
 
-	vkutil::transition_image(cubeMap_commandBuffer, cubeMap_frameBufferImage.image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+	_vkContext.transition_image(cubeMap_commandBuffer, cubeMap_frameBufferImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
 
 	VK_CHECK(vkEndCommandBuffer(cubeMap_commandBuffer));
 
@@ -1438,8 +1438,8 @@ void RenderSystem::setup_hdrMap() {
 	glm::mat4 views[] = {
 		glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(1.0f,  0.0f,  0.0f), glm::vec3(0.0f, -1.0f,  0.0f)),
 		glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(-1.0f,  0.0f,  0.0f), glm::vec3(0.0f, -1.0f,  0.0f)),
-		glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f,  1.0f,  0.0f), glm::vec3(0.0f,  0.0f,  1.0f)),
 		glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, -1.0f,  0.0f), glm::vec3(0.0f,  0.0f, -1.0f)),
+		glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f,  1.0f,  0.0f), glm::vec3(0.0f,  0.0f,  1.0f)),
 		glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f,  0.0f,  1.0f), glm::vec3(0.0f, -1.0f,  0.0f)),
 		glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f,  0.0f, -1.0f), glm::vec3(0.0f, -1.0f,  0.0f))
 	};
@@ -1570,10 +1570,10 @@ void RenderSystem::setup_hdrMap() {
 	VK_CHECK(vkBeginCommandBuffer(cubeMap_commandBuffer, &cmdBeginInfo));
 
 	//-Transition HDR Cubemap to be ShaderReadOptimal. Not the best place to do this command since it's be redundant after doing it once when the command buffer is submitted multiple times
-	vkutil::transition_image(cubeMap_commandBuffer, _hdrCubeMap.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+	_vkContext.transition_image(cubeMap_commandBuffer, _hdrCubeMap, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
 	//-Transition Images for Drawing
-	vkutil::transition_image(cubeMap_commandBuffer, cubeMap_frameBufferImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
+	_vkContext.transition_image(cubeMap_commandBuffer, cubeMap_frameBufferImage, VK_IMAGE_LAYOUT_GENERAL);
 
 	//-Clear Color
 	vkCmdClearColorImage(cubeMap_commandBuffer, cubeMap_frameBufferImage.image, VK_IMAGE_LAYOUT_GENERAL, &clearValue, 1, &clearRange);
@@ -1596,7 +1596,7 @@ void RenderSystem::setup_hdrMap() {
 	//-Draw
 	vkCmdDrawIndexed(cubeMap_commandBuffer, unitCube_indices.size(), 1, 0, 0, 0);
 	vkCmdEndRendering(cubeMap_commandBuffer);
-	vkutil::transition_image(cubeMap_commandBuffer, cubeMap_frameBufferImage.image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+	_vkContext.transition_image(cubeMap_commandBuffer, cubeMap_frameBufferImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
 
 	VK_CHECK(vkEndCommandBuffer(cubeMap_commandBuffer));
 

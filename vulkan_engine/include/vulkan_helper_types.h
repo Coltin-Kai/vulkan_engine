@@ -4,19 +4,18 @@
 #include "vk_mem_alloc.h"
 #include <unordered_set>
 
-struct AllocatedImage {
+struct Image { 
 	VkImage image;
 	VkImageView imageView;
-	VmaAllocation allocation;
-	VmaAllocationInfo info;
 	VkExtent3D extent;
 	VkFormat format;
+	VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED;
 };
 
-struct Image { //Image that is not allocated using VMA
-	VkImage image;
-	VkImageView imageView;
-	VkExtent3D extent;
+//Image that is allocated with VMA
+struct AllocatedImage : Image {
+	VmaAllocation allocation;
+	VmaAllocationInfo info;
 };
 
 struct AllocatedBuffer {

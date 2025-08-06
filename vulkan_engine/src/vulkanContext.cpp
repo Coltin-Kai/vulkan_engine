@@ -282,6 +282,7 @@ AllocatedImage VulkanContext::create_image(const char* name, VkImageCreateInfo i
 	AllocatedImage newImage;
 	newImage.format = imageInfo.format;
 	newImage.extent = imageInfo.extent;
+	newImage.layout = imageInfo.initialLayout;
 
 	VK_CHECK(vmaCreateImage(allocator, &imageInfo, &allocInfo, &newImage.image, &newImage.allocation, nullptr));
 	vmaSetAllocationName(allocator, newImage.allocation, name);
@@ -302,7 +303,7 @@ void VulkanContext::destroy_image(const AllocatedImage& image) {
 	vmaDestroyImage(allocator, image.image, image.allocation);
 }
 
-void VulkanContext::update_image(const AllocatedImage& image, void* srcData, size_t dataSize) {
+void VulkanContext::update_image(AllocatedImage& image, void* srcData, size_t dataSize) {
 
 	VkMemoryPropertyFlags image_memProperties;
 	vmaGetAllocationMemoryProperties(allocator, image.allocation, &image_memProperties);
@@ -315,8 +316,7 @@ void VulkanContext::update_image(const AllocatedImage& image, void* srcData, siz
 		memcpy(stagingBuffer.info.pMappedData, srcData, dataSize);
 
 		VkCommandBuffer cmd = start_immediate_recording();
-		vkutil::transition_image(cmd, image.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-
+		transition_image(cmd, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 		VkBufferImageCopy copyRegion{};
 		copyRegion.bufferOffset = 0;
 		copyRegion.bufferRowLength = 0;
@@ -330,7 +330,7 @@ void VulkanContext::update_image(const AllocatedImage& image, void* srcData, siz
 
 		vkCmdCopyBufferToImage(cmd, stagingBuffer.buffer, image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
 
-		vkutil::transition_image(cmd, image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL); //!!!Might Delete. Maybe dont want to have all Image updates to transition the image the shader read only optimal. Might want to try keep image transition to only go to how it was before updating
+		transition_image(cmd, image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL); //!!!Might Delete. Maybe dont want to have all Image updates to transition the image the shader read only optimal. Might want to try keep image transition to only go to how it was before updating
 		submit_immediate_commands();
 
 		destroy_buffer(stagingBuffer);
@@ -340,15 +340,21 @@ void VulkanContext::update_image(const AllocatedImage& image, void* srcData, siz
 	}
 }
 
-void VulkanContext::update_image(const AllocatedImage& dstImage, const AllocatedImage& srcImage, uint32_t copyCount, const VkImageCopy* copyInfo) {
+void VulkanContext::update_image(AllocatedImage& dstImage, AllocatedImage& srcImage, uint32_t copyCount, const VkImageCopy* copyInfo) {
 	VkCommandBuffer cmd = start_immediate_recording();
 
-	vkutil::transition_image(cmd, srcImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
-	vkutil::transition_image(cmd, dstImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+	transition_image(cmd, srcImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+	transition_image(cmd, dstImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 
 	vkCmdCopyImage(cmd, srcImage.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dstImage.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, copyCount, copyInfo);
 
 	submit_immediate_commands();
+}
+
+//Transitions the Image from its current Layout to the Target Layout
+void VulkanContext::transition_image(VkCommandBuffer cmd, Image& image, VkImageLayout targetLayout) {
+	vkutil::transition_image(cmd, image.image, image.layout, targetLayout);
+	image.layout = targetLayout;
 }
 
 VkSampler VulkanContext::create_sampler(VkSamplerCreateInfo& samplerCreateInfo) {
