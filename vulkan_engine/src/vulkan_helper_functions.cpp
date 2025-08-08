@@ -5,6 +5,7 @@
 #include <iostream>
 #include <format>
 
+//Generic Image Transition that only transitions after all commands preceding it are finished and commands after wait for this transition.
 void vkutil::transition_image(VkCommandBuffer cmd, VkImage image, VkImageLayout currentLayout, VkImageLayout newLayout) {
 	VkImageMemoryBarrier2 imageBarrier{};
 	imageBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
