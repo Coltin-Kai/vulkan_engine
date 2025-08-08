@@ -738,10 +738,11 @@ void RenderSystem::draw_skybox(VkCommandBuffer cmd, const Image& swapchainImage)
 	//Draw Commands
 	VkRenderingAttachmentInfo colorAttachment = vkutil::attachment_info(swapchainImage.imageView, nullptr, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
 	VkRenderingAttachmentInfo depthAttachment = vkutil::depth_attachment_info(_depthImage.imageView, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
+	depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD; //Ensures depth values from previous rendering is kept.
 
 	VkExtent2D swapchainExtent = get_swapChainExtent();
 
-	VkRenderingInfo renderInfo = vkutil::rendering_info(swapchainExtent, &colorAttachment, nullptr);
+	VkRenderingInfo renderInfo = vkutil::rendering_info(swapchainExtent, &colorAttachment, &depthAttachment);
 
 	vkCmdBeginRendering(cmd, &renderInfo);
 
