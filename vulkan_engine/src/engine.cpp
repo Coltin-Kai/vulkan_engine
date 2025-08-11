@@ -46,7 +46,6 @@ void Engine::init() {
 	_camera.update_view_matrix();
 	_payload.camera_transform = _camera.get_view_matrix();
 	_payload.proj_transform = glm::perspective(glm::radians(45.0f), _windowExtent.width / (float)_windowExtent.height, 50.0f, 0.01f);
-	_payload.proj_transform[1][1] *= -1;
 
 	//Light
 	_payload.pointLights.push_back({ .pos = glm::vec3(0.0f, 2.0f, -2.0f), .color = glm::vec3(1.0f, 1.0f, 1.0f), .power = 100.0f });

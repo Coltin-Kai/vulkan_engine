@@ -668,9 +668,9 @@ void RenderSystem::draw_geometry(VkCommandBuffer cmd, const Image& swapchainImag
 	//Set Dynamic States
 	VkViewport viewport{};
 	viewport.x = 0;
-	viewport.y = 0;
+	viewport.y = swapchainExtent.height; //Move origin to swapchain height
 	viewport.width = swapchainExtent.width;
-	viewport.height = swapchainExtent.height;
+	viewport.height = -1.0 * swapchainExtent.height; //Flip Viewport to account for flipped y-coord in glm calculations
 	viewport.minDepth = 0.0f;
 	viewport.maxDepth = 1.0f;
 
@@ -751,9 +751,9 @@ void RenderSystem::draw_skybox(VkCommandBuffer cmd, const Image& swapchainImage)
 	//-Set Dynamic States
 	VkViewport viewport{};
 	viewport.x = 0;
-	viewport.y = 0;
+	viewport.y = swapchainExtent.height;
 	viewport.width = swapchainExtent.width;
-	viewport.height = swapchainExtent.height;
+	viewport.height = -1.0 * swapchainExtent.height;
 	viewport.minDepth = 0.0f;
 	viewport.maxDepth = 1.0f;
 
@@ -1085,8 +1085,9 @@ void RenderSystem::setup_hdrMap() {
 	VkSampler hdrImage_Sampler;
 	int width, height, nrChannels;
 
+
 	float* data = stbi_loadf("C:\\Github\\vulkan_engine\\vulkan_engine\\assets\\HDR_Maps\\alps_field_4k.hdr", &width, &height, &nrChannels, 4);
-	
+
 	if (data) {
 		VkExtent3D imageSize;
 		imageSize.width = width;
@@ -1367,15 +1368,14 @@ void RenderSystem::setup_hdrMap() {
 	};
 
 	glm::mat4 proj = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 10.0f);
-	proj[1][1] *= -1;
 
-	CubeMapShader::ViewTransformMatrices transMatrices[6] = {
+	CubeMapShader::ViewTransformMatrices transMatrices[6] = { //Specialized lookat matrices for equirrectangler map orientation
 		{ .view = glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(1.0f,  0.0f,  0.0f), glm::vec3(0.0f, -1.0f,  0.0f)), .proj = proj },
 		{ .view = glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(-1.0f,  0.0f,  0.0f), glm::vec3(0.0f, -1.0f,  0.0f)), .proj = proj },
 		{ .view = glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, -1.0f,  0.0f), glm::vec3(0.0f,  0.0f, -1.0f)), .proj = proj },
 		{ .view = glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f,  1.0f,  0.0f), glm::vec3(0.0f,  0.0f,  1.0f)), .proj = proj },
-		{ .view = glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f,  0.0f,  1.0f), glm::vec3(0.0f, -1.0f,  0.0f)), .proj = proj },
 		{ .view = glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f,  0.0f, -1.0f), glm::vec3(0.0f, -1.0f,  0.0f)), .proj = proj },
+		{ .view = glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f,  0.0f,  1.0f), glm::vec3(0.0f, -1.0f,  0.0f)), .proj = proj },
 	};
 
 	VmaAllocationCreateFlags allocFlags = VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT;
@@ -1484,9 +1484,9 @@ void RenderSystem::setup_hdrMap() {
 	VkRenderingInfo renderInfo = vkutil::rendering_info(frameBufferExtent, &colorAttachment, nullptr);
 	VkViewport viewport{};
 	viewport.x = 0;
-	viewport.y = 0;
+	viewport.y = frameBufferExtent.height;
 	viewport.width = frameBufferExtent.width;
-	viewport.height = frameBufferExtent.height;
+	viewport.height = -1.0 * frameBufferExtent.height;
 	viewport.minDepth = 0.0f;
 	viewport.maxDepth = 1.0f;
 	VkRect2D scissor{};
@@ -1552,6 +1552,16 @@ void RenderSystem::setup_hdrMap() {
 
 	VK_CHECK(vkResetFences(_vkContext.device, 1, &cubeMap_renderFence));
 
+	//Update Uniform Descriptor Data with new lookat matrices that flip things around for correct cubemap face orientation 
+	/*
+	transMatrices[0] = { .view = glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f)), .proj = proj };
+	transMatrices[1] = { .view = glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(-1.0f,  0.0f,  0.0f), glm::vec3(0.0f, 1.0f,  0.0f)), .proj = proj };
+	transMatrices[2] = { .view = glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f,  1.0f,  0.0f), glm::vec3(0.0f,  0.0f,  1.0f)), .proj = proj };
+	transMatrices[3] = { .view = glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, -1.0f,  0.0f), glm::vec3(0.0f,  0.0f, -1.0f)), .proj = proj };
+	transMatrices[5] = { .view = glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f,  0.0f, -1.0f), glm::vec3(0.0f, 1.0f,  0.0f)), .proj = proj };
+	transMatrices[4] = { .view = glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f,  0.0f,  1.0f), glm::vec3(0.0f, 1.0f,  0.0f)), .proj = proj };
+	_vkContext.update_buffer(cubeMap_uniformStagingBuffer, transMatrices, bufferCpy.size, bufferCpy);
+	*/
 	//Update Image Descriptor Set with HDR Cubemap
 	descriptorWrites[1].pImageInfo = &hdrCubeMapInfo;
 	vkUpdateDescriptorSets(_vkContext.device, descriptorWrites.size(), descriptorWrites.data(), 0, nullptr);

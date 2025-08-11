@@ -38,6 +38,7 @@ void main() {
 	//-Divide by the total number of samples we used.
 	irradiance = PI * irradiance * (1.0 / float(nrSamples));
 
-	outFragColor = vec4(irradiance, 0.0);
+	//outFragColor = vec4(irradiance, 0.0);
+	outFragColor = vec4(texture(hdrCubeMap, localPos).rgb, 1.0);
 }
 
