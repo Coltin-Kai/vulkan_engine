@@ -2,6 +2,12 @@
 
 layout(set = 0, binding = 1) uniform sampler2D equirectangularMap;
 
+layout(set = 0, binding = 2) uniform surfaceTransformOps {
+	bool flipU;
+	bool flipV;
+	bool reflectCoords;
+} sTransOps;
+
 layout(location = 0) in vec3 localPos;
 
 layout(location = 0) out vec4 outFragColor;
@@ -12,6 +18,15 @@ vec2 sampleSphericalMap(vec3 v);
 
 void main() {
 	vec2 uv = sampleSphericalMap(normalize(localPos));
+
+	//Change surface orientations to correct the cubemap sampling in other shaders
+	if (sTransOps.flipU)
+		uv.x = 1 - uv.x;
+	if (sTransOps.flipV)
+		uv.y = 1 - uv.y;
+	if (sTransOps.reflectCoords)
+		uv = vec2(uv.y, uv.x);
+
 	vec3 color = texture(equirectangularMap, uv).rgb;
 	outFragColor = vec4(color, 1.0);
 }
@@ -24,8 +39,5 @@ vec2 sampleSphericalMap(vec3 v) { //v represents the unit circle direction angle
 	uv *= invAtan;
 	uv += 0.5;
 
-	//Invert UV Coords - Fixes inversion of cubemap faces
-	uv.x = 1 - uv.x;
-	uv.y = 1 - uv.y;
 	return uv;
 }

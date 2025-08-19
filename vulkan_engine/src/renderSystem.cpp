@@ -1208,7 +1208,7 @@ void RenderSystem::setup_hdrMap() {
 
 	//--Create Descriptor Pool
 	std::vector<VkDescriptorPoolSize> poolSizes = {
-		{.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .descriptorCount = 1 },
+		{.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .descriptorCount = 2 },
 		{.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = 1 }
 	};
 
@@ -1225,6 +1225,7 @@ void RenderSystem::setup_hdrMap() {
 	//--Set Binding Flags
 	std::vector<VkDescriptorBindingFlags> binding_flags = {
 		VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT | VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_UNUSED_WHILE_PENDING_BIT,
+		VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT | VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_UNUSED_WHILE_PENDING_BIT,
 		VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT | VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_UNUSED_WHILE_PENDING_BIT
 	};
 
@@ -1238,7 +1239,9 @@ void RenderSystem::setup_hdrMap() {
 		{.binding = 0, .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .descriptorCount = 1,
 		.stageFlags = VK_SHADER_STAGE_VERTEX_BIT, .pImmutableSamplers = nullptr },
 		{.binding = 1, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = 1,
-		.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT, .pImmutableSamplers = nullptr }
+		.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT, .pImmutableSamplers = nullptr },
+		{.binding = 2, .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .descriptorCount = 1,
+		.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT, .pImmutableSamplers = nullptr },
 	};
 
 	//--Now Create Descriptor Set Layout
@@ -1370,12 +1373,12 @@ void RenderSystem::setup_hdrMap() {
 	glm::mat4 proj = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 10.0f);
 
 	CubeMapShader::ViewTransformMatrices transMatrices[6] = { //Specialized lookat matrices for equirrectangler map orientation
-		{ .view = glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(1.0f,  0.0f,  0.0f), glm::vec3(0.0f, -1.0f,  0.0f)), .proj = proj },
-		{ .view = glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(-1.0f,  0.0f,  0.0f), glm::vec3(0.0f, -1.0f,  0.0f)), .proj = proj },
-		{ .view = glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, -1.0f,  0.0f), glm::vec3(0.0f,  0.0f, -1.0f)), .proj = proj },
-		{ .view = glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f,  1.0f,  0.0f), glm::vec3(0.0f,  0.0f,  1.0f)), .proj = proj },
-		{ .view = glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f,  0.0f, -1.0f), glm::vec3(0.0f, -1.0f,  0.0f)), .proj = proj },
-		{ .view = glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f,  0.0f,  1.0f), glm::vec3(0.0f, -1.0f,  0.0f)), .proj = proj },
+		{ .view = glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(1.0f,  0.0f,  0.0f), glm::vec3(0.0f, 1.0f,  0.0f)), .proj = proj },
+		{ .view = glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(-1.0f,  0.0f,  0.0f), glm::vec3(0.0f, 1.0f,  0.0f)), .proj = proj },
+		{ .view = glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f,  0.0f), glm::vec3(-1.0f,  0.0f, 0.0f)), .proj = proj },
+		{ .view = glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f,  -1.0f,  0.0f), glm::vec3(1.0f,  0.0f,  0.0f)), .proj = proj },
+		{ .view = glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f,  0.0f,  1.0f), glm::vec3(0.0f, 1.0f,  0.0f)), .proj = proj },
+		{ .view = glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f,  0.0f, -1.0f), glm::vec3(0.0f, 1.0f,  0.0f)), .proj = proj },
 	};
 
 	VmaAllocationCreateFlags allocFlags = VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT;
@@ -1553,15 +1556,17 @@ void RenderSystem::setup_hdrMap() {
 	VK_CHECK(vkResetFences(_vkContext.device, 1, &cubeMap_renderFence));
 
 	//Update Uniform Descriptor Data with new lookat matrices that flip things around for correct cubemap face orientation 
+	
 	/*
 	transMatrices[0] = { .view = glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f)), .proj = proj };
 	transMatrices[1] = { .view = glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(-1.0f,  0.0f,  0.0f), glm::vec3(0.0f, 1.0f,  0.0f)), .proj = proj };
-	transMatrices[2] = { .view = glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f,  1.0f,  0.0f), glm::vec3(0.0f,  0.0f,  1.0f)), .proj = proj };
-	transMatrices[3] = { .view = glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, -1.0f,  0.0f), glm::vec3(0.0f,  0.0f, -1.0f)), .proj = proj };
+	transMatrices[2] = { .view = glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f,  1.0f,  0.0f), glm::vec3(0.0f,  0.0f,  -1.0f)), .proj = proj };
+	transMatrices[3] = { .view = glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, -1.0f,  0.0f), glm::vec3(0.0f,  0.0f, 1.0f)), .proj = proj };
 	transMatrices[5] = { .view = glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f,  0.0f, -1.0f), glm::vec3(0.0f, 1.0f,  0.0f)), .proj = proj };
 	transMatrices[4] = { .view = glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f,  0.0f,  1.0f), glm::vec3(0.0f, 1.0f,  0.0f)), .proj = proj };
 	_vkContext.update_buffer(cubeMap_uniformStagingBuffer, transMatrices, bufferCpy.size, bufferCpy);
 	*/
+
 	//Update Image Descriptor Set with HDR Cubemap
 	descriptorWrites[1].pImageInfo = &hdrCubeMapInfo;
 	vkUpdateDescriptorSets(_vkContext.device, descriptorWrites.size(), descriptorWrites.data(), 0, nullptr);
@@ -1630,6 +1635,258 @@ void RenderSystem::setup_hdrMap() {
 	vkDestroyDescriptorPool(_vkContext.device, cubeMap_descriptorPool, nullptr);
 	_vkContext.destroy_sampler(hdrImage_Sampler);
 	_vkContext.destroy_image(hdrImage);
+}
+
+void RenderSystem::setup_hdrMap2() {
+	//Temp have file loading here. Might move loading code to loader.h/loader.cpp. And have only engine class actually initiate the load and pass the data to renderSystem.
+	//Load HDR Equirectangular Image and Create it's Sampler
+	AllocatedImage hdrImage;
+	VkSampler hdrImage_Sampler;
+	int width, height, nrChannels;
+
+	float* data = stbi_loadf("C:\\Github\\vulkan_engine\\vulkan_engine\\assets\\HDR_Maps\\alps_field_4k.hdr", &width, &height, &nrChannels, 4);
+
+	if (data) {
+		VkExtent3D imageSize;
+		imageSize.width = width;
+		imageSize.height = height;
+		imageSize.depth = 1;
+		hdrImage = _vkContext.create_image("HDR Image", imageSize, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, false);
+		_vkContext.update_image(hdrImage, data, 4 * imageSize.width * imageSize.height * imageSize.depth * 4);
+
+		stbi_image_free(data);
+	}
+	else {
+		std::cout << "failed to load HDR Image File" << std::endl;
+		return;
+	}
+
+	VkSamplerCreateInfo samplerCreateInfo{};
+	samplerCreateInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+	samplerCreateInfo.maxLod = VK_LOD_CLAMP_NONE;
+	samplerCreateInfo.minLod = 0;
+	samplerCreateInfo.magFilter = VK_FILTER_LINEAR;
+	samplerCreateInfo.minFilter = VK_FILTER_LINEAR;
+	samplerCreateInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+
+	hdrImage_Sampler = _vkContext.create_sampler(samplerCreateInfo);
+
+	//Setup HDR CubeMap, Convoluted HDR CubeMap, and a shared Sampler
+	//-HDR Cubemap
+	VkImageCreateInfo imgInfo{};
+	imgInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+	imgInfo.pNext = nullptr;
+	imgInfo.imageType = VK_IMAGE_TYPE_2D;
+	imgInfo.format = VK_FORMAT_B8G8R8A8_UNORM;
+	imgInfo.extent = { .width = 512, .height = 512, .depth = 1 };
+	imgInfo.mipLevels = 1;
+	imgInfo.arrayLayers = 6;
+	imgInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+	imgInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+	imgInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+	imgInfo.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
+
+	VmaAllocationCreateInfo allocInfo{};
+	allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+	allocInfo.requiredFlags = VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+	VkImageViewCreateInfo imgViewInfo{};
+	imgViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+	imgViewInfo.pNext = nullptr;
+	imgViewInfo.viewType = VK_IMAGE_VIEW_TYPE_CUBE;
+	imgViewInfo.format = VK_FORMAT_B8G8R8A8_UNORM;
+	imgViewInfo.subresourceRange.baseMipLevel = 0;
+	imgViewInfo.subresourceRange.levelCount = 1;
+	imgViewInfo.subresourceRange.baseArrayLayer = 0;
+	imgViewInfo.subresourceRange.layerCount = 6;
+	imgViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+
+	_hdrCubeMap = _vkContext.create_image("HDR CubeMap", imgInfo, allocInfo, imgViewInfo);
+
+	//-Convoluted HDR Cubemap
+	imgInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+	imgInfo.pNext = nullptr;
+	imgInfo.imageType = VK_IMAGE_TYPE_2D;
+	imgInfo.format = VK_FORMAT_B8G8R8A8_UNORM;
+	imgInfo.extent = { .width = 512, .height = 512, .depth = 1 };
+	imgInfo.mipLevels = 1;
+	imgInfo.arrayLayers = 6;
+	imgInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+	imgInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+	imgInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+	imgInfo.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
+
+	allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+	allocInfo.requiredFlags = VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+	imgViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+	imgViewInfo.pNext = nullptr;
+	imgViewInfo.viewType = VK_IMAGE_VIEW_TYPE_CUBE;
+	imgViewInfo.format = VK_FORMAT_B8G8R8A8_UNORM;
+	imgViewInfo.subresourceRange.baseMipLevel = 0;
+	imgViewInfo.subresourceRange.levelCount = 1;
+	imgViewInfo.subresourceRange.baseArrayLayer = 0;
+	imgViewInfo.subresourceRange.layerCount = 6;
+	imgViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+
+	_convolutedHdrCubeMap = _vkContext.create_image("Convoluted HDR Cube Map", imgInfo, allocInfo, imgViewInfo);
+
+	//-Cubemap Sampler
+	VkSamplerCreateInfo convCubeMap_samplerCreateInfo{};
+	convCubeMap_samplerCreateInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+	convCubeMap_samplerCreateInfo.maxLod = VK_LOD_CLAMP_NONE;
+	convCubeMap_samplerCreateInfo.minLod = 0;
+	convCubeMap_samplerCreateInfo.magFilter = VK_FILTER_LINEAR;
+	convCubeMap_samplerCreateInfo.minFilter = VK_FILTER_LINEAR;
+	convCubeMap_samplerCreateInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+
+	_cubemapSampler = _vkContext.create_sampler(convCubeMap_samplerCreateInfo);
+
+	//Descriptors Set
+	VkDescriptorPool hdrCubeMap_descriptorPool; //For both sets to use
+	VkDescriptorSetLayout hdrCubeMap_descriptorSetLayout;
+	VkDescriptorSet hdrCubeMap_descriptorSets[2];
+
+	std::vector<VkDescriptorPoolSize> poolSizes = {
+		{.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = 2 },
+		{.type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, .descriptorCount = 2}
+	};
+
+	VkDescriptorPoolCreateInfo poolInfo{};
+	poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+	poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
+	poolInfo.pPoolSizes = poolSizes.data();
+	poolInfo.maxSets = 2;
+	poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
+
+	if (vkCreateDescriptorPool(_vkContext.device, &poolInfo, nullptr, &hdrCubeMap_descriptorPool) != VK_SUCCESS)
+		throw std::runtime_error("Failed to create HDR CubeMap Descriptor Pool");
+
+	std::vector<VkDescriptorSetLayoutBinding> layout_bindings = {
+		{.binding = 0, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = 1,
+		.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT, .pImmutableSamplers = nullptr },
+		{.binding = 1, .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, .descriptorCount = 1,
+		.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT, .pImmutableSamplers = nullptr },
+	};
+
+	VkDescriptorSetLayoutCreateInfo layoutInfo{};
+	layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	layoutInfo.bindingCount = static_cast<uint32_t>(layout_bindings.size());
+	layoutInfo.pBindings = layout_bindings.data();
+	layoutInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
+
+	if (vkCreateDescriptorSetLayout(_vkContext.device, &layoutInfo, nullptr, &hdrCubeMap_descriptorSetLayout) != VK_SUCCESS)
+		throw std::runtime_error("Failed to Create HDR Cubemap Descriptor Set Layout");
+
+	VkDescriptorSetAllocateInfo descriptorSetallocInfo{};
+	descriptorSetallocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	descriptorSetallocInfo.descriptorPool = hdrCubeMap_descriptorPool;
+	descriptorSetallocInfo.descriptorSetCount = 2;
+	descriptorSetallocInfo.pSetLayouts = &hdrCubeMap_descriptorSetLayout;
+
+	if (vkAllocateDescriptorSets(_vkContext.device, &descriptorSetallocInfo, hdrCubeMap_descriptorSets) != VK_SUCCESS)
+		throw std::runtime_error("Failed to allocate HDR Cubemap Descriptor Set");
+
+	//Descriptors
+	VkWriteDescriptorSet descriptorWrites[4];
+
+	VkDescriptorImageInfo imageSampleInfo{};
+	imageSampleInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	imageSampleInfo.imageView = hdrImage.imageView;
+	imageSampleInfo.sampler = hdrImage_Sampler;
+
+	VkDescriptorImageInfo targetCubemapInfo{};
+	targetCubemapInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+	targetCubemapInfo.imageView = _hdrCubeMap.imageView;
+
+	descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	descriptorWrites[0].dstSet = hdrCubeMap_descriptorSets[0];
+	descriptorWrites[0].dstBinding = 0;
+	descriptorWrites[0].dstArrayElement = 0;
+	descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	descriptorWrites[0].descriptorCount = 1;
+	descriptorWrites[0].pImageInfo = &imageSampleInfo;
+
+	descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	descriptorWrites[1].dstSet = hdrCubeMap_descriptorSets[0];
+	descriptorWrites[1].dstBinding = 0;
+	descriptorWrites[1].dstArrayElement = 0;
+	descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+	descriptorWrites[1].descriptorCount = 1;
+	descriptorWrites[1].pImageInfo = &targetCubemapInfo;
+
+	imageSampleInfo.imageView = _hdrCubeMap.imageView;
+	imageSampleInfo.sampler = _cubemapSampler;
+
+	targetCubemapInfo.imageView = _convolutedHdrCubeMap.imageView;
+
+	descriptorWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	descriptorWrites[2].dstSet = hdrCubeMap_descriptorSets[1];
+	descriptorWrites[2].dstBinding = 0;
+	descriptorWrites[2].dstArrayElement = 0;
+	descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	descriptorWrites[2].descriptorCount = 1;
+	descriptorWrites[2].pImageInfo = &imageSampleInfo;
+
+	descriptorWrites[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	descriptorWrites[3].dstSet = hdrCubeMap_descriptorSets[1];
+	descriptorWrites[3].dstBinding = 0;
+	descriptorWrites[3].dstArrayElement = 0;
+	descriptorWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+	descriptorWrites[3].descriptorCount = 1;
+	descriptorWrites[3].pImageInfo = &targetCubemapInfo;
+
+	vkUpdateDescriptorSets(_vkContext.device, 4, descriptorWrites, 0, nullptr);
+
+	//Pipeline
+	VkPipelineLayout hdrCubemap_pipelineLayout;
+	VkPipeline hdrImageSample_pipeline; //Constructs HDR Cubemap from Equirectangular Loaded Image
+	VkPipeline convCubeMap_pipeline; //Constructs Convoluted HDR Cubemap from Convoluting HDR Cubemap
+
+	VkPipelineLayoutCreateInfo pipeline_layout_info = vkutil::pipeline_layout_create_info();
+	pipeline_layout_info.setLayoutCount = 1;
+	pipeline_layout_info.pSetLayouts = &hdrCubeMap_descriptorSetLayout;
+	pipeline_layout_info.pushConstantRangeCount = 0;
+	pipeline_layout_info.pPushConstantRanges = nullptr;
+
+	VK_CHECK(vkCreatePipelineLayout(_vkContext.device, &pipeline_layout_info, nullptr, &hdrCubemap_pipelineLayout));
+
+	VkShaderModule hdrImageSampleShader;
+	if (!vkutil::load_shader_module("shaders/_", _vkContext.device, &hdrImageSampleShader))
+		throw std::runtime_error("Error trying to create HDR Image Sample Shader Module");
+	else
+		std::cout << "HDR Image Sample Shader successfully loaded" << std::endl;
+
+	VkShaderModule convCubemapShader;
+	if (!vkutil::load_shader_module("shaders/_", _vkContext.device, &convCubemapShader))
+		throw std::runtime_error("Error trying to create Convulation Cubemap Shader Module");
+	else
+		std::cout << "Convulation Cubemap Shader successfully loaded" << std::endl;
+
+	VkPipelineShaderStageCreateInfo shaderInfo{};
+	shaderInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+	shaderInfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+	shaderInfo.module = hdrImageSampleShader;
+	shaderInfo.pName = "HDR Image Sample Shader";
+
+	VkComputePipelineCreateInfo pipelineInfo{};
+	pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+	pipelineInfo.stage = shaderInfo;
+	pipelineInfo.layout = hdrCubemap_pipelineLayout;
+
+	if (vkCreateComputePipelines(_vkContext.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &hdrImageSample_pipeline) != VK_SUCCESS)
+		std::cout << "Failed to create HDR Image Sample Pipeline" << std::endl;
+
+	shaderInfo.module = convCubemapShader;
+	shaderInfo.pName = "Convolution Cubemap Shader";
+	pipelineInfo.stage = shaderInfo;
+
+	if (vkCreateComputePipelines(_vkContext.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &convCubeMap_pipeline) != VK_SUCCESS)
+		std::cout << "Failed to create Convolution Cubemap Pipeline" << std::endl;
+
+	vkDestroyShaderModule(_vkContext.device, hdrImageSampleShader, nullptr);
+	vkDestroyShaderModule(_vkContext.device, convCubemapShader, nullptr);
+
 }
 
 //Sets up the Resources needed to render a skybox

@@ -242,5 +242,6 @@ private:
 
 	//Skybox/Environment Map Functions
 	void setup_hdrMap();
+	void setup_hdrMap2();
 	void setup_skybox(); 
 };
