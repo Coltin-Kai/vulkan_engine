@@ -81,6 +81,8 @@ void VulkanContext::init(SDL_Window* window) {
 	physicalDevice = vkbPhysicalDevice.physical_device;
 	graphicsQueue = vkbDevice.get_queue(vkb::QueueType::graphics).value();
 	graphicsQueueFamily = vkbDevice.get_queue_index(vkb::QueueType::graphics).value();
+	computeQueue = vkbDevice.get_queue(vkb::QueueType::compute).value();
+	computeQueueFamily = vkbDevice.get_queue_index(vkb::QueueType::compute).value();
 
 	//Create VMA
 	VmaAllocatorCreateInfo allocatorInfo{};

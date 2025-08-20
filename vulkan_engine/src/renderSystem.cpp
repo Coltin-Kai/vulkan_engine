@@ -1887,6 +1887,88 @@ void RenderSystem::setup_hdrMap2() {
 	vkDestroyShaderModule(_vkContext.device, hdrImageSampleShader, nullptr);
 	vkDestroyShaderModule(_vkContext.device, convCubemapShader, nullptr);
 
+	//Setup Commands and Sync
+	VkCommandPool cubeMap_commandPool;
+	VkCommandBuffer cubeMap_commandBuffer;
+	VkFence cubeMap_computeFence; //Indicates that a compute has finished
+
+	VkCommandPoolCreateInfo cmdPoolInfo{};
+	cmdPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+	cmdPoolInfo.pNext = nullptr;
+	cmdPoolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+	cmdPoolInfo.queueFamilyIndex = _vkContext.computeQueueFamily;
+
+	VkFenceCreateInfo fenceCreateInfo{};
+	fenceCreateInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+	fenceCreateInfo.pNext = nullptr;
+
+	VK_CHECK(vkCreateCommandPool(_vkContext.device, &cmdPoolInfo, nullptr, &cubeMap_commandPool));
+
+	VkCommandBufferAllocateInfo cmdAllocInfo{};
+	cmdAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	cmdAllocInfo.pNext = nullptr;
+	cmdAllocInfo.commandPool = cubeMap_commandPool;
+	cmdAllocInfo.commandBufferCount = 1;
+	cmdAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+
+	VK_CHECK(vkAllocateCommandBuffers(_vkContext.device, &cmdAllocInfo, &cubeMap_commandBuffer));
+
+	VK_CHECK(vkCreateFence(_vkContext.device, &fenceCreateInfo, nullptr, &cubeMap_computeFence));
+
+	//Compute
+	VkCommandBufferBeginInfo cmdBeginInfo{};
+	cmdBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	cmdBeginInfo.pNext = nullptr;
+	cmdBeginInfo.pInheritanceInfo = nullptr;
+	uint32_t num_invocations = 16;
+
+	//-Make sure first that Cubemap resolutions are divisble by number of invocations
+	if (_hdrCubeMap.extent.width % 16 != 0 && _hdrCubeMap.extent.height % 16 != 0)
+		throw std::runtime_error("HDR Cubemap Extent is not divisble with number of Compute Shaders Invocations");
+	if (_convolutedHdrCubeMap.extent.width % 16 != 0 && _convolutedHdrCubeMap.extent.height % 16 != 0)
+		throw std::runtime_error("Convoluted HDR Cubemap Extent is not divisble with number of Compute Shaders Invocations");
+
+	VK_CHECK(vkBeginCommandBuffer(cubeMap_commandBuffer, &cmdBeginInfo));
+
+	//-HDR Equirrectangule Image Sample
+	_vkContext.transition_image(cubeMap_commandBuffer, hdrImage, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+	_vkContext.transition_image(cubeMap_commandBuffer, _hdrCubeMap, VK_IMAGE_LAYOUT_GENERAL);
+
+	vkCmdBindPipeline(cubeMap_commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, hdrImageSample_pipeline);
+	vkCmdBindDescriptorSets(cubeMap_commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, hdrCubemap_pipelineLayout, 0, 1, &hdrCubeMap_descriptorSets[0], 0, nullptr);
+
+	vkCmdDispatch(cubeMap_commandBuffer, _hdrCubeMap.extent.width / num_invocations, _hdrCubeMap.extent.height / num_invocations, 6);
+
+	//-Convolution Cubemap Sample
+	_vkContext.transition_image(cubeMap_commandBuffer, _hdrCubeMap, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+	_vkContext.transition_image(cubeMap_commandBuffer, _convolutedHdrCubeMap, VK_IMAGE_LAYOUT_GENERAL);
+
+	vkCmdBindPipeline(cubeMap_commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, convCubeMap_pipeline);
+	vkCmdBindDescriptorSets(cubeMap_commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, hdrCubemap_pipelineLayout, 0, 1, &hdrCubeMap_descriptorSets[1], 0, nullptr);
+
+	vkCmdDispatch(cubeMap_commandBuffer, _convolutedHdrCubeMap.extent.width / num_invocations, _convolutedHdrCubeMap.extent.height / num_invocations, 6);
+
+	VK_CHECK(vkEndCommandBuffer(cubeMap_commandBuffer));
+
+	//Command Submission
+	VkCommandBufferSubmitInfo cmdInfo = vkutil::command_buffer_submit_info(cubeMap_commandBuffer);
+	VkSubmitInfo2 submit = vkutil::submit_info(&cmdInfo, nullptr, nullptr);
+
+	VK_CHECK(vkQueueSubmit2(_vkContext.computeQueue, 1, &submit, cubeMap_computeFence));
+
+	//-Wait for Compute commands for both to finish
+	VK_CHECK(vkWaitForFences(_vkContext.device, 1, &cubeMap_computeFence, true, 1000000000));
+
+	//Delete Resources
+	vkDestroyFence(_vkContext.device, cubeMap_computeFence, nullptr);
+	vkDestroyCommandPool(_vkContext.device, cubeMap_commandPool, nullptr);
+	vkDestroyPipeline(_vkContext.device, convCubeMap_pipeline, nullptr);
+	vkDestroyPipeline(_vkContext.device, hdrImageSample_pipeline, nullptr);
+	vkDestroyPipelineLayout(_vkContext.device, hdrCubemap_pipelineLayout, nullptr);
+	vkDestroyDescriptorSetLayout(_vkContext.device, hdrCubeMap_descriptorSetLayout, nullptr);
+	vkDestroyDescriptorPool(_vkContext.device, hdrCubeMap_descriptorPool, nullptr);
+	_vkContext.destroy_sampler(hdrImage_Sampler);
+	_vkContext.destroy_image(hdrImage);
 }
 
 //Sets up the Resources needed to render a skybox

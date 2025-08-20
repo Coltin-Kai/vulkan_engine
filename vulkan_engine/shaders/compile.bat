@@ -6,4 +6,5 @@ C:/VulkanSDK/1.3.283.0/Bin/glslc convCubeMap.vert -o convCubeMap_vert.spv
 C:/VulkanSDK/1.3.283.0/Bin/glslc convCubeMap.frag -o convCubeMap_frag.spv
 C:/VulkanSDK/1.3.283.0/Bin/glslc skybox.vert -o skybox_vert.spv
 C:/VulkanSDK/1.3.283.0/Bin/glslc skybox.frag -o skybox_frag.spv
+C:/VulkanSDK/1.3.283.0/Bin/glslc hdrImageSample.comp -o hdrImageSample_comp.spv
 pause

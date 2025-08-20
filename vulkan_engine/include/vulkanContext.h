@@ -23,6 +23,8 @@ public:
 	VkDevice device;
 	uint32_t graphicsQueueFamily;
 	VkQueue graphicsQueue;
+	uint32_t computeQueueFamily;
+	VkQueue computeQueue;
 
 	//VMA
 	VmaAllocator allocator;
