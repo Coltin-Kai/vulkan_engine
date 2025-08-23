@@ -23,7 +23,7 @@ void RenderSystem::init(VkExtent2D windowExtent) {
 	_deviceBufferTypesCounter[DeviceBufferType::Texture] = 0;
 	_deviceBufferTypesCounter[DeviceBufferType::Light] = 0;
 
-	setup_hdrMap();
+	setup_hdrMap2();
 	setup_skybox();
 }
 
@@ -722,7 +722,7 @@ void RenderSystem::draw_skybox(VkCommandBuffer cmd, const Image& swapchainImage)
 
 	VkDescriptorImageInfo skyboxCubeMapInfo{};
 	skyboxCubeMapInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-	skyboxCubeMapInfo.imageView = _hdrCubeMap.imageView;
+	skyboxCubeMapInfo.imageView = _convolutedHdrCubeMap.imageView;
 	skyboxCubeMapInfo.sampler = _cubemapSampler;
 
 	descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -1683,7 +1683,7 @@ void RenderSystem::setup_hdrMap2() {
 	imgInfo.arrayLayers = 6;
 	imgInfo.samples = VK_SAMPLE_COUNT_1_BIT;
 	imgInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-	imgInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+	imgInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT;
 	imgInfo.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
 
 	VmaAllocationCreateInfo allocInfo{};
@@ -1713,7 +1713,7 @@ void RenderSystem::setup_hdrMap2() {
 	imgInfo.arrayLayers = 6;
 	imgInfo.samples = VK_SAMPLE_COUNT_1_BIT;
 	imgInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-	imgInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+	imgInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT;
 	imgInfo.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
 
 	allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
@@ -1745,7 +1745,8 @@ void RenderSystem::setup_hdrMap2() {
 	//Descriptors Set
 	VkDescriptorPool hdrCubeMap_descriptorPool; //For both sets to use
 	VkDescriptorSetLayout hdrCubeMap_descriptorSetLayout;
-	VkDescriptorSet hdrCubeMap_descriptorSets[2];
+	VkDescriptorSet hdrImageSample_descriptorSet;
+	VkDescriptorSet convCubeMap_descriptorSet;
 
 	std::vector<VkDescriptorPoolSize> poolSizes = {
 		{.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = 2 },
@@ -1781,60 +1782,67 @@ void RenderSystem::setup_hdrMap2() {
 	VkDescriptorSetAllocateInfo descriptorSetallocInfo{};
 	descriptorSetallocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 	descriptorSetallocInfo.descriptorPool = hdrCubeMap_descriptorPool;
-	descriptorSetallocInfo.descriptorSetCount = 2;
+	descriptorSetallocInfo.descriptorSetCount = 1;
 	descriptorSetallocInfo.pSetLayouts = &hdrCubeMap_descriptorSetLayout;
 
-	if (vkAllocateDescriptorSets(_vkContext.device, &descriptorSetallocInfo, hdrCubeMap_descriptorSets) != VK_SUCCESS)
-		throw std::runtime_error("Failed to allocate HDR Cubemap Descriptor Set");
+	if (vkAllocateDescriptorSets(_vkContext.device, &descriptorSetallocInfo, &hdrImageSample_descriptorSet) != VK_SUCCESS)
+		throw std::runtime_error("Failed to allocate HDR Image Sample Descriptor Set");
+
+	if (vkAllocateDescriptorSets(_vkContext.device, &descriptorSetallocInfo, &convCubeMap_descriptorSet) != VK_SUCCESS)
+		throw std::runtime_error("Failed to allocate Convolution CubeMap Descriptor Set");
 
 	//Descriptors
-	VkWriteDescriptorSet descriptorWrites[4];
+	VkWriteDescriptorSet descriptorWrites[4] = {};
 
-	VkDescriptorImageInfo imageSampleInfo{};
-	imageSampleInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-	imageSampleInfo.imageView = hdrImage.imageView;
-	imageSampleInfo.sampler = hdrImage_Sampler;
+	VkDescriptorImageInfo hdrImageSample_imageSampleInfo{};
+	hdrImageSample_imageSampleInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	hdrImageSample_imageSampleInfo.imageView = hdrImage.imageView;
+	hdrImageSample_imageSampleInfo.sampler = hdrImage_Sampler;
 
-	VkDescriptorImageInfo targetCubemapInfo{};
-	targetCubemapInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-	targetCubemapInfo.imageView = _hdrCubeMap.imageView;
+	VkDescriptorImageInfo hdrImageSample_targetCubemapInfo{};
+	hdrImageSample_targetCubemapInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+	hdrImageSample_targetCubemapInfo.imageView = _hdrCubeMap.imageView;
 
 	descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-	descriptorWrites[0].dstSet = hdrCubeMap_descriptorSets[0];
+	descriptorWrites[0].dstSet = hdrImageSample_descriptorSet;
 	descriptorWrites[0].dstBinding = 0;
 	descriptorWrites[0].dstArrayElement = 0;
 	descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 	descriptorWrites[0].descriptorCount = 1;
-	descriptorWrites[0].pImageInfo = &imageSampleInfo;
+	descriptorWrites[0].pImageInfo = &hdrImageSample_imageSampleInfo;
 
 	descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-	descriptorWrites[1].dstSet = hdrCubeMap_descriptorSets[0];
-	descriptorWrites[1].dstBinding = 0;
+	descriptorWrites[1].dstSet = hdrImageSample_descriptorSet;
+	descriptorWrites[1].dstBinding = 1;
 	descriptorWrites[1].dstArrayElement = 0;
 	descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
 	descriptorWrites[1].descriptorCount = 1;
-	descriptorWrites[1].pImageInfo = &targetCubemapInfo;
+	descriptorWrites[1].pImageInfo = &hdrImageSample_targetCubemapInfo;
 
-	imageSampleInfo.imageView = _hdrCubeMap.imageView;
-	imageSampleInfo.sampler = _cubemapSampler;
+	VkDescriptorImageInfo convCubeMap_imageSampleInfo{};
+	convCubeMap_imageSampleInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	convCubeMap_imageSampleInfo.imageView = _hdrCubeMap.imageView;
+	convCubeMap_imageSampleInfo.sampler = _cubemapSampler;
 
-	targetCubemapInfo.imageView = _convolutedHdrCubeMap.imageView;
+	VkDescriptorImageInfo convCubeMap_targetCubemapInfo{};
+	convCubeMap_targetCubemapInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+	convCubeMap_targetCubemapInfo.imageView = _convolutedHdrCubeMap.imageView;
 
 	descriptorWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-	descriptorWrites[2].dstSet = hdrCubeMap_descriptorSets[1];
+	descriptorWrites[2].dstSet = convCubeMap_descriptorSet;
 	descriptorWrites[2].dstBinding = 0;
 	descriptorWrites[2].dstArrayElement = 0;
 	descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 	descriptorWrites[2].descriptorCount = 1;
-	descriptorWrites[2].pImageInfo = &imageSampleInfo;
+	descriptorWrites[2].pImageInfo = &convCubeMap_imageSampleInfo;
 
 	descriptorWrites[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-	descriptorWrites[3].dstSet = hdrCubeMap_descriptorSets[1];
-	descriptorWrites[3].dstBinding = 0;
+	descriptorWrites[3].dstSet = convCubeMap_descriptorSet;
+	descriptorWrites[3].dstBinding = 1;
 	descriptorWrites[3].dstArrayElement = 0;
 	descriptorWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
 	descriptorWrites[3].descriptorCount = 1;
-	descriptorWrites[3].pImageInfo = &targetCubemapInfo;
+	descriptorWrites[3].pImageInfo = &convCubeMap_targetCubemapInfo;
 
 	vkUpdateDescriptorSets(_vkContext.device, 4, descriptorWrites, 0, nullptr);
 
@@ -1852,13 +1860,13 @@ void RenderSystem::setup_hdrMap2() {
 	VK_CHECK(vkCreatePipelineLayout(_vkContext.device, &pipeline_layout_info, nullptr, &hdrCubemap_pipelineLayout));
 
 	VkShaderModule hdrImageSampleShader;
-	if (!vkutil::load_shader_module("shaders/_", _vkContext.device, &hdrImageSampleShader))
+	if (!vkutil::load_shader_module("shaders/hdrImageSample_comp.spv", _vkContext.device, &hdrImageSampleShader))
 		throw std::runtime_error("Error trying to create HDR Image Sample Shader Module");
 	else
 		std::cout << "HDR Image Sample Shader successfully loaded" << std::endl;
 
 	VkShaderModule convCubemapShader;
-	if (!vkutil::load_shader_module("shaders/_", _vkContext.device, &convCubemapShader))
+	if (!vkutil::load_shader_module("shaders/diffuseIrradianceImage_comp.spv", _vkContext.device, &convCubemapShader))
 		throw std::runtime_error("Error trying to create Convulation Cubemap Shader Module");
 	else
 		std::cout << "Convulation Cubemap Shader successfully loaded" << std::endl;
@@ -1867,7 +1875,7 @@ void RenderSystem::setup_hdrMap2() {
 	shaderInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 	shaderInfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
 	shaderInfo.module = hdrImageSampleShader;
-	shaderInfo.pName = "HDR Image Sample Shader";
+	shaderInfo.pName = "main";
 
 	VkComputePipelineCreateInfo pipelineInfo{};
 	pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
@@ -1878,7 +1886,6 @@ void RenderSystem::setup_hdrMap2() {
 		std::cout << "Failed to create HDR Image Sample Pipeline" << std::endl;
 
 	shaderInfo.module = convCubemapShader;
-	shaderInfo.pName = "Convolution Cubemap Shader";
 	pipelineInfo.stage = shaderInfo;
 
 	if (vkCreateComputePipelines(_vkContext.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &convCubeMap_pipeline) != VK_SUCCESS)
@@ -1935,7 +1942,7 @@ void RenderSystem::setup_hdrMap2() {
 	_vkContext.transition_image(cubeMap_commandBuffer, _hdrCubeMap, VK_IMAGE_LAYOUT_GENERAL);
 
 	vkCmdBindPipeline(cubeMap_commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, hdrImageSample_pipeline);
-	vkCmdBindDescriptorSets(cubeMap_commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, hdrCubemap_pipelineLayout, 0, 1, &hdrCubeMap_descriptorSets[0], 0, nullptr);
+	vkCmdBindDescriptorSets(cubeMap_commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, hdrCubemap_pipelineLayout, 0, 1, &hdrImageSample_descriptorSet, 0, nullptr);
 
 	vkCmdDispatch(cubeMap_commandBuffer, _hdrCubeMap.extent.width / num_invocations, _hdrCubeMap.extent.height / num_invocations, 6);
 
@@ -1944,7 +1951,7 @@ void RenderSystem::setup_hdrMap2() {
 	_vkContext.transition_image(cubeMap_commandBuffer, _convolutedHdrCubeMap, VK_IMAGE_LAYOUT_GENERAL);
 
 	vkCmdBindPipeline(cubeMap_commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, convCubeMap_pipeline);
-	vkCmdBindDescriptorSets(cubeMap_commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, hdrCubemap_pipelineLayout, 0, 1, &hdrCubeMap_descriptorSets[1], 0, nullptr);
+	vkCmdBindDescriptorSets(cubeMap_commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, hdrCubemap_pipelineLayout, 0, 1, &convCubeMap_descriptorSet, 0, nullptr);
 
 	vkCmdDispatch(cubeMap_commandBuffer, _convolutedHdrCubeMap.extent.width / num_invocations, _convolutedHdrCubeMap.extent.height / num_invocations, 6);
 

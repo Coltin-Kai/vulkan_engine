@@ -232,5 +232,11 @@
     <None Include="shaders\hdrImageSample_comp.spv">
       <Filter>Resource Files\shaders\compiled_shaders</Filter>
     </None>
+    <None Include="shaders\diffuseIrradianceImage.comp">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\diffuseIrradianceImage_comp.spv">
+      <Filter>Resource Files\shaders\compiled_shaders</Filter>
+    </None>
   </ItemGroup>
 </Project>

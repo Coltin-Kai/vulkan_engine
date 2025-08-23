@@ -1,0 +1,57 @@
+#version 460
+
+layout (local_size_x = 16, local_size_y = 16) in;
+
+layout(set = 0, binding = 0) uniform samplerCube hdrCubeMap;
+layout(set = 0, binding = 1, rgba32f) writeonly uniform imageCube targetCubeMap;
+
+const float PI = 3.14159265359;
+
+void main() {
+ivec3 storePos = ivec3(gl_GlobalInvocationID.xy, gl_GlobalInvocationID.z);
+    vec2 uv = (vec2(storePos.xy) + 0.5) / vec2(imageSize(targetCubeMap).xy); // Normalized coordinates
+    uv = uv * 2.0 - 1.0; // Map to range [-1, 1]
+
+    vec3 direction;
+    switch (storePos.z) {
+        case 0: direction = normalize(vec3(1.0, -uv.y, -uv.x)); break; // +X
+        case 1: direction = normalize(vec3(-1.0, -uv.y, uv.x)); break; // -X
+        case 2: direction = normalize(vec3(uv.x, 1.0, uv.y)); break; // +Y
+        case 3: direction = normalize(vec3(uv.x, -1.0, -uv.y)); break; // -Y
+        case 4: direction = normalize(vec3(uv.x, -uv.y, 1.0)); break; // +Z
+        case 5: direction = normalize(vec3(-uv.x, -uv.y, -1.0)); break; // -Z
+        default: direction = vec3(0.0); break; // Should not happen
+    }
+
+    //Convolution
+	vec3 irradiance = vec3(0.0);
+
+	//-Construct Vectors to transform into a space oriented around the normal
+	vec3 up = vec3(0.0, 1.0, 0.0);
+	if (abs(direction.y) > 0.999)
+		up = vec3(0.0, 0.0, 1.0);
+	vec3 right = normalize(cross(up, direction));
+	up = normalize(cross(direction, right));
+
+	//-Sample a set of directions within the semi-hemisphere of the frag's normal to get a convoluted value
+	float sampleDelta = 0.025; //Determines how many samples to do and how accurate
+	float nrSamples = 0.0; //Total number of samples done
+
+	//-Iterate through direction angles (radians) of the semi-hemisphere. 
+	for (float phi = 0.0; phi < 2.0 * PI; phi += sampleDelta) {
+		for (float theta = 0.0; theta < 0.5 * PI; theta += sampleDelta) {
+			vec3 tangentSample = vec3(sin(theta) * cos(phi), sin(theta) * sin(phi), cos(theta)); //Convert direction angles into a direction vector
+			vec3 sampleVec = tangentSample.x * right + tangentSample.y * up + tangentSample.z * direction; //Transform the direction vector from tangent space to world space oriented around the normal
+
+			//Add sampled direction vector to toal irradiance
+			irradiance += texture(hdrCubeMap, sampleVec).rgb * cos(theta) * sin(theta); //Scale by cos(theta) to account for weaker radiance at larger angles. And sin(theta) to account for smaller sample areas in higher hemisphere areas
+			nrSamples++;
+		}
+	}
+
+	//-Divide by the total number of samples we used.
+	irradiance = PI * irradiance * (1.0 / float(nrSamples));
+
+	vec4 out_irradiance = vec4(irradiance, 1.0);
+	imageStore(targetCubeMap, storePos, out_irradiance);
+}
