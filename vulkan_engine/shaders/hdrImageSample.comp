@@ -8,12 +8,14 @@ layout(set = 0, binding = 1, rgba32f) writeonly uniform imageCube cubeMap;
 vec2 sampleSphericalMap(vec3 v);
 
 void main() {
-	ivec3 storePos = ivec3(gl_GlobalInvocationID.xy, gl_GlobalInvocationID.z);
-	vec2 uv = (vec2(storePos.xy) + 0.5) / vec2(imageSize(cubeMap).xy);
-	uv = uv * 2.0 - 1.0;
+	ivec3 storePos = ivec3(gl_GlobalInvocationID.xy, gl_GlobalInvocationID.z); //Pixel position of target cubemap. Z represents the layer count.
 
+    //Converts to Normalized Coordinates
+	vec2 uv = (vec2(storePos.xy) + 0.5) / vec2(imageSize(cubeMap).xy); // The 0.5 offset shifts the coords so that they map onto pixel centers instead of pixel corners. Division by image size scales the range to roughly [0.0, 1.0], but with pixel centered offset
+	uv = uv * 2.0 - 1.0; //Maps to roughly [-1, 1] range with pixel centered offset
+
+    //Get sample direction, with z/layerCount determining texture and uv.xy sampling the texture
 	vec3 direction;
-
 	switch (storePos.z) {
     case 0: direction = normalize(vec3(1.0, -uv.y, -uv.x)); break; // +X
     case 1: direction = normalize(vec3(-1.0, -uv.y, uv.x)); break; // -X
@@ -33,10 +35,15 @@ void main() {
     imageStore(cubeMap, storePos, color);
 }
 
-vec2 sampleSphericalMap(vec3 v) {
-    vec2 invAtan = vec2(0.1591, 0.3183);
+vec2 sampleSphericalMap(vec3 v) {//v represents the unit circle direction angle
+    vec2 invAtan = vec2(0.1591, 0.3183); //The first value represents the reciprocal of 2PI (aka 1/(2PI)). The second is the reciprocal of PI. (1/PI)
+
+    //Transform from Catersian Coords to Polar Angles
     vec2 uv = vec2(atan(v.z, v.x), asin(v.y));
+
+    //Maps Polar Angles to [0,1] UV Range: u = (1/2PI) * phi + 0.5 and v = (1/PI) * theta + 0.5
     uv *= invAtan;
     uv += 0.5;
+
     return uv;
 }

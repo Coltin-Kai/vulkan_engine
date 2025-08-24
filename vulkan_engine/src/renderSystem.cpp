@@ -722,7 +722,7 @@ void RenderSystem::draw_skybox(VkCommandBuffer cmd, const Image& swapchainImage)
 
 	VkDescriptorImageInfo skyboxCubeMapInfo{};
 	skyboxCubeMapInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-	skyboxCubeMapInfo.imageView = _convolutedHdrCubeMap.imageView;
+	skyboxCubeMapInfo.imageView = _hdrCubeMap.imageView;
 	skyboxCubeMapInfo.sampler = _cubemapSampler;
 
 	descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -1677,7 +1677,7 @@ void RenderSystem::setup_hdrMap2() {
 	imgInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
 	imgInfo.pNext = nullptr;
 	imgInfo.imageType = VK_IMAGE_TYPE_2D;
-	imgInfo.format = VK_FORMAT_B8G8R8A8_UNORM;
+	imgInfo.format = VK_FORMAT_R32G32B32A32_SFLOAT;
 	imgInfo.extent = { .width = 512, .height = 512, .depth = 1 };
 	imgInfo.mipLevels = 1;
 	imgInfo.arrayLayers = 6;
@@ -1694,7 +1694,7 @@ void RenderSystem::setup_hdrMap2() {
 	imgViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 	imgViewInfo.pNext = nullptr;
 	imgViewInfo.viewType = VK_IMAGE_VIEW_TYPE_CUBE;
-	imgViewInfo.format = VK_FORMAT_B8G8R8A8_UNORM;
+	imgViewInfo.format = VK_FORMAT_R32G32B32A32_SFLOAT;
 	imgViewInfo.subresourceRange.baseMipLevel = 0;
 	imgViewInfo.subresourceRange.levelCount = 1;
 	imgViewInfo.subresourceRange.baseArrayLayer = 0;
@@ -1707,7 +1707,7 @@ void RenderSystem::setup_hdrMap2() {
 	imgInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
 	imgInfo.pNext = nullptr;
 	imgInfo.imageType = VK_IMAGE_TYPE_2D;
-	imgInfo.format = VK_FORMAT_B8G8R8A8_UNORM;
+	imgInfo.format = VK_FORMAT_R32G32B32A32_SFLOAT;
 	imgInfo.extent = { .width = 512, .height = 512, .depth = 1 };
 	imgInfo.mipLevels = 1;
 	imgInfo.arrayLayers = 6;
@@ -1722,7 +1722,7 @@ void RenderSystem::setup_hdrMap2() {
 	imgViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 	imgViewInfo.pNext = nullptr;
 	imgViewInfo.viewType = VK_IMAGE_VIEW_TYPE_CUBE;
-	imgViewInfo.format = VK_FORMAT_B8G8R8A8_UNORM;
+	imgViewInfo.format = VK_FORMAT_R32G32B32A32_SFLOAT;
 	imgViewInfo.subresourceRange.baseMipLevel = 0;
 	imgViewInfo.subresourceRange.levelCount = 1;
 	imgViewInfo.subresourceRange.baseArrayLayer = 0;

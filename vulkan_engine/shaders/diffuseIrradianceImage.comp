@@ -8,9 +8,9 @@ layout(set = 0, binding = 1, rgba32f) writeonly uniform imageCube targetCubeMap;
 const float PI = 3.14159265359;
 
 void main() {
-ivec3 storePos = ivec3(gl_GlobalInvocationID.xy, gl_GlobalInvocationID.z);
-    vec2 uv = (vec2(storePos.xy) + 0.5) / vec2(imageSize(targetCubeMap).xy); // Normalized coordinates
-    uv = uv * 2.0 - 1.0; // Map to range [-1, 1]
+	ivec3 storePos = ivec3(gl_GlobalInvocationID.xy, gl_GlobalInvocationID.z);
+    vec2 uv = (vec2(storePos.xy) + 0.5) / vec2(imageSize(targetCubeMap).xy); 
+    uv = uv * 2.0 - 1.0; 
 
     vec3 direction;
     switch (storePos.z) {
