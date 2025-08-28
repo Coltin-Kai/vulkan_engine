@@ -238,5 +238,17 @@
     <None Include="shaders\diffuseIrradianceImage_comp.spv">
       <Filter>Resource Files\shaders\compiled_shaders</Filter>
     </None>
+    <None Include="shaders\specularPrefilteredMap.comp">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\specularBRDFIntegrationLUT.comp">
+      <Filter>Resource Files\shaders</Filter>
+    </None>
+    <None Include="shaders\specularBRDFIntegrationLUT_comp.spv">
+      <Filter>Resource Files\shaders\compiled_shaders</Filter>
+    </None>
+    <None Include="shaders\specularPrefilteredMap_comp.spv">
+      <Filter>Resource Files\shaders\compiled_shaders</Filter>
+    </None>
   </ItemGroup>
 </Project>

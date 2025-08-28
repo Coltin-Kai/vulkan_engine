@@ -47,7 +47,7 @@ void RenderSystem::shutdown() {
 	vkDestroyDescriptorSetLayout(_vkContext.device, _skyboxDescriptorSetLayout, nullptr);
 	vkDestroyDescriptorPool(_vkContext.device, _skyboxDescriptorPool, nullptr);
 	_vkContext.destroy_sampler(_cubemapSampler);
-	_vkContext.destroy_image(_convolutedHdrCubeMap);
+	_vkContext.destroy_image(_hdrIrradianceCubeMap);
 	_vkContext.destroy_image(_hdrCubeMap);
 
 	//Depth Image
@@ -1171,7 +1171,7 @@ void RenderSystem::setup_hdrMap() {
 	imgViewInfo.subresourceRange.layerCount = 6;
 	imgViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 
-	_convolutedHdrCubeMap = _vkContext.create_image("Convoluted HDR Cube Map", imgInfo, allocInfo, imgViewInfo);
+	_hdrIrradianceCubeMap = _vkContext.create_image("Convoluted HDR Cube Map", imgInfo, allocInfo, imgViewInfo);
 
 	//-Cubemap Sampler
 	VkSamplerCreateInfo convCubeMap_samplerCreateInfo{};
@@ -1576,7 +1576,7 @@ void RenderSystem::setup_hdrMap() {
 	VK_CHECK(vkBeginCommandBuffer(cubeMap_commandBuffer, &cmdBeginInfo));
 
 	_vkContext.transition_image(cubeMap_commandBuffer, _hdrCubeMap, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-	_vkContext.transition_image(cubeMap_commandBuffer, _convolutedHdrCubeMap, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+	_vkContext.transition_image(cubeMap_commandBuffer, _hdrIrradianceCubeMap, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 
 	for (int i = 0; i < 6; i++) {
 		//Update Uniform Data from Data in Staging Buffer
@@ -1610,7 +1610,7 @@ void RenderSystem::setup_hdrMap() {
 		_vkContext.transition_image(cubeMap_commandBuffer, cubeMap_frameBufferImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
 
 		renderToCubeMapCpy.dstSubresource.baseArrayLayer = i;
-		vkCmdCopyImage(cubeMap_commandBuffer, cubeMap_frameBufferImage.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, _convolutedHdrCubeMap.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &renderToCubeMapCpy);
+		vkCmdCopyImage(cubeMap_commandBuffer, cubeMap_frameBufferImage.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, _hdrIrradianceCubeMap.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &renderToCubeMapCpy);
 	}
 
 	VK_CHECK(vkEndCommandBuffer(cubeMap_commandBuffer));
@@ -1729,7 +1729,7 @@ void RenderSystem::setup_hdrMap2() {
 	imgViewInfo.subresourceRange.layerCount = 6;
 	imgViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 
-	_convolutedHdrCubeMap = _vkContext.create_image("Convoluted HDR Cube Map", imgInfo, allocInfo, imgViewInfo);
+	_hdrIrradianceCubeMap = _vkContext.create_image("Convoluted HDR Cube Map", imgInfo, allocInfo, imgViewInfo);
 
 	//-Cubemap Sampler
 	VkSamplerCreateInfo convCubeMap_samplerCreateInfo{};
@@ -1826,7 +1826,7 @@ void RenderSystem::setup_hdrMap2() {
 
 	VkDescriptorImageInfo convCubeMap_targetCubemapInfo{};
 	convCubeMap_targetCubemapInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-	convCubeMap_targetCubemapInfo.imageView = _convolutedHdrCubeMap.imageView;
+	convCubeMap_targetCubemapInfo.imageView = _hdrIrradianceCubeMap.imageView;
 
 	descriptorWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 	descriptorWrites[2].dstSet = convCubeMap_descriptorSet;
@@ -1932,7 +1932,7 @@ void RenderSystem::setup_hdrMap2() {
 	//-Make sure first that Cubemap resolutions are divisble by number of invocations
 	if (_hdrCubeMap.extent.width % 16 != 0 && _hdrCubeMap.extent.height % 16 != 0)
 		throw std::runtime_error("HDR Cubemap Extent is not divisble with number of Compute Shaders Invocations");
-	if (_convolutedHdrCubeMap.extent.width % 16 != 0 && _convolutedHdrCubeMap.extent.height % 16 != 0)
+	if (_hdrIrradianceCubeMap.extent.width % 16 != 0 && _hdrIrradianceCubeMap.extent.height % 16 != 0)
 		throw std::runtime_error("Convoluted HDR Cubemap Extent is not divisble with number of Compute Shaders Invocations");
 
 	VK_CHECK(vkBeginCommandBuffer(cubeMap_commandBuffer, &cmdBeginInfo));
@@ -1948,12 +1948,12 @@ void RenderSystem::setup_hdrMap2() {
 
 	//-Convolution Cubemap Sample
 	_vkContext.transition_image(cubeMap_commandBuffer, _hdrCubeMap, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-	_vkContext.transition_image(cubeMap_commandBuffer, _convolutedHdrCubeMap, VK_IMAGE_LAYOUT_GENERAL);
+	_vkContext.transition_image(cubeMap_commandBuffer, _hdrIrradianceCubeMap, VK_IMAGE_LAYOUT_GENERAL);
 
 	vkCmdBindPipeline(cubeMap_commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, convCubeMap_pipeline);
 	vkCmdBindDescriptorSets(cubeMap_commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, hdrCubemap_pipelineLayout, 0, 1, &convCubeMap_descriptorSet, 0, nullptr);
 
-	vkCmdDispatch(cubeMap_commandBuffer, _convolutedHdrCubeMap.extent.width / num_invocations, _convolutedHdrCubeMap.extent.height / num_invocations, 6);
+	vkCmdDispatch(cubeMap_commandBuffer, _hdrIrradianceCubeMap.extent.width / num_invocations, _hdrIrradianceCubeMap.extent.height / num_invocations, 6);
 
 	VK_CHECK(vkEndCommandBuffer(cubeMap_commandBuffer));
 

@@ -85,6 +85,10 @@
     <None Include="shaders\hdrImageSample_comp.spv" />
     <None Include="shaders\skybox.frag" />
     <None Include="shaders\skybox.vert" />
+    <None Include="shaders\specularBRDFIntegrationLUT.comp" />
+    <None Include="shaders\specularBRDFIntegrationLUT_comp.spv" />
+    <None Include="shaders\specularPrefilteredMap.comp" />
+    <None Include="shaders\specularPrefilteredMap_comp.spv" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>16.0</VCProjectVersion>

@@ -203,7 +203,7 @@ private:
 
 	//DEBUG - HDR Cubemap
 	AllocatedImage _hdrCubeMap;
-	AllocatedImage _convolutedHdrCubeMap;
+	AllocatedImage _hdrIrradianceCubeMap;
 	VkSampler _cubemapSampler; //For both hdr and convoluted cubemap
 	VkDescriptorPool _skyboxDescriptorPool;
 	VkDescriptorSetLayout _skyboxDescriptorSetLayout;
