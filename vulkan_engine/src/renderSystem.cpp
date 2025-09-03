@@ -47,6 +47,8 @@ void RenderSystem::shutdown() {
 	vkDestroyDescriptorSetLayout(_vkContext.device, _skyboxDescriptorSetLayout, nullptr);
 	vkDestroyDescriptorPool(_vkContext.device, _skyboxDescriptorPool, nullptr);
 	_vkContext.destroy_sampler(_cubemapSampler);
+	_vkContext.destroy_image(_hdrSpecularLUT);
+	_vkContext.destroy_image(_hdrSpecularCubeMap);
 	_vkContext.destroy_image(_hdrIrradianceCubeMap);
 	_vkContext.destroy_image(_hdrCubeMap);
 
@@ -1703,7 +1705,7 @@ void RenderSystem::setup_hdrMap2() {
 
 	_hdrCubeMap = _vkContext.create_image("HDR CubeMap", imgInfo, allocInfo, imgViewInfo);
 
-	//-Convoluted HDR Cubemap
+	//-Irradiance HDR Cubemap
 	imgInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
 	imgInfo.pNext = nullptr;
 	imgInfo.imageType = VK_IMAGE_TYPE_2D;
@@ -1729,39 +1731,118 @@ void RenderSystem::setup_hdrMap2() {
 	imgViewInfo.subresourceRange.layerCount = 6;
 	imgViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 
-	_hdrIrradianceCubeMap = _vkContext.create_image("Convoluted HDR Cube Map", imgInfo, allocInfo, imgViewInfo);
+	_hdrIrradianceCubeMap = _vkContext.create_image("Irradiance HDR Cube Map", imgInfo, allocInfo, imgViewInfo);
+
+	//-Specular HDR CubeMap
+	const uint32_t HDR_SPECULAR_CUBEMAP_MIP_LEVELS_COUNT = 5;
+	VkImageView hdrSpecularCubeMap_ImageViews[HDR_SPECULAR_CUBEMAP_MIP_LEVELS_COUNT]; //Imageviews for each Mip Level in HDR Specular Map
+
+	imgInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+	imgInfo.pNext = nullptr;
+	imgInfo.imageType = VK_IMAGE_TYPE_2D;
+	imgInfo.format = VK_FORMAT_R32G32B32A32_SFLOAT;
+	imgInfo.extent = { .width = 512, .height = 512, .depth = 1 };
+	imgInfo.mipLevels = HDR_SPECULAR_CUBEMAP_MIP_LEVELS_COUNT;
+	imgInfo.arrayLayers = 6;
+	imgInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+	imgInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+	imgInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT;
+	imgInfo.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
+
+	allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+	allocInfo.requiredFlags = VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+	imgViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+	imgViewInfo.pNext = nullptr;
+	imgViewInfo.viewType = VK_IMAGE_VIEW_TYPE_CUBE;
+	imgViewInfo.format = VK_FORMAT_R32G32B32A32_SFLOAT;
+	imgViewInfo.subresourceRange.baseMipLevel = 0;
+	imgViewInfo.subresourceRange.levelCount = HDR_SPECULAR_CUBEMAP_MIP_LEVELS_COUNT;
+	imgViewInfo.subresourceRange.baseArrayLayer = 0;
+	imgViewInfo.subresourceRange.layerCount = 6;
+	imgViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+
+	_hdrSpecularCubeMap = _vkContext.create_image("Specular HDR Cube Map", imgInfo, allocInfo, imgViewInfo);
+
+	//--Create Each Mip Level ImageView for HDR Specular Map
+	VkImageViewCreateInfo imgLevelViewInfo{};
+	imgLevelViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+	imgLevelViewInfo.viewType = VK_IMAGE_VIEW_TYPE_CUBE;
+	imgLevelViewInfo.format = VK_FORMAT_R32G32B32A32_SFLOAT;
+	imgLevelViewInfo.subresourceRange.levelCount = 1;
+	imgLevelViewInfo.subresourceRange.baseArrayLayer = 0;
+	imgLevelViewInfo.subresourceRange.layerCount = 6;
+	imgLevelViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	imgLevelViewInfo.image = _hdrSpecularCubeMap.image;
+
+	for (int i = 0; i < HDR_SPECULAR_CUBEMAP_MIP_LEVELS_COUNT; i++) {
+		imgLevelViewInfo.subresourceRange.baseMipLevel = i;
+		VK_CHECK(vkCreateImageView(_vkContext.device, &imgLevelViewInfo, nullptr, &hdrSpecularCubeMap_ImageViews[i]));
+	}
+
+	//-Specular HDR LUT
+	imgInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+	imgInfo.pNext = nullptr;
+	imgInfo.imageType = VK_IMAGE_TYPE_2D;
+	imgInfo.format = VK_FORMAT_R16G16_SFLOAT;
+	imgInfo.extent = { .width = 512, .height = 512, .depth = 1 };
+	imgInfo.mipLevels = 1;
+	imgInfo.arrayLayers = 1;
+	imgInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+	imgInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+	imgInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT;
+	imgInfo.flags = 0;
+
+	allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+	allocInfo.requiredFlags = VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+	imgViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+	imgViewInfo.pNext = nullptr;
+	imgViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+	imgViewInfo.format = VK_FORMAT_R16G16_SFLOAT;
+	imgViewInfo.subresourceRange.baseMipLevel = 0;
+	imgViewInfo.subresourceRange.levelCount = 1;
+	imgViewInfo.subresourceRange.baseArrayLayer = 0;
+	imgViewInfo.subresourceRange.layerCount = 1;
+	imgViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+
+	_hdrSpecularLUT = _vkContext.create_image("Specular HDR LUT", imgInfo, allocInfo, imgViewInfo);
 
 	//-Cubemap Sampler
-	VkSamplerCreateInfo convCubeMap_samplerCreateInfo{};
-	convCubeMap_samplerCreateInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-	convCubeMap_samplerCreateInfo.maxLod = VK_LOD_CLAMP_NONE;
-	convCubeMap_samplerCreateInfo.minLod = 0;
-	convCubeMap_samplerCreateInfo.magFilter = VK_FILTER_LINEAR;
-	convCubeMap_samplerCreateInfo.minFilter = VK_FILTER_LINEAR;
-	convCubeMap_samplerCreateInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+	VkSamplerCreateInfo irradianceCubeMap_samplerCreateInfo{};
+	irradianceCubeMap_samplerCreateInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+	irradianceCubeMap_samplerCreateInfo.maxLod = VK_LOD_CLAMP_NONE;
+	irradianceCubeMap_samplerCreateInfo.minLod = 0;
+	irradianceCubeMap_samplerCreateInfo.magFilter = VK_FILTER_LINEAR;
+	irradianceCubeMap_samplerCreateInfo.minFilter = VK_FILTER_LINEAR;
+	irradianceCubeMap_samplerCreateInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
 
-	_cubemapSampler = _vkContext.create_sampler(convCubeMap_samplerCreateInfo);
+	_cubemapSampler = _vkContext.create_sampler(irradianceCubeMap_samplerCreateInfo);
 
 	//Descriptors Set
-	VkDescriptorPool hdrCubeMap_descriptorPool; //For both sets to use
-	VkDescriptorSetLayout hdrCubeMap_descriptorSetLayout;
+	VkDescriptorPool hdrCubeMap_descriptorPool; //For all sets to use
+	VkDescriptorSetLayout hdrCubeMap_descriptorSetLayout; //Used by HDR Image Sampling and Irradiance Cube Map generating descriptor set
 	VkDescriptorSet hdrImageSample_descriptorSet;
-	VkDescriptorSet convCubeMap_descriptorSet;
+	VkDescriptorSet irradianceCubeMap_descriptorSet;
+	VkDescriptorSetLayout specularCubeMap_descriptorSetLayout; //Used by Specular Cube Map generationg descriptor set
+	VkDescriptorSet	specularCubeMap_descriptorSet;
+	VkDescriptorSetLayout LUT_descriptorSetLayout; //Used by LUT Descriptor set
+	VkDescriptorSet specularLUT_descriptorSet;
 
 	std::vector<VkDescriptorPoolSize> poolSizes = {
-		{.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = 2 },
-		{.type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, .descriptorCount = 2}
+		{.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = 3 },
+		{.type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, .descriptorCount = 3 + HDR_SPECULAR_CUBEMAP_MIP_LEVELS_COUNT}
 	};
 
 	VkDescriptorPoolCreateInfo poolInfo{};
 	poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
 	poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
 	poolInfo.pPoolSizes = poolSizes.data();
-	poolInfo.maxSets = 2;
+	poolInfo.maxSets = 4;
 	poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
 
 	if (vkCreateDescriptorPool(_vkContext.device, &poolInfo, nullptr, &hdrCubeMap_descriptorPool) != VK_SUCCESS)
-		throw std::runtime_error("Failed to create HDR CubeMap Descriptor Pool");
+		throw std::runtime_error("Failed to create HDR Resources Descriptor Pool");
 
 	std::vector<VkDescriptorSetLayoutBinding> layout_bindings = {
 		{.binding = 0, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = 1,
@@ -1779,6 +1860,40 @@ void RenderSystem::setup_hdrMap2() {
 	if (vkCreateDescriptorSetLayout(_vkContext.device, &layoutInfo, nullptr, &hdrCubeMap_descriptorSetLayout) != VK_SUCCESS)
 		throw std::runtime_error("Failed to Create HDR Cubemap Descriptor Set Layout");
 
+	std::vector<VkDescriptorSetLayoutBinding> layout_bindings2 = {
+		{.binding = 0, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = 1,
+		.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT, .pImmutableSamplers = nullptr },
+		{.binding = 1, .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, .descriptorCount = HDR_SPECULAR_CUBEMAP_MIP_LEVELS_COUNT,
+		.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT, .pImmutableSamplers = nullptr },
+	};
+
+	std::vector<VkDescriptorBindingFlags> layout_bindings2_flags = {
+		0, VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT
+	};
+
+	VkDescriptorSetLayoutBindingFlagsCreateInfo layout_bindings2_flag_info{};
+	layout_bindings2_flag_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
+	layout_bindings2_flag_info.bindingCount = layout_bindings2_flags.size();
+	layout_bindings2_flag_info.pBindingFlags = layout_bindings2_flags.data();
+
+	layoutInfo.pNext = &layout_bindings2_flag_info;
+	layoutInfo.bindingCount = static_cast<uint32_t>(layout_bindings2.size());
+	layoutInfo.pBindings = layout_bindings2.data();
+
+	if (vkCreateDescriptorSetLayout(_vkContext.device, &layoutInfo, nullptr, &specularCubeMap_descriptorSetLayout) != VK_SUCCESS)
+		throw std::runtime_error("Failed to Create HDR Specular Cube Map Descriptor Set Layout");
+
+	std::vector<VkDescriptorSetLayoutBinding> layout_bindings3 = {
+		{.binding = 0, .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, .descriptorCount = 1, .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT, .pImmutableSamplers = nullptr}
+	};
+
+	layoutInfo.pNext = nullptr;
+	layoutInfo.bindingCount = static_cast<uint32_t>(layout_bindings3.size());
+	layoutInfo.pBindings = layout_bindings3.data();
+
+	if (vkCreateDescriptorSetLayout(_vkContext.device, &layoutInfo, nullptr, &LUT_descriptorSetLayout) != VK_SUCCESS)
+		throw std::runtime_error("Failed to Create HDR Specular LUT Descriptor Set Layout");
+
 	VkDescriptorSetAllocateInfo descriptorSetallocInfo{};
 	descriptorSetallocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 	descriptorSetallocInfo.descriptorPool = hdrCubeMap_descriptorPool;
@@ -1788,11 +1903,21 @@ void RenderSystem::setup_hdrMap2() {
 	if (vkAllocateDescriptorSets(_vkContext.device, &descriptorSetallocInfo, &hdrImageSample_descriptorSet) != VK_SUCCESS)
 		throw std::runtime_error("Failed to allocate HDR Image Sample Descriptor Set");
 
-	if (vkAllocateDescriptorSets(_vkContext.device, &descriptorSetallocInfo, &convCubeMap_descriptorSet) != VK_SUCCESS)
-		throw std::runtime_error("Failed to allocate Convolution CubeMap Descriptor Set");
+	if (vkAllocateDescriptorSets(_vkContext.device, &descriptorSetallocInfo, &irradianceCubeMap_descriptorSet) != VK_SUCCESS)
+		throw std::runtime_error("Failed to allocate HDR Irradiance CubeMap Descriptor Set");
+
+	descriptorSetallocInfo.pSetLayouts = &specularCubeMap_descriptorSetLayout;
+
+	if (vkAllocateDescriptorSets(_vkContext.device, &descriptorSetallocInfo, &specularCubeMap_descriptorSet) != VK_SUCCESS)
+		throw std::runtime_error("Failed to allocate HDR Specular CubeMap Descriptor Set");
+
+	descriptorSetallocInfo.pSetLayouts = &LUT_descriptorSetLayout;
+
+	if (vkAllocateDescriptorSets(_vkContext.device, &descriptorSetallocInfo, &specularLUT_descriptorSet) != VK_SUCCESS)
+		throw std::runtime_error("Failed to allocate HDR Specular LUT Descriptor Set");
 
 	//Descriptors
-	VkWriteDescriptorSet descriptorWrites[4] = {};
+	VkWriteDescriptorSet descriptorWrites[7] = {};
 
 	VkDescriptorImageInfo hdrImageSample_imageSampleInfo{};
 	hdrImageSample_imageSampleInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -1819,37 +1944,76 @@ void RenderSystem::setup_hdrMap2() {
 	descriptorWrites[1].descriptorCount = 1;
 	descriptorWrites[1].pImageInfo = &hdrImageSample_targetCubemapInfo;
 
-	VkDescriptorImageInfo convCubeMap_imageSampleInfo{};
-	convCubeMap_imageSampleInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-	convCubeMap_imageSampleInfo.imageView = _hdrCubeMap.imageView;
-	convCubeMap_imageSampleInfo.sampler = _cubemapSampler;
+	VkDescriptorImageInfo irradianceCubeMap_imageSampleInfo{};
+	irradianceCubeMap_imageSampleInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	irradianceCubeMap_imageSampleInfo.imageView = _hdrCubeMap.imageView;
+	irradianceCubeMap_imageSampleInfo.sampler = _cubemapSampler;
 
-	VkDescriptorImageInfo convCubeMap_targetCubemapInfo{};
-	convCubeMap_targetCubemapInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-	convCubeMap_targetCubemapInfo.imageView = _hdrIrradianceCubeMap.imageView;
+	VkDescriptorImageInfo irradianceCubeMap_targetCubemapInfo{};
+	irradianceCubeMap_targetCubemapInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+	irradianceCubeMap_targetCubemapInfo.imageView = _hdrIrradianceCubeMap.imageView;
 
 	descriptorWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-	descriptorWrites[2].dstSet = convCubeMap_descriptorSet;
+	descriptorWrites[2].dstSet = irradianceCubeMap_descriptorSet;
 	descriptorWrites[2].dstBinding = 0;
 	descriptorWrites[2].dstArrayElement = 0;
 	descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 	descriptorWrites[2].descriptorCount = 1;
-	descriptorWrites[2].pImageInfo = &convCubeMap_imageSampleInfo;
+	descriptorWrites[2].pImageInfo = &irradianceCubeMap_imageSampleInfo;
 
 	descriptorWrites[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-	descriptorWrites[3].dstSet = convCubeMap_descriptorSet;
+	descriptorWrites[3].dstSet = irradianceCubeMap_descriptorSet;
 	descriptorWrites[3].dstBinding = 1;
 	descriptorWrites[3].dstArrayElement = 0;
 	descriptorWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
 	descriptorWrites[3].descriptorCount = 1;
-	descriptorWrites[3].pImageInfo = &convCubeMap_targetCubemapInfo;
+	descriptorWrites[3].pImageInfo = &irradianceCubeMap_targetCubemapInfo;
 
-	vkUpdateDescriptorSets(_vkContext.device, 4, descriptorWrites, 0, nullptr);
+	VkDescriptorImageInfo specularCubeMap_imageSampleInfo{};
+	specularCubeMap_imageSampleInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	specularCubeMap_imageSampleInfo.imageView = _hdrCubeMap.imageView;
+	specularCubeMap_imageSampleInfo.sampler = _cubemapSampler;
+
+	VkDescriptorImageInfo specularCubeMap_targetCubemapInfos[HDR_SPECULAR_CUBEMAP_MIP_LEVELS_COUNT]; //!!!NOTE NEED TO DRASTICALLY CHANGE specularPrefilteredMap shader to target and evaluate the correct values for multiple imageviews
+	for (int i = 0; i < HDR_SPECULAR_CUBEMAP_MIP_LEVELS_COUNT; i++) {
+		specularCubeMap_targetCubemapInfos[i].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+		specularCubeMap_targetCubemapInfos[i].imageView = hdrSpecularCubeMap_ImageViews[i];
+	}
+
+	descriptorWrites[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	descriptorWrites[4].dstSet = specularCubeMap_descriptorSet;
+	descriptorWrites[4].dstBinding = 0;
+	descriptorWrites[4].dstArrayElement = 0;
+	descriptorWrites[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	descriptorWrites[4].descriptorCount = 1;
+	descriptorWrites[4].pImageInfo = &specularCubeMap_imageSampleInfo;
+
+	descriptorWrites[5].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	descriptorWrites[5].dstSet = specularCubeMap_descriptorSet;
+	descriptorWrites[5].dstBinding = 1;
+	descriptorWrites[5].dstArrayElement = 0;
+	descriptorWrites[5].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+	descriptorWrites[5].descriptorCount = HDR_SPECULAR_CUBEMAP_MIP_LEVELS_COUNT;
+	descriptorWrites[5].pImageInfo = specularCubeMap_targetCubemapInfos;
+
+	VkDescriptorImageInfo specularLUT_targetImageInfo{};
+	specularLUT_targetImageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+	specularLUT_targetImageInfo.imageView = _hdrSpecularLUT.imageView;
+
+	descriptorWrites[6].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	descriptorWrites[6].dstSet = specularLUT_descriptorSet;
+	descriptorWrites[6].dstBinding = 0;
+	descriptorWrites[6].dstArrayElement = 0;
+	descriptorWrites[6].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+	descriptorWrites[6].descriptorCount = 1;
+	descriptorWrites[6].pImageInfo = &specularLUT_targetImageInfo;
+
+	vkUpdateDescriptorSets(_vkContext.device, 7, descriptorWrites, 0, nullptr);
 
 	//Pipeline
 	VkPipelineLayout hdrCubemap_pipelineLayout;
 	VkPipeline hdrImageSample_pipeline; //Constructs HDR Cubemap from Equirectangular Loaded Image
-	VkPipeline convCubeMap_pipeline; //Constructs Convoluted HDR Cubemap from Convoluting HDR Cubemap
+	VkPipeline irradianceCubeMap_pipeline; //Constructs Convoluted HDR Cubemap from Convoluting HDR Cubemap
 
 	VkPipelineLayoutCreateInfo pipeline_layout_info = vkutil::pipeline_layout_create_info();
 	pipeline_layout_info.setLayoutCount = 1;
@@ -1865,11 +2029,11 @@ void RenderSystem::setup_hdrMap2() {
 	else
 		std::cout << "HDR Image Sample Shader successfully loaded" << std::endl;
 
-	VkShaderModule convCubemapShader;
-	if (!vkutil::load_shader_module("shaders/diffuseIrradianceImage_comp.spv", _vkContext.device, &convCubemapShader))
-		throw std::runtime_error("Error trying to create Convulation Cubemap Shader Module");
+	VkShaderModule irradianceCubemapShader;
+	if (!vkutil::load_shader_module("shaders/diffuseIrradianceImage_comp.spv", _vkContext.device, &irradianceCubemapShader))
+		throw std::runtime_error("Error trying to create Irradiance Cubemap Shader Module");
 	else
-		std::cout << "Convulation Cubemap Shader successfully loaded" << std::endl;
+		std::cout << "Irradiance Cubemap Shader successfully loaded" << std::endl;
 
 	VkPipelineShaderStageCreateInfo shaderInfo{};
 	shaderInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -1885,14 +2049,14 @@ void RenderSystem::setup_hdrMap2() {
 	if (vkCreateComputePipelines(_vkContext.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &hdrImageSample_pipeline) != VK_SUCCESS)
 		std::cout << "Failed to create HDR Image Sample Pipeline" << std::endl;
 
-	shaderInfo.module = convCubemapShader;
+	shaderInfo.module = irradianceCubemapShader;
 	pipelineInfo.stage = shaderInfo;
 
-	if (vkCreateComputePipelines(_vkContext.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &convCubeMap_pipeline) != VK_SUCCESS)
+	if (vkCreateComputePipelines(_vkContext.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &irradianceCubeMap_pipeline) != VK_SUCCESS)
 		std::cout << "Failed to create Convolution Cubemap Pipeline" << std::endl;
 
 	vkDestroyShaderModule(_vkContext.device, hdrImageSampleShader, nullptr);
-	vkDestroyShaderModule(_vkContext.device, convCubemapShader, nullptr);
+	vkDestroyShaderModule(_vkContext.device, irradianceCubemapShader, nullptr);
 
 	//Setup Commands and Sync
 	VkCommandPool cubeMap_commandPool;
@@ -1933,7 +2097,7 @@ void RenderSystem::setup_hdrMap2() {
 	if (_hdrCubeMap.extent.width % 16 != 0 && _hdrCubeMap.extent.height % 16 != 0)
 		throw std::runtime_error("HDR Cubemap Extent is not divisble with number of Compute Shaders Invocations");
 	if (_hdrIrradianceCubeMap.extent.width % 16 != 0 && _hdrIrradianceCubeMap.extent.height % 16 != 0)
-		throw std::runtime_error("Convoluted HDR Cubemap Extent is not divisble with number of Compute Shaders Invocations");
+		throw std::runtime_error("HDR Irradiance Cubemap Extent is not divisble with number of Compute Shaders Invocations");
 
 	VK_CHECK(vkBeginCommandBuffer(cubeMap_commandBuffer, &cmdBeginInfo));
 
@@ -1950,8 +2114,8 @@ void RenderSystem::setup_hdrMap2() {
 	_vkContext.transition_image(cubeMap_commandBuffer, _hdrCubeMap, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 	_vkContext.transition_image(cubeMap_commandBuffer, _hdrIrradianceCubeMap, VK_IMAGE_LAYOUT_GENERAL);
 
-	vkCmdBindPipeline(cubeMap_commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, convCubeMap_pipeline);
-	vkCmdBindDescriptorSets(cubeMap_commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, hdrCubemap_pipelineLayout, 0, 1, &convCubeMap_descriptorSet, 0, nullptr);
+	vkCmdBindPipeline(cubeMap_commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, irradianceCubeMap_pipeline);
+	vkCmdBindDescriptorSets(cubeMap_commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, hdrCubemap_pipelineLayout, 0, 1, &irradianceCubeMap_descriptorSet, 0, nullptr);
 
 	vkCmdDispatch(cubeMap_commandBuffer, _hdrIrradianceCubeMap.extent.width / num_invocations, _hdrIrradianceCubeMap.extent.height / num_invocations, 6);
 
@@ -1969,11 +2133,18 @@ void RenderSystem::setup_hdrMap2() {
 	//Delete Resources
 	vkDestroyFence(_vkContext.device, cubeMap_computeFence, nullptr);
 	vkDestroyCommandPool(_vkContext.device, cubeMap_commandPool, nullptr);
-	vkDestroyPipeline(_vkContext.device, convCubeMap_pipeline, nullptr);
+	vkDestroyPipeline(_vkContext.device, irradianceCubeMap_pipeline, nullptr);
 	vkDestroyPipeline(_vkContext.device, hdrImageSample_pipeline, nullptr);
 	vkDestroyPipelineLayout(_vkContext.device, hdrCubemap_pipelineLayout, nullptr);
+	vkDestroyDescriptorSetLayout(_vkContext.device, LUT_descriptorSetLayout, nullptr);
+	vkDestroyDescriptorSetLayout(_vkContext.device, specularCubeMap_descriptorSetLayout, nullptr);
 	vkDestroyDescriptorSetLayout(_vkContext.device, hdrCubeMap_descriptorSetLayout, nullptr);
 	vkDestroyDescriptorPool(_vkContext.device, hdrCubeMap_descriptorPool, nullptr);
+
+	for (VkImageView& imgView : hdrSpecularCubeMap_ImageViews) {
+		vkDestroyImageView(_vkContext.device, imgView, nullptr);
+	}
+
 	_vkContext.destroy_sampler(hdrImage_Sampler);
 	_vkContext.destroy_image(hdrImage);
 }

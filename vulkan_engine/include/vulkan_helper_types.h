@@ -4,6 +4,8 @@
 #include "vk_mem_alloc.h"
 #include <unordered_set>
 
+//Note: Might change so that Image View is different than Image. So that it can allow multiple different imageviews for a single image for example
+
 struct Image { 
 	VkImage image;
 	VkImageView imageView;
