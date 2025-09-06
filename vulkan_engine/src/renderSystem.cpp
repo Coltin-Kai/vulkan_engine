@@ -2089,20 +2089,19 @@ void RenderSystem::setup_hdrMap2() {
 	if (vkCreateComputePipelines(_vkContext.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &hdrImageSample_pipeline) != VK_SUCCESS)
 		std::cout << "Failed to create HDR Image Sample Pipeline" << std::endl;
 
-	shaderInfo.module = irradianceCubemapShader;
-	pipelineInfo.stage = shaderInfo;
+	pipelineInfo.stage.module = irradianceCubemapShader;
 
 	if (vkCreateComputePipelines(_vkContext.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &irradianceCubeMap_pipeline) != VK_SUCCESS)
 		std::cout << "Failed to create Irradiance Cubemap Cubemap Pipeline" << std::endl;
 
-	shaderInfo.module = specularCubemapShader;
-	pipelineInfo.stage = shaderInfo;
+	pipelineInfo.stage.module = specularCubemapShader;
+	pipelineInfo.layout = specularCubeMap_pipelineLayout;
 
 	if (vkCreateComputePipelines(_vkContext.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &specularCubeMap_pipeline) != VK_SUCCESS)
 		std::cout << "Failed to create Specular Cubemap Pipeline" << std::endl;
 
-	shaderInfo.module = specularLUTShader;
-	pipelineInfo.stage = shaderInfo;
+	pipelineInfo.stage.module = specularLUTShader;
+	pipelineInfo.layout = specularLUT_pipelineLayout;
 
 	if (vkCreateComputePipelines(_vkContext.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &specularLUT_pipeline) != VK_SUCCESS)
 		std::cout << "Failed to create Specular LUT Pipeline" << std::endl;
