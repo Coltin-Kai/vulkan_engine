@@ -7,7 +7,7 @@
 
 constexpr uint32_t MAX_POINTLIGHT_COUNT = 100;
 
-namespace CubeMapShader {
+namespace SkyboxShader {
 	struct ViewTransformMatrices {
 		glm::mat4 view;
 		glm::mat4 proj;
@@ -80,5 +80,14 @@ namespace RenderShader { //Default Shader
 		VkDeviceAddress materialsBufferAddress;
 		VkDeviceAddress texturesBufferAddress;
 		VkDeviceAddress lightsBufferAddress;
+	};
+}
+
+namespace SpecularCubemapShader {
+	struct PushConstants {
+		float roughness;
+		uint32_t width;
+		uint32_t height;
+		uint32_t mipLevel;
 	};
 }

@@ -290,7 +290,7 @@ void RenderSystem::setup_drawContexts(const GraphicsDataPayload& payload) {
 	size_t alloc_materials_size = sizeof(RenderShader::Material) * renderData.materials.size();
 	size_t alloc_textures_size = sizeof(RenderShader::Texture) * renderData.textures.size();
 	size_t alloc_lights_size = sizeof(RenderShader::Lights);
-	size_t alloc_skyboxViewprojMatrix_size = sizeof(CubeMapShader::ViewTransformMatrices);
+	size_t alloc_skyboxViewprojMatrix_size = sizeof(SkyboxShader::ViewTransformMatrices);
 
 	int i = 1;
 	for (Frame& frame : _frames) {
@@ -331,7 +331,7 @@ void RenderSystem::setup_drawContexts(const GraphicsDataPayload& payload) {
 		currentDrawContext.lightsBufferAddress = vkGetBufferDeviceAddress(_vkContext.device, &address_info);
 		
 		//Uniform Buffers - Skybox
-		currentDrawContext.skybox_viewprojMatrixBuffer = _vkContext.create_buffer(std::format("Skybox View and Projection Matrix Buffer {}", i).c_str(), sizeof(CubeMapShader::ViewTransformMatrices), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, allocFlags);
+		currentDrawContext.skybox_viewprojMatrixBuffer = _vkContext.create_buffer(std::format("Skybox View and Projection Matrix Buffer {}", i).c_str(), sizeof(SkyboxShader::ViewTransformMatrices), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, allocFlags);
 
 		//Copy Data to the Buffers
 		_vkContext.update_buffer(currentDrawContext.indirectDrawCommandsBuffer, renderData.indirect_commands.data(), alloc_indirect_size, renderData.indirect_copy_info);
@@ -351,13 +351,13 @@ void RenderSystem::setup_drawContexts(const GraphicsDataPayload& payload) {
 		_vkContext.update_buffer(currentDrawContext.lightsBuffer, (void*)&lights, alloc_lights_size, renderData.light_copy_info);
 		i++;
 
-		CubeMapShader::ViewTransformMatrices skybox_viewproj;
+		SkyboxShader::ViewTransformMatrices skybox_viewproj;
 		skybox_viewproj.view = glm::mat4(glm::mat3(renderData.viewproj.view)); //Remove Translation Transform
 		skybox_viewproj.proj = renderData.viewproj.proj;
 		VkBufferCopy skyboxViewProj_copy_info{};
 		skyboxViewProj_copy_info.srcOffset = 0;
 		skyboxViewProj_copy_info.dstOffset = 0;
-		skyboxViewProj_copy_info.size = sizeof(CubeMapShader::ViewTransformMatrices);
+		skyboxViewProj_copy_info.size = sizeof(SkyboxShader::ViewTransformMatrices);
 		_vkContext.update_buffer(currentDrawContext.skybox_viewprojMatrixBuffer, (void*)&skybox_viewproj, alloc_skyboxViewprojMatrix_size, skyboxViewProj_copy_info);
 	}
 }
@@ -452,16 +452,16 @@ void RenderSystem::updateSignaledDeviceBuffers(const GraphicsDataPayload& payloa
 		_vkContext.update_buffer(get_current_frame().drawContext.viewprojMatrixBuffer, &_stagingUpdateData.viewproj, viewSize, _stagingUpdateData.viewprojMatrix_copy_info);
 
 		//Skybox Buffer
-		CubeMapShader::ViewTransformMatrices skybox_viewprojMatrix;
+		SkyboxShader::ViewTransformMatrices skybox_viewprojMatrix;
 		skybox_viewprojMatrix.view = glm::mat4(glm::mat3(_stagingUpdateData.viewproj.view));
 		skybox_viewprojMatrix.proj = _stagingUpdateData.viewproj.proj;
 
 		VkBufferCopy skyboxViewProj_copy_info{};
 		skyboxViewProj_copy_info.srcOffset = 0;
 		skyboxViewProj_copy_info.dstOffset = 0;
-		skyboxViewProj_copy_info.size = sizeof(CubeMapShader::ViewTransformMatrices);
+		skyboxViewProj_copy_info.size = sizeof(SkyboxShader::ViewTransformMatrices);
 
-		_vkContext.update_buffer(get_current_frame().drawContext.skybox_viewprojMatrixBuffer, &skybox_viewprojMatrix, sizeof(CubeMapShader::ViewTransformMatrices), skyboxViewProj_copy_info);
+		_vkContext.update_buffer(get_current_frame().drawContext.skybox_viewprojMatrixBuffer, &skybox_viewprojMatrix, sizeof(SkyboxShader::ViewTransformMatrices), skyboxViewProj_copy_info);
 
 		_deviceBufferTypesCounter[DeviceBufferType::ViewProj]--;
 	}
@@ -545,7 +545,7 @@ void RenderSystem::init_graphicsPipeline() {
 	VkPushConstantRange range{};
 	range.stageFlags = VK_SHADER_STAGE_ALL_GRAPHICS;
 	range.offset = 0;
-	range.size = 56; //REMEMBER TO CHANGE THIS WHEN ADDING MORE BUFFERS/PUSH CONSTANTS
+	range.size = sizeof(RenderShader::PushConstants);
 
 	VkPipelineLayoutCreateInfo pipeline_layout_info = vkutil::pipeline_layout_create_info();
 	pipeline_layout_info.setLayoutCount = 1;
@@ -1374,7 +1374,7 @@ void RenderSystem::setup_hdrMap() {
 
 	glm::mat4 proj = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 10.0f);
 
-	CubeMapShader::ViewTransformMatrices transMatrices[6] = { //Specialized lookat matrices for equirrectangler map orientation
+	SkyboxShader::ViewTransformMatrices transMatrices[6] = { //Specialized lookat matrices for equirrectangler map orientation
 		{ .view = glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(1.0f,  0.0f,  0.0f), glm::vec3(0.0f, 1.0f,  0.0f)), .proj = proj },
 		{ .view = glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(-1.0f,  0.0f,  0.0f), glm::vec3(0.0f, 1.0f,  0.0f)), .proj = proj },
 		{ .view = glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f,  0.0f), glm::vec3(-1.0f,  0.0f, 0.0f)), .proj = proj },
@@ -1386,15 +1386,15 @@ void RenderSystem::setup_hdrMap() {
 	VmaAllocationCreateFlags allocFlags = VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT;
 	cubeMap_vertexBuffer = _vkContext.create_buffer("CubeMap Vertex Buffer", unitCube_vertices.size() * sizeof(glm::vec3), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, allocFlags);
 	cubeMap_indexBuffer = _vkContext.create_buffer("CubeMap Index Buffer", unitCube_indices.size() * sizeof(uint32_t), VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, allocFlags);
-	cubeMap_uniformBuffer = _vkContext.create_buffer("CubeMap Uniform Buffer", sizeof(CubeMapShader::ViewTransformMatrices), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, allocFlags);
-	cubeMap_uniformStagingBuffer = _vkContext.create_buffer("CubeMap Uniform Staging Buffer", sizeof(CubeMapShader::ViewTransformMatrices) * 6, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_HOST, VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT);
+	cubeMap_uniformBuffer = _vkContext.create_buffer("CubeMap Uniform Buffer", sizeof(SkyboxShader::ViewTransformMatrices), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, allocFlags);
+	cubeMap_uniformStagingBuffer = _vkContext.create_buffer("CubeMap Uniform Staging Buffer", sizeof(SkyboxShader::ViewTransformMatrices) * 6, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_HOST, VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT);
 	cubeMap_frameBufferImage = _vkContext.create_image("CubeMap Frame Buffer Image", { .width = 512, .height = 512, .depth = 1 }, VK_FORMAT_B8G8R8A8_UNORM, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, false);
 
 	VkBufferCopy bufferCpy = { .srcOffset = 0, .dstOffset = 0, .size = unitCube_vertices.size() * sizeof(glm::vec3) };
 	_vkContext.update_buffer(cubeMap_vertexBuffer, unitCube_vertices.data(), unitCube_vertices.size() * sizeof(glm::vec3), bufferCpy);
 	bufferCpy.size = unitCube_indices.size() * sizeof(uint32_t);
 	_vkContext.update_buffer(cubeMap_indexBuffer, unitCube_indices.data(), unitCube_indices.size() * sizeof(uint32_t), bufferCpy);
-	bufferCpy.size = sizeof(CubeMapShader::ViewTransformMatrices) * 6;
+	bufferCpy.size = sizeof(SkyboxShader::ViewTransformMatrices) * 6;
 	_vkContext.update_buffer(cubeMap_uniformStagingBuffer, transMatrices, bufferCpy.size, bufferCpy);
 
 	//Create Descriptors
@@ -1434,7 +1434,7 @@ void RenderSystem::setup_hdrMap() {
 	vkUpdateDescriptorSets(_vkContext.device, descriptorWrites.size(), descriptorWrites.data(), 0, nullptr);
 
 	//Set up Resource for Copying Data
-	VkBufferCopy uniformBufferCpy = { .srcOffset = 0, .dstOffset = 0, .size = sizeof(CubeMapShader::ViewTransformMatrices) }; //For Copying Uniform Data from Staging Buffer to Uniform Buffer
+	VkBufferCopy uniformBufferCpy = { .srcOffset = 0, .dstOffset = 0, .size = sizeof(SkyboxShader::ViewTransformMatrices) }; //For Copying Uniform Data from Staging Buffer to Uniform Buffer
 
 	VkImageCopy renderToCubeMapCpy{}; //For Copying Frame Image Data to CubeMap Image
 	renderToCubeMapCpy.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -1509,7 +1509,7 @@ void RenderSystem::setup_hdrMap() {
 	//Render Each Side of the Cubemap and Upload Data to HDR Cubemap
 	for (int i = 0; i < 6; i++) {
 		//Update Uniform Data from Data in Staging Buffer
-		uniformBufferCpy.srcOffset = sizeof(CubeMapShader::ViewTransformMatrices) * i;
+		uniformBufferCpy.srcOffset = sizeof(SkyboxShader::ViewTransformMatrices) * i;
 		vkCmdCopyBuffer(cubeMap_commandBuffer, cubeMap_uniformStagingBuffer.buffer, cubeMap_uniformBuffer.buffer, 1, &uniformBufferCpy);
 
 		_vkContext.transition_image(cubeMap_commandBuffer, cubeMap_frameBufferImage, VK_IMAGE_LAYOUT_GENERAL);
@@ -1582,7 +1582,7 @@ void RenderSystem::setup_hdrMap() {
 
 	for (int i = 0; i < 6; i++) {
 		//Update Uniform Data from Data in Staging Buffer
-		uniformBufferCpy.srcOffset = sizeof(CubeMapShader::ViewTransformMatrices) * i;
+		uniformBufferCpy.srcOffset = sizeof(SkyboxShader::ViewTransformMatrices) * i;
 		vkCmdCopyBuffer(cubeMap_commandBuffer, cubeMap_uniformStagingBuffer.buffer, cubeMap_uniformBuffer.buffer, 1, &uniformBufferCpy);
 
 		_vkContext.transition_image(cubeMap_commandBuffer, cubeMap_frameBufferImage, VK_IMAGE_LAYOUT_GENERAL);
@@ -1826,7 +1826,7 @@ void RenderSystem::setup_hdrMap2() {
 	VkDescriptorSet irradianceCubeMap_descriptorSet;
 	VkDescriptorSetLayout specularCubeMap_descriptorSetLayout; //Used by Specular Cube Map generationg descriptor set
 	VkDescriptorSet	specularCubeMap_descriptorSet;
-	VkDescriptorSetLayout LUT_descriptorSetLayout; //Used by LUT Descriptor set
+	VkDescriptorSetLayout specularLUT_descriptorSetLayout; //Used by LUT Descriptor set
 	VkDescriptorSet specularLUT_descriptorSet;
 
 	std::vector<VkDescriptorPoolSize> poolSizes = {
@@ -1891,7 +1891,7 @@ void RenderSystem::setup_hdrMap2() {
 	layoutInfo.bindingCount = static_cast<uint32_t>(layout_bindings3.size());
 	layoutInfo.pBindings = layout_bindings3.data();
 
-	if (vkCreateDescriptorSetLayout(_vkContext.device, &layoutInfo, nullptr, &LUT_descriptorSetLayout) != VK_SUCCESS)
+	if (vkCreateDescriptorSetLayout(_vkContext.device, &layoutInfo, nullptr, &specularLUT_descriptorSetLayout) != VK_SUCCESS)
 		throw std::runtime_error("Failed to Create HDR Specular LUT Descriptor Set Layout");
 
 	VkDescriptorSetAllocateInfo descriptorSetallocInfo{};
@@ -1906,12 +1906,19 @@ void RenderSystem::setup_hdrMap2() {
 	if (vkAllocateDescriptorSets(_vkContext.device, &descriptorSetallocInfo, &irradianceCubeMap_descriptorSet) != VK_SUCCESS)
 		throw std::runtime_error("Failed to allocate HDR Irradiance CubeMap Descriptor Set");
 
+	VkDescriptorSetVariableDescriptorCountAllocateInfo varDescriptorCountInfo{};
+	varDescriptorCountInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO;
+	varDescriptorCountInfo.descriptorSetCount = 1;
+	varDescriptorCountInfo.pDescriptorCounts = &HDR_SPECULAR_CUBEMAP_MIP_LEVELS_COUNT;
+
+	descriptorSetallocInfo.pNext = &varDescriptorCountInfo;
 	descriptorSetallocInfo.pSetLayouts = &specularCubeMap_descriptorSetLayout;
 
 	if (vkAllocateDescriptorSets(_vkContext.device, &descriptorSetallocInfo, &specularCubeMap_descriptorSet) != VK_SUCCESS)
 		throw std::runtime_error("Failed to allocate HDR Specular CubeMap Descriptor Set");
-
-	descriptorSetallocInfo.pSetLayouts = &LUT_descriptorSetLayout;
+	
+	descriptorSetallocInfo.pNext = nullptr;
+	descriptorSetallocInfo.pSetLayouts = &specularLUT_descriptorSetLayout;
 
 	if (vkAllocateDescriptorSets(_vkContext.device, &descriptorSetallocInfo, &specularLUT_descriptorSet) != VK_SUCCESS)
 		throw std::runtime_error("Failed to allocate HDR Specular LUT Descriptor Set");
@@ -2014,6 +2021,10 @@ void RenderSystem::setup_hdrMap2() {
 	VkPipelineLayout hdrCubemap_pipelineLayout;
 	VkPipeline hdrImageSample_pipeline; //Constructs HDR Cubemap from Equirectangular Loaded Image
 	VkPipeline irradianceCubeMap_pipeline; //Constructs Convoluted HDR Cubemap from Convoluting HDR Cubemap
+	VkPipelineLayout specularCubeMap_pipelineLayout;
+	VkPipeline specularCubeMap_pipeline;
+	VkPipelineLayout specularLUT_pipelineLayout;
+	VkPipeline specularLUT_pipeline;
 
 	VkPipelineLayoutCreateInfo pipeline_layout_info = vkutil::pipeline_layout_create_info();
 	pipeline_layout_info.setLayoutCount = 1;
@@ -2022,6 +2033,23 @@ void RenderSystem::setup_hdrMap2() {
 	pipeline_layout_info.pPushConstantRanges = nullptr;
 
 	VK_CHECK(vkCreatePipelineLayout(_vkContext.device, &pipeline_layout_info, nullptr, &hdrCubemap_pipelineLayout));
+
+	VkPushConstantRange specularCubeMap_PCRange{};
+	specularCubeMap_PCRange.offset = 0;
+	specularCubeMap_PCRange.size = sizeof(SpecularCubemapShader::PushConstants);
+	specularCubeMap_PCRange.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+	pipeline_layout_info.pSetLayouts = &specularCubeMap_descriptorSetLayout;
+	pipeline_layout_info.pushConstantRangeCount = 1;
+	pipeline_layout_info.pPushConstantRanges = &specularCubeMap_PCRange;
+
+	VK_CHECK(vkCreatePipelineLayout(_vkContext.device, &pipeline_layout_info, nullptr, &specularCubeMap_pipelineLayout));
+
+	pipeline_layout_info.pSetLayouts = &specularLUT_descriptorSetLayout;
+	pipeline_layout_info.pushConstantRangeCount = 0;
+	pipeline_layout_info.pPushConstantRanges = nullptr;
+
+	VK_CHECK(vkCreatePipelineLayout(_vkContext.device, &pipeline_layout_info, nullptr, &specularLUT_pipelineLayout));
 
 	VkShaderModule hdrImageSampleShader;
 	if (!vkutil::load_shader_module("shaders/hdrImageSample_comp.spv", _vkContext.device, &hdrImageSampleShader))
@@ -2034,6 +2062,18 @@ void RenderSystem::setup_hdrMap2() {
 		throw std::runtime_error("Error trying to create Irradiance Cubemap Shader Module");
 	else
 		std::cout << "Irradiance Cubemap Shader successfully loaded" << std::endl;
+
+	VkShaderModule specularCubemapShader;
+	if (!vkutil::load_shader_module("shaders/specularPrefilteredMap_comp.spv", _vkContext.device, &specularCubemapShader))
+		throw std::runtime_error("Error trying to create Specular Cubemap Shader Module");
+	else
+		std::cout << "Specular Cubemap Shader successfully loaded" << std::endl;
+
+	VkShaderModule specularLUTShader;
+	if (!vkutil::load_shader_module("shaders/specularBRDFIntegrationLUT_comp.spv", _vkContext.device, &specularLUTShader))
+		throw std::runtime_error("Error trying to create Specular LUT Shader Module");
+	else
+		std::cout << "Specular LUT Shader successfully loaded" << std::endl;
 
 	VkPipelineShaderStageCreateInfo shaderInfo{};
 	shaderInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -2053,14 +2093,28 @@ void RenderSystem::setup_hdrMap2() {
 	pipelineInfo.stage = shaderInfo;
 
 	if (vkCreateComputePipelines(_vkContext.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &irradianceCubeMap_pipeline) != VK_SUCCESS)
-		std::cout << "Failed to create Convolution Cubemap Pipeline" << std::endl;
+		std::cout << "Failed to create Irradiance Cubemap Cubemap Pipeline" << std::endl;
+
+	shaderInfo.module = specularCubemapShader;
+	pipelineInfo.stage = shaderInfo;
+
+	if (vkCreateComputePipelines(_vkContext.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &specularCubeMap_pipeline) != VK_SUCCESS)
+		std::cout << "Failed to create Specular Cubemap Pipeline" << std::endl;
+
+	shaderInfo.module = specularLUTShader;
+	pipelineInfo.stage = shaderInfo;
+
+	if (vkCreateComputePipelines(_vkContext.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &specularLUT_pipeline) != VK_SUCCESS)
+		std::cout << "Failed to create Specular LUT Pipeline" << std::endl;
 
 	vkDestroyShaderModule(_vkContext.device, hdrImageSampleShader, nullptr);
 	vkDestroyShaderModule(_vkContext.device, irradianceCubemapShader, nullptr);
+	vkDestroyShaderModule(_vkContext.device, specularCubemapShader, nullptr);
+	vkDestroyShaderModule(_vkContext.device, specularLUTShader, nullptr);
 
 	//Setup Commands and Sync
-	VkCommandPool cubeMap_commandPool;
-	VkCommandBuffer cubeMap_commandBuffer;
+	VkCommandPool hdr_commandPool;
+	VkCommandBuffer hdr_commandBuffer;
 	VkFence cubeMap_computeFence; //Indicates that a compute has finished
 
 	VkCommandPoolCreateInfo cmdPoolInfo{};
@@ -2073,16 +2127,16 @@ void RenderSystem::setup_hdrMap2() {
 	fenceCreateInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
 	fenceCreateInfo.pNext = nullptr;
 
-	VK_CHECK(vkCreateCommandPool(_vkContext.device, &cmdPoolInfo, nullptr, &cubeMap_commandPool));
+	VK_CHECK(vkCreateCommandPool(_vkContext.device, &cmdPoolInfo, nullptr, &hdr_commandPool));
 
 	VkCommandBufferAllocateInfo cmdAllocInfo{};
 	cmdAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
 	cmdAllocInfo.pNext = nullptr;
-	cmdAllocInfo.commandPool = cubeMap_commandPool;
+	cmdAllocInfo.commandPool = hdr_commandPool;
 	cmdAllocInfo.commandBufferCount = 1;
 	cmdAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
 
-	VK_CHECK(vkAllocateCommandBuffers(_vkContext.device, &cmdAllocInfo, &cubeMap_commandBuffer));
+	VK_CHECK(vkAllocateCommandBuffers(_vkContext.device, &cmdAllocInfo, &hdr_commandBuffer));
 
 	VK_CHECK(vkCreateFence(_vkContext.device, &fenceCreateInfo, nullptr, &cubeMap_computeFence));
 
@@ -2091,38 +2145,66 @@ void RenderSystem::setup_hdrMap2() {
 	cmdBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 	cmdBeginInfo.pNext = nullptr;
 	cmdBeginInfo.pInheritanceInfo = nullptr;
-	uint32_t num_invocations = 16;
 
 	//-Make sure first that Cubemap resolutions are divisble by number of invocations
 	if (_hdrCubeMap.extent.width % 16 != 0 && _hdrCubeMap.extent.height % 16 != 0)
 		throw std::runtime_error("HDR Cubemap Extent is not divisble with number of Compute Shaders Invocations");
 	if (_hdrIrradianceCubeMap.extent.width % 16 != 0 && _hdrIrradianceCubeMap.extent.height % 16 != 0)
 		throw std::runtime_error("HDR Irradiance Cubemap Extent is not divisble with number of Compute Shaders Invocations");
+	if (_hdrSpecularCubeMap.extent.width % 8 != 0 && _hdrSpecularCubeMap.extent.height % 8 != 0)
+		throw std::runtime_error("HDR Specular Cubemap Extent is not divisble with number of Compute Shaders Invocations");
+	if (_hdrSpecularLUT.extent.width % 8 != 0 && _hdrSpecularLUT.extent.height % 8 != 0)
+		throw std::runtime_error("HDR Specular LUT Extent is not divisble with number of Compute Shaders Invocations");
 
-	VK_CHECK(vkBeginCommandBuffer(cubeMap_commandBuffer, &cmdBeginInfo));
+	VK_CHECK(vkBeginCommandBuffer(hdr_commandBuffer, &cmdBeginInfo));
 
 	//-HDR Equirrectangule Image Sample
-	_vkContext.transition_image(cubeMap_commandBuffer, hdrImage, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-	_vkContext.transition_image(cubeMap_commandBuffer, _hdrCubeMap, VK_IMAGE_LAYOUT_GENERAL);
+	_vkContext.transition_image(hdr_commandBuffer, hdrImage, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+	_vkContext.transition_image(hdr_commandBuffer, _hdrCubeMap, VK_IMAGE_LAYOUT_GENERAL);
+	_vkContext.transition_image(hdr_commandBuffer, _hdrIrradianceCubeMap, VK_IMAGE_LAYOUT_GENERAL);
+	_vkContext.transition_image(hdr_commandBuffer, _hdrSpecularCubeMap, VK_IMAGE_LAYOUT_GENERAL);
+	_vkContext.transition_image(hdr_commandBuffer, _hdrSpecularLUT, VK_IMAGE_LAYOUT_GENERAL);
 
-	vkCmdBindPipeline(cubeMap_commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, hdrImageSample_pipeline);
-	vkCmdBindDescriptorSets(cubeMap_commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, hdrCubemap_pipelineLayout, 0, 1, &hdrImageSample_descriptorSet, 0, nullptr);
+	vkCmdBindPipeline(hdr_commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, hdrImageSample_pipeline);
+	vkCmdBindDescriptorSets(hdr_commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, hdrCubemap_pipelineLayout, 0, 1, &hdrImageSample_descriptorSet, 0, nullptr);
 
-	vkCmdDispatch(cubeMap_commandBuffer, _hdrCubeMap.extent.width / num_invocations, _hdrCubeMap.extent.height / num_invocations, 6);
+	vkCmdDispatch(hdr_commandBuffer, _hdrCubeMap.extent.width / 16, _hdrCubeMap.extent.height / 16, 6);
 
-	//-Convolution Cubemap Sample
-	_vkContext.transition_image(cubeMap_commandBuffer, _hdrCubeMap, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-	_vkContext.transition_image(cubeMap_commandBuffer, _hdrIrradianceCubeMap, VK_IMAGE_LAYOUT_GENERAL);
+	//-Irradiace Cubemap
+	_vkContext.transition_image(hdr_commandBuffer, _hdrCubeMap, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
-	vkCmdBindPipeline(cubeMap_commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, irradianceCubeMap_pipeline);
-	vkCmdBindDescriptorSets(cubeMap_commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, hdrCubemap_pipelineLayout, 0, 1, &irradianceCubeMap_descriptorSet, 0, nullptr);
+	vkCmdBindPipeline(hdr_commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, irradianceCubeMap_pipeline);
+	vkCmdBindDescriptorSets(hdr_commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, hdrCubemap_pipelineLayout, 0, 1, &irradianceCubeMap_descriptorSet, 0, nullptr);
 
-	vkCmdDispatch(cubeMap_commandBuffer, _hdrIrradianceCubeMap.extent.width / num_invocations, _hdrIrradianceCubeMap.extent.height / num_invocations, 6);
+	vkCmdDispatch(hdr_commandBuffer, _hdrIrradianceCubeMap.extent.width / 16, _hdrIrradianceCubeMap.extent.height / 16, 6);
 
-	VK_CHECK(vkEndCommandBuffer(cubeMap_commandBuffer));
+	//-Specular Cubemap
+	vkCmdBindPipeline(hdr_commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, specularCubeMap_pipeline);
+	vkCmdBindDescriptorSets(hdr_commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, specularCubeMap_pipelineLayout, 0, 1, &specularCubeMap_descriptorSet, 0, nullptr);
+
+	SpecularCubemapShader::PushConstants specularCubemap_PC;
+
+	for (int mip = 0; mip < HDR_SPECULAR_CUBEMAP_MIP_LEVELS_COUNT; mip++) {
+		uint32_t mipWidth = _hdrSpecularCubeMap.extent.width * std::pow(0.5, mip);
+		uint32_t mipHeight = _hdrSpecularCubeMap.extent.height * std::pow(0.5, mip);
+
+		specularCubemap_PC.mipLevel = mip;
+		specularCubemap_PC.width = mipWidth;
+		specularCubemap_PC.height = mipHeight;
+		specularCubemap_PC.roughness = (float)mip / (float)(HDR_SPECULAR_CUBEMAP_MIP_LEVELS_COUNT - 1);
+		vkCmdPushConstants(hdr_commandBuffer, specularCubeMap_pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(SpecularCubemapShader::PushConstants), &specularCubemap_PC);
+		vkCmdDispatch(hdr_commandBuffer, mipWidth / 8, mipHeight / 8, 6);
+	}
+
+	vkCmdBindPipeline(hdr_commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, specularLUT_pipeline);
+	vkCmdBindDescriptorSets(hdr_commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, specularLUT_pipelineLayout, 0, 1, &specularLUT_descriptorSet, 0, nullptr);
+	
+	vkCmdDispatch(hdr_commandBuffer, _hdrSpecularLUT.extent.width / 8, _hdrSpecularLUT.extent.height / 8, 1);
+
+	VK_CHECK(vkEndCommandBuffer(hdr_commandBuffer));
 
 	//Command Submission
-	VkCommandBufferSubmitInfo cmdInfo = vkutil::command_buffer_submit_info(cubeMap_commandBuffer);
+	VkCommandBufferSubmitInfo cmdInfo = vkutil::command_buffer_submit_info(hdr_commandBuffer);
 	VkSubmitInfo2 submit = vkutil::submit_info(&cmdInfo, nullptr, nullptr);
 
 	VK_CHECK(vkQueueSubmit2(_vkContext.computeQueue, 1, &submit, cubeMap_computeFence));
@@ -2132,11 +2214,15 @@ void RenderSystem::setup_hdrMap2() {
 
 	//Delete Resources
 	vkDestroyFence(_vkContext.device, cubeMap_computeFence, nullptr);
-	vkDestroyCommandPool(_vkContext.device, cubeMap_commandPool, nullptr);
+	vkDestroyCommandPool(_vkContext.device, hdr_commandPool, nullptr);
+	vkDestroyPipeline(_vkContext.device, specularLUT_pipeline, nullptr);
+	vkDestroyPipeline(_vkContext.device, specularCubeMap_pipeline, nullptr);
 	vkDestroyPipeline(_vkContext.device, irradianceCubeMap_pipeline, nullptr);
 	vkDestroyPipeline(_vkContext.device, hdrImageSample_pipeline, nullptr);
+	vkDestroyPipelineLayout(_vkContext.device, specularLUT_pipelineLayout, nullptr);
+	vkDestroyPipelineLayout(_vkContext.device, specularCubeMap_pipelineLayout, nullptr);
 	vkDestroyPipelineLayout(_vkContext.device, hdrCubemap_pipelineLayout, nullptr);
-	vkDestroyDescriptorSetLayout(_vkContext.device, LUT_descriptorSetLayout, nullptr);
+	vkDestroyDescriptorSetLayout(_vkContext.device, specularLUT_descriptorSetLayout, nullptr);
 	vkDestroyDescriptorSetLayout(_vkContext.device, specularCubeMap_descriptorSetLayout, nullptr);
 	vkDestroyDescriptorSetLayout(_vkContext.device, hdrCubeMap_descriptorSetLayout, nullptr);
 	vkDestroyDescriptorPool(_vkContext.device, hdrCubeMap_descriptorPool, nullptr);

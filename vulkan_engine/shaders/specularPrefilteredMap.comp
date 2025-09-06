@@ -1,15 +1,16 @@
 #version 460
+#extension GL_EXT_nonuniform_qualifier : require
 
 layout (local_size_x = 8, local_size_y = 8) in;
 
 layout(set = 0, binding = 0) uniform samplerCube hdrCubeMap;
-layout(set = 0, binding = 1, rgba32f) writeonly uniform imageCube targetCubeMap;
+layout(set = 0, binding = 1, rgba32f) writeonly uniform imageCube targetCubeMaps[];
 
 layout(push_constant) uniform PushConstants {
     float roughness;
     uint width;
     uint height;
-    uint sampleCount;
+    uint mipLevel; //Specifies which miplevel of specularCubmap to target
 };
 
 const float PI = 3.14159265359;
@@ -24,7 +25,7 @@ void main() {
 		return;
 	}
 
-    vec2 uv = (vec2(storePos.xy) + 0.5) / vec2(imageSize(targetCubeMap).xy); 
+    vec2 uv = (vec2(storePos.xy) + 0.5) / vec2(imageSize(targetCubeMaps[mipLevel]).xy); 
     uv = uv * 2.0 - 1.0; 
 
     vec3 direction;
@@ -60,7 +61,7 @@ void main() {
 
     prefilteredColor = prefilteredColor / totalWeight;
     vec4 color = vec4(prefilteredColor, 1.0);
-    imageStore(targetCubeMap, storePos, color);
+    imageStore(targetCubeMaps[mipLevel], storePos, color);
 }
 
 float RadicalInverse_VdC(uint bits) {
