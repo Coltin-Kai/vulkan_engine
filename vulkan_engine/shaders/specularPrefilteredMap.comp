@@ -54,7 +54,8 @@ void main() {
 
         float NdotL = max(dot(normal, L), 0.0);
         if (NdotL > 0.0) {
-            prefilteredColor += texture(hdrCubeMap, L).rgb * NdotL;
+            vec4 sampledValue = clamp(texture(hdrCubeMap, L), 0.0, 100.0); //Clamp just in case HDR Value is really bright
+            prefilteredColor += sampledValue.rgb * NdotL;
             totalWeight += NdotL;
         }
     }

@@ -2195,6 +2195,7 @@ void RenderSystem::setup_hdrMap2() {
 		vkCmdDispatch(hdr_commandBuffer, mipWidth / 8, mipHeight / 8, 6);
 	}
 
+	//Specular LUT
 	vkCmdBindPipeline(hdr_commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, specularLUT_pipeline);
 	vkCmdBindDescriptorSets(hdr_commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, specularLUT_pipelineLayout, 0, 1, &specularLUT_descriptorSet, 0, nullptr);
 	
