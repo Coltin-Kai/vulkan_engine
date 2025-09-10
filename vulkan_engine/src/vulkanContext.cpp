@@ -359,6 +359,88 @@ void VulkanContext::transition_image(VkCommandBuffer cmd, Image& image, VkImageL
 	image.layout = targetLayout;
 }
 
+//Generate levelCount - 1 mipmaps for the Image
+void VulkanContext::generate_mipmaps(AllocatedImage& image, uint32_t levelCount) {
+	//Check if Image Format supports Linear Blittering
+	VkFormatProperties formatProperties;
+	vkGetPhysicalDeviceFormatProperties(this->physicalDevice, image.format, &formatProperties);
+
+	VkFormatFeatureFlagBits flags = (VkFormatFeatureFlagBits) (VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT | VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT);
+	if ((formatProperties.optimalTilingFeatures & flags) != flags) {
+		throw std::runtime_error(std::format("Vulkan Context: Image {} has a format that does not support all the Format Properties needed for Generating Mipmaps with Blittering, do something else", image.info.pName));
+		//Need another method to generate mipmaps instead of using blittering
+	}
+	else {
+		//Blit
+		VkCommandBuffer cmd = start_immediate_recording();
+		transition_image(cmd, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+
+		//-Define Manual Image Layout Transition Resources for Each Mip Level Layout Transition
+		VkImageMemoryBarrier2 imageBarrier{};
+		imageBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+		imageBarrier.pNext = nullptr;
+		imageBarrier.srcStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+		imageBarrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+		imageBarrier.dstStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+		imageBarrier.dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
+		imageBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+		imageBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+		imageBarrier.image = image.image;
+		imageBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT; //Might want to give an option to specify if color or depth aspect is needed, or just have Image struct track the aspect or some way to check if uses depth format
+		imageBarrier.subresourceRange.baseArrayLayer = 0;
+		imageBarrier.subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
+		imageBarrier.subresourceRange.levelCount = 1;
+
+		VkDependencyInfo depInfo{};
+		depInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+		depInfo.imageMemoryBarrierCount = 1;
+		depInfo.pImageMemoryBarriers = &imageBarrier;
+
+		//-Width and Height of initial/previous Mip Image
+		int32_t mipWidth = image.extent.width;
+		int32_t mipHeight = image.extent.height;
+
+		for (uint32_t i = 1; i < levelCount; i++) {
+			//Manually Layout Transition the first/prev mip level to Transfer SRC
+			imageBarrier.subresourceRange.baseMipLevel = i - 1; 
+			vkCmdPipelineBarrier2(cmd, &depInfo);
+
+			//Define Blit Info
+			VkImageBlit blit{};
+			blit.srcOffsets[0] = { 0, 0, 0 };
+			blit.srcOffsets[1] = { mipWidth, mipHeight, 1 };
+			blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			blit.srcSubresource.mipLevel = i - 1;
+			blit.srcSubresource.baseArrayLayer = 0;
+			blit.srcSubresource.layerCount = VK_REMAINING_ARRAY_LAYERS;
+			blit.dstOffsets[0] = { 0, 0, 0 };
+			blit.dstOffsets[1] = { mipWidth > 1 ? mipWidth / 2 : 1, mipHeight > 1 ? mipHeight / 2 : 1, 1 };
+			blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			blit.dstSubresource.mipLevel = i;
+			blit.dstSubresource.baseArrayLayer = 0;
+			blit.dstSubresource.layerCount = VK_REMAINING_ARRAY_LAYERS;
+
+			//Blit Mip Images
+			vkCmdBlitImage(cmd, image.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
+
+			//Setup mip Width and Height for next iteration
+			if (mipWidth > 1)
+				mipWidth /= 2;
+			if (mipHeight > 1)
+				mipHeight /= 2;
+		}
+
+		//Transition last Mip Image Layout to have the image layout be fully Transfer SRC
+		imageBarrier.subresourceRange.baseMipLevel = levelCount - 1;
+		vkCmdPipelineBarrier2(cmd, &depInfo);
+
+		//After Transitioning all the subresource layouts to Transfer SRC, correct the Image Structure's info to specify that the image layout is now fully Transfer SRC (It's jank)
+		image.layout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+
+		submit_immediate_commands();
+	}
+}
+
 VkSampler VulkanContext::create_sampler(VkSamplerCreateInfo& samplerCreateInfo) {
 	VkSampler sampler;
 	vkCreateSampler(device, &samplerCreateInfo, nullptr, &sampler);

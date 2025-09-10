@@ -11,7 +11,7 @@ struct Image {
 	VkImageView imageView;
 	VkExtent3D extent;
 	VkFormat format;
-	VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED;
+	VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED; //Note this only defines the whole layout of the entire image. ANy attempt to transition layout of subresources within the image can make this this symbol inaccurate as subresources would have conflicting layouts
 };
 
 //Image that is allocated with VMA

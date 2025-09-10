@@ -57,6 +57,8 @@ public:
 
 	void transition_image(VkCommandBuffer cmd, Image& image, VkImageLayout targetLayout);
 
+	void generate_mipmaps(AllocatedImage& image, uint32_t levelCount);
+
 	//Sampler
 	VkSampler create_sampler(VkSamplerCreateInfo& samplerCreateInfo);
 	void destroy_sampler(const VkSampler& sampler);
