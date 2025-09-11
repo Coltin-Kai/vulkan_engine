@@ -96,7 +96,7 @@ void GUISystem::init_imgui(SDL_Window* window, const VkFormat& swapChainFormat) 
 	init_info.Instance = _vkContext.instance;
 	init_info.PhysicalDevice = _vkContext.physicalDevice;
 	init_info.Device = _vkContext.device;
-	init_info.Queue = _vkContext.graphicsQueue;
+	init_info.Queue = _vkContext.primaryQueue;
 	init_info.DescriptorPool = _imguiDescriptorPool;
 	init_info.MinImageCount = 3;
 	init_info.ImageCount = 3;

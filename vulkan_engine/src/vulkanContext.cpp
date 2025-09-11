@@ -79,10 +79,31 @@ void VulkanContext::init(SDL_Window* window) {
 
 	device = vkbDevice.device;
 	physicalDevice = vkbPhysicalDevice.physical_device;
-	graphicsQueue = vkbDevice.get_queue(vkb::QueueType::graphics).value();
-	graphicsQueueFamily = vkbDevice.get_queue_index(vkb::QueueType::graphics).value();
-	computeQueue = vkbDevice.get_queue(vkb::QueueType::compute).value();
-	computeQueueFamily = vkbDevice.get_queue_index(vkb::QueueType::compute).value();
+	primaryQueue = vkbDevice.get_queue(vkb::QueueType::graphics).value();
+	primaryQueueFamily = vkbDevice.get_queue_index(vkb::QueueType::graphics).value();
+
+	size_t i = 0;
+	for (auto queueFamily : vkbDevice.queue_families) {
+		std::cout << std::format("-- Queue Family {} --", i) << std::endl;
+		std::cout << std::format("\t Number of Queues: {}", queueFamily.queueCount) << std::endl;
+		if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT)
+			std::cout << std::format("\t Supports Graphics Commands.") << std::endl;
+		if (queueFamily.queueFlags & VK_QUEUE_COMPUTE_BIT)
+			std::cout << std::format("\t Supports Compute Commands.") << std::endl;
+		if (queueFamily.queueFlags & VK_QUEUE_TRANSFER_BIT)
+			std::cout << std::format("\t Supports Transfer Commands.") << std::endl;
+		if (queueFamily.queueFlags & VK_QUEUE_SPARSE_BINDING_BIT)
+			std::cout << std::format("\t Supports Sparse Memory Management Operations.") << std::endl;
+		if (queueFamily.queueFlags & VK_QUEUE_PROTECTED_BIT)
+			std::cout << std::format("\t Can Access Protected Memory.") << std::endl;
+		if (queueFamily.queueFlags & VK_QUEUE_VIDEO_DECODE_BIT_KHR)
+			std::cout << std::format("\t Supports Video Decoding Operations.") << std::endl;
+		if (queueFamily.queueFlags & VK_QUEUE_VIDEO_ENCODE_BIT_KHR)
+			std::cout << std::format("\t Supports Video Encoding Operations.") << std::endl;
+		if (queueFamily.queueFlags & VK_QUEUE_OPTICAL_FLOW_BIT_NV)
+			std::cout << std::format("\t Supports Optical Flow Operations.") << std::endl;
+		i++;
+	}
 
 	//Create VMA
 	VmaAllocatorCreateInfo allocatorInfo{};
@@ -97,7 +118,7 @@ void VulkanContext::init(SDL_Window* window) {
 	cmdPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
 	cmdPoolInfo.pNext = nullptr;
 	cmdPoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-	cmdPoolInfo.queueFamilyIndex = graphicsQueueFamily;
+	cmdPoolInfo.queueFamilyIndex = primaryQueueFamily;
 
 	VK_CHECK(vkCreateCommandPool(device, &cmdPoolInfo, nullptr, &immCommandPool));
 
@@ -151,7 +172,7 @@ void VulkanContext::submit_immediate_commands() {
 	VkCommandBufferSubmitInfo cmdInfo = vkutil::command_buffer_submit_info(immCommandBuffer);
 	VkSubmitInfo2 submit = vkutil::submit_info(&cmdInfo, nullptr, nullptr);
 
-	VK_CHECK(vkQueueSubmit2(graphicsQueue, 1, &submit, immFence));
+	VK_CHECK(vkQueueSubmit2(primaryQueue, 1, &submit, immFence));
 
 	VK_CHECK(vkWaitForFences(device, 1, &immFence, true, 9999999999));
 }
@@ -359,8 +380,8 @@ void VulkanContext::transition_image(VkCommandBuffer cmd, Image& image, VkImageL
 	image.layout = targetLayout;
 }
 
-//Generate levelCount - 1 mipmaps for the Image
-void VulkanContext::generate_mipmaps(AllocatedImage& image, uint32_t levelCount) {
+//Generate levelCount - 1 mipmaps for the Image.
+void VulkanContext::generate_mipmaps(VkCommandBuffer cmd, AllocatedImage& image, uint32_t levelCount, uint32_t layerCount) { 
 	//Check if Image Format supports Linear Blittering
 	VkFormatProperties formatProperties;
 	vkGetPhysicalDeviceFormatProperties(this->physicalDevice, image.format, &formatProperties);
@@ -369,10 +390,10 @@ void VulkanContext::generate_mipmaps(AllocatedImage& image, uint32_t levelCount)
 	if ((formatProperties.optimalTilingFeatures & flags) != flags) {
 		throw std::runtime_error(std::format("Vulkan Context: Image {} has a format that does not support all the Format Properties needed for Generating Mipmaps with Blittering, do something else", image.info.pName));
 		//Need another method to generate mipmaps instead of using blittering
+		//Probably use Compute Shader to generate
 	}
 	else {
 		//Blit
-		VkCommandBuffer cmd = start_immediate_recording();
 		transition_image(cmd, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 
 		//-Define Manual Image Layout Transition Resources for Each Mip Level Layout Transition
@@ -388,7 +409,7 @@ void VulkanContext::generate_mipmaps(AllocatedImage& image, uint32_t levelCount)
 		imageBarrier.image = image.image;
 		imageBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT; //Might want to give an option to specify if color or depth aspect is needed, or just have Image struct track the aspect or some way to check if uses depth format
 		imageBarrier.subresourceRange.baseArrayLayer = 0;
-		imageBarrier.subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
+		imageBarrier.subresourceRange.layerCount = layerCount;
 		imageBarrier.subresourceRange.levelCount = 1;
 
 		VkDependencyInfo depInfo{};
@@ -412,13 +433,13 @@ void VulkanContext::generate_mipmaps(AllocatedImage& image, uint32_t levelCount)
 			blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 			blit.srcSubresource.mipLevel = i - 1;
 			blit.srcSubresource.baseArrayLayer = 0;
-			blit.srcSubresource.layerCount = VK_REMAINING_ARRAY_LAYERS;
+			blit.srcSubresource.layerCount = layerCount;
 			blit.dstOffsets[0] = { 0, 0, 0 };
 			blit.dstOffsets[1] = { mipWidth > 1 ? mipWidth / 2 : 1, mipHeight > 1 ? mipHeight / 2 : 1, 1 };
 			blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 			blit.dstSubresource.mipLevel = i;
 			blit.dstSubresource.baseArrayLayer = 0;
-			blit.dstSubresource.layerCount = VK_REMAINING_ARRAY_LAYERS;
+			blit.dstSubresource.layerCount = layerCount;
 
 			//Blit Mip Images
 			vkCmdBlitImage(cmd, image.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
@@ -436,8 +457,6 @@ void VulkanContext::generate_mipmaps(AllocatedImage& image, uint32_t levelCount)
 
 		//After Transitioning all the subresource layouts to Transfer SRC, correct the Image Structure's info to specify that the image layout is now fully Transfer SRC (It's jank)
 		image.layout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-
-		submit_immediate_commands();
 	}
 }
 

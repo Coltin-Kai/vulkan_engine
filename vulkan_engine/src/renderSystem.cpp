@@ -130,7 +130,7 @@ void RenderSystem::init_frames() {
 	cmdPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
 	cmdPoolInfo.pNext = nullptr;
 	cmdPoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-	cmdPoolInfo.queueFamilyIndex = _vkContext.graphicsQueueFamily;
+	cmdPoolInfo.queueFamilyIndex = _vkContext.primaryQueueFamily;
 
 	VkFenceCreateInfo fenceCreateInfo{};
 	fenceCreateInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
@@ -634,7 +634,7 @@ VkResult RenderSystem::draw() {
 
 	VkSubmitInfo2 submit = vkutil::submit_info(&cmdInfo, &signalInfo, &waitInfo);
 
-	VK_CHECK(vkQueueSubmit2(_vkContext.graphicsQueue, 1, &submit, get_current_frame().renderFence));
+	VK_CHECK(vkQueueSubmit2(_vkContext.primaryQueue, 1, &submit, get_current_frame().renderFence));
 
 	VkPresentInfoKHR presentInfo{};
 	presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
@@ -645,7 +645,7 @@ VkResult RenderSystem::draw() {
 	presentInfo.waitSemaphoreCount = 1;
 	presentInfo.pImageIndices = &_swapchainImageIndex;
 
-	result = vkQueuePresentKHR(_vkContext.graphicsQueue, &presentInfo);
+	result = vkQueuePresentKHR(_vkContext.primaryQueue, &presentInfo);
 
 	go_next_frame();
 	
@@ -1458,7 +1458,7 @@ void RenderSystem::setup_hdrMap() {
 	cmdPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
 	cmdPoolInfo.pNext = nullptr;
 	cmdPoolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-	cmdPoolInfo.queueFamilyIndex = _vkContext.graphicsQueueFamily;
+	cmdPoolInfo.queueFamilyIndex = _vkContext.primaryQueueFamily;
 
 	VkFenceCreateInfo fenceCreateInfo{};
 	fenceCreateInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
@@ -1550,7 +1550,7 @@ void RenderSystem::setup_hdrMap() {
 	VkCommandBufferSubmitInfo cmdInfo = vkutil::command_buffer_submit_info(cubeMap_commandBuffer);
 	VkSubmitInfo2 submit = vkutil::submit_info(&cmdInfo, nullptr, nullptr);
 
-	VK_CHECK(vkQueueSubmit2(_vkContext.graphicsQueue, 1, &submit, cubeMap_renderFence));
+	VK_CHECK(vkQueueSubmit2(_vkContext.primaryQueue, 1, &submit, cubeMap_renderFence));
 
 	//Wait for Render commands for HDR Cubemap to finish
 	VK_CHECK(vkWaitForFences(_vkContext.device, 1, &cubeMap_renderFence, true, 1000000000));
@@ -1617,7 +1617,7 @@ void RenderSystem::setup_hdrMap() {
 
 	VK_CHECK(vkEndCommandBuffer(cubeMap_commandBuffer));
 
-	VK_CHECK(vkQueueSubmit2(_vkContext.graphicsQueue, 1, &submit, cubeMap_renderFence));
+	VK_CHECK(vkQueueSubmit2(_vkContext.primaryQueue, 1, &submit, cubeMap_renderFence));
 
 	//Wait for Rendering of Convoluted HDR Cubemap to finish
 	VK_CHECK(vkWaitForFences(_vkContext.device, 1, &cubeMap_renderFence, true, 1000000000));
@@ -1681,11 +1681,11 @@ void RenderSystem::setup_hdrMap2() {
 	imgInfo.imageType = VK_IMAGE_TYPE_2D;
 	imgInfo.format = VK_FORMAT_R32G32B32A32_SFLOAT;
 	imgInfo.extent = { .width = 512, .height = 512, .depth = 1 };
-	imgInfo.mipLevels = 1;
+	imgInfo.mipLevels = 5;
 	imgInfo.arrayLayers = 6;
 	imgInfo.samples = VK_SAMPLE_COUNT_1_BIT;
 	imgInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-	imgInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT;
+	imgInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 	imgInfo.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
 
 	VmaAllocationCreateInfo allocInfo{};
@@ -1698,7 +1698,7 @@ void RenderSystem::setup_hdrMap2() {
 	imgViewInfo.viewType = VK_IMAGE_VIEW_TYPE_CUBE;
 	imgViewInfo.format = VK_FORMAT_R32G32B32A32_SFLOAT;
 	imgViewInfo.subresourceRange.baseMipLevel = 0;
-	imgViewInfo.subresourceRange.levelCount = 1;
+	imgViewInfo.subresourceRange.levelCount = 5;
 	imgViewInfo.subresourceRange.baseArrayLayer = 0;
 	imgViewInfo.subresourceRange.layerCount = 6;
 	imgViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -2120,7 +2120,7 @@ void RenderSystem::setup_hdrMap2() {
 	cmdPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
 	cmdPoolInfo.pNext = nullptr;
 	cmdPoolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-	cmdPoolInfo.queueFamilyIndex = _vkContext.computeQueueFamily;
+	cmdPoolInfo.queueFamilyIndex = _vkContext.primaryQueueFamily;
 
 	VkFenceCreateInfo fenceCreateInfo{};
 	fenceCreateInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
@@ -2169,6 +2169,9 @@ void RenderSystem::setup_hdrMap2() {
 
 	vkCmdDispatch(hdr_commandBuffer, _hdrCubeMap.extent.width / 16, _hdrCubeMap.extent.height / 16, 6);
 
+	//-Generate Mipmap Images for HDR Cube Map
+	_vkContext.generate_mipmaps(hdr_commandBuffer, _hdrCubeMap, 5, 6);
+
 	//-Irradiace Cubemap
 	_vkContext.transition_image(hdr_commandBuffer, _hdrCubeMap, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
@@ -2207,7 +2210,7 @@ void RenderSystem::setup_hdrMap2() {
 	VkCommandBufferSubmitInfo cmdInfo = vkutil::command_buffer_submit_info(hdr_commandBuffer);
 	VkSubmitInfo2 submit = vkutil::submit_info(&cmdInfo, nullptr, nullptr);
 
-	VK_CHECK(vkQueueSubmit2(_vkContext.computeQueue, 1, &submit, cubeMap_computeFence));
+	VK_CHECK(vkQueueSubmit2(_vkContext.primaryQueue, 1, &submit, cubeMap_computeFence));
 
 	//-Wait for Compute commands for both to finish
 	VK_CHECK(vkWaitForFences(_vkContext.device, 1, &cubeMap_computeFence, true, 1000000000));

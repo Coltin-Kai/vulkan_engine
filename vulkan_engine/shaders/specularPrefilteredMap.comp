@@ -18,6 +18,7 @@ const float PI = 3.14159265359;
 float RadicalInverse_VdC(uint bits);
 vec2 Hammersley(uint i, uint N);
 vec3 ImportanceSampleGGX(vec2 Xi, vec3 N, float roughness);
+float BRDF_NormalDistributionFunction(vec3 normal, vec3 halfwayVector, float roughness);
 
 void main() {
 	ivec3 storePos = ivec3(gl_GlobalInvocationID.xy, gl_GlobalInvocationID.z);
@@ -54,7 +55,21 @@ void main() {
 
         float NdotL = max(dot(normal, L), 0.0);
         if (NdotL > 0.0) {
-            vec4 sampledValue = clamp(texture(hdrCubeMap, L), 0.0, 100.0); //Clamp just in case HDR Value is really bright
+            //Artifact Correction Code
+            float D = BRDF_NormalDistributionFunction(normal, halfway_vec, roughness);
+            float NdotH = max(dot(normal, halfway_vec), 0.0);
+            float HdotV = max(dot(halfway_vec, view_dir), 0.0);
+
+            float pdf = (D * NdotH / (4.0 * HdotV)) + 0.0001;
+
+            float resolution = 512.0; //Resolution of HDR Environmental Cubemap
+            float saTexel = 4.0 * PI / (6.0 * resolution * resolution);
+            float saSample = 1.0 / (float(SAMPLE_COUNT) * pdf + 0.0001);
+
+            float environMipLevel = roughness == 0.0 ? 0.0 : 0.5 * log2(saSample / saTexel);
+
+            //vec4 sampledValue = clamp(texture(hdrCubeMap, L), 0.0, 100.0); //Clamp just in case HDR Value is really bright
+            vec4 sampledValue = clamp(textureLod(hdrCubeMap, L, environMipLevel), 0.0, 100.0);
             prefilteredColor += sampledValue.rgb * NdotL;
             totalWeight += NdotL;
         }
@@ -98,4 +113,18 @@ vec3 ImportanceSampleGGX(vec2 Xi, vec3 N, float roughness) {
 	
     vec3 sampleVec = tangent * H.x + bitangent * H.y + N * H.z;
     return normalize(sampleVec);
+}
+
+//Returns value of how much of the surface's microfacets diverge from the alignment with the halfway-vector
+float BRDF_NormalDistributionFunction(vec3 normal, vec3 halfwayVector, float roughness) {
+	//Trowbridge-Reitz GGX
+	float a = roughness * roughness; 
+	float a2 = a * a;
+	float NdotH = max(dot(normal, halfwayVector), 0.0);
+	float NdotH2 = NdotH * NdotH;
+
+	float denom = (NdotH2 * (a2 - 1.0) + 1.0);
+	denom = PI * denom * denom;
+
+	return a2 / denom;
 }

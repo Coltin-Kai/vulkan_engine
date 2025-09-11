@@ -21,10 +21,8 @@ public:
 	VkDebugUtilsMessengerEXT debug_messenger;
 	VkPhysicalDevice physicalDevice;
 	VkDevice device;
-	uint32_t graphicsQueueFamily;
-	VkQueue graphicsQueue;
-	uint32_t computeQueueFamily;
-	VkQueue computeQueue;
+	uint32_t primaryQueueFamily;
+	VkQueue primaryQueue;
 
 	//VMA
 	VmaAllocator allocator;
@@ -57,7 +55,7 @@ public:
 
 	void transition_image(VkCommandBuffer cmd, Image& image, VkImageLayout targetLayout);
 
-	void generate_mipmaps(AllocatedImage& image, uint32_t levelCount);
+	void generate_mipmaps(VkCommandBuffer cmd, AllocatedImage& image, uint32_t levelCount, uint32_t layerCount);
 
 	//Sampler
 	VkSampler create_sampler(VkSamplerCreateInfo& samplerCreateInfo);
