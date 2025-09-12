@@ -90,6 +90,9 @@ layout(push_constant) uniform PushConstants {
 
 layout(set = 0, binding = 0) uniform texture2D texture_images[MAX_TEXTURE2D_COUNT]; //Index with Texture::textureImage_id
 layout(set = 0, binding = 1) uniform sampler samplers[MAX_SAMPLER_COUNT]; //Index with Texture::sampler_id
+layout(set = 0, binding = 2) uniform samplerCube IBL_irradianceCubemap;
+layout(set = 0, binding = 3) uniform samplerCube IBL_specPreFilteredCubemap;
+layout(set = 0, binding = 4) uniform sampler2D IBL_specLUT;
 
 //-------------------------------------------------------------------------------------
 layout(location = 0) in vec3 inPosition;

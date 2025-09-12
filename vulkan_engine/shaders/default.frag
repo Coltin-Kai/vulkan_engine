@@ -90,6 +90,9 @@ layout(push_constant) uniform PushConstants {
 
 layout(set = 0, binding = 0) uniform texture2D texture_images[MAX_TEXTURE2D_COUNT]; //Index with Texture::textureImage_id
 layout(set = 0, binding = 1) uniform sampler samplers[MAX_SAMPLER_COUNT]; //Index with Texture::sampler_id
+layout(set = 0, binding = 2) uniform samplerCube IBL_irradianceCubemap;
+layout(set = 0, binding = 3) uniform samplerCube IBL_specPreFilteredCubemap;
+layout(set = 0, binding = 4) uniform sampler2D IBL_specLUT;
 
 //-------------------------------------------------------------------------------------
 layout(location = 0) flat in int inPrimID;
@@ -107,6 +110,7 @@ float BRDF_NormalDistributionFunction(vec3 normal, vec3 halfwayVector, float rou
 float BRDF_GeometryAttenuationFunction(vec3 normal, vec3 viewDir, vec3 lightDir, float roughness);
 float BRDF_GeometrySchlickGGX(float NdotV, float roughness);
 vec3 BRDF_fresnelFunction(float cosTheta, vec3 base_reflectivity);
+vec3 BRDF_fresnelFunction_roughness(float cosTheta, vec3 base_reflectivity, float roughness);
 
 void main() {
 	PrimitiveInfo primitive = primInfoBuffer.primitiveInfos[inPrimID];
@@ -177,6 +181,7 @@ void main() {
 	//Direct Lighting Calculations
 	normal = normalize(normal);
 	vec3 viewDir = normalize(viewprojBuffer.camPos - inFragPos);
+	vec3 reflectVec = reflect(-viewDir, normal);
 
 	vec3 base_reflectivity = vec3(0.04);
 	base_reflectivity = mix(base_reflectivity, baseColor, metallic);
@@ -206,9 +211,24 @@ void main() {
 		irradiance += (kD * baseColor / PI + specular) * radiance * NdotL;
 	}
 	
+	//IBL Ambient Lighting/Irradiance
+	vec3 F = BRDF_fresnelFunction_roughness(max(dot(normal,viewDir), 0.0), base_reflectivity, roughness);
+	vec3 kS = F;
+	vec3 kD = 1.0 - kS;
+	kD *= 1.0 - metallic;
+	vec3 environ_irradiance = texture(IBL_irradianceCubemap, normal).rgb;
+	vec3 diffuse = environ_irradiance * baseColor;
+
+	//IBL Specular Lighting
+	const float MAX_REFLECTION_LOD = 5.0;
+	vec3 prefilteredColor = textureLod(IBL_specPreFilteredCubemap, reflectVec, roughness * MAX_REFLECTION_LOD).rgb;
+	vec2 brdf = texture(IBL_specLUT, vec2(max(dot(normal, viewDir), 0.0), roughness)).rg;
+	vec3 specular = prefilteredColor * (F * brdf.x + brdf.y);
+
+	vec3 ambient = (kD * diffuse * specular) * ao; //Ambient Lighting
+
 	//Final Color Adjustments
-	vec3 ambientFactor = vec3(0.03) * ao; //Ambient Lighting
-	vec3 finalColor = (ambientFactor * baseColor) + irradiance; 
+	vec3 finalColor = ambient + irradiance; 
 	finalColor = finalColor / (finalColor + vec3(1.0)); //Reinhard Tone Mapping
 	finalColor = pow(finalColor, vec3(1.0/2.2)); //Gamma Correction
 	finalColor += emission; //Add Emission (temp)
@@ -254,4 +274,8 @@ float BRDF_GeometrySchlickGGX(float NdotV, float roughness) {
 //Returns the value (as a vector) of how much the surface relfects based on viewing angle.
 vec3 BRDF_fresnelFunction(float cosTheta, vec3 base_reflectivity) {
 	return base_reflectivity + (1.0 - base_reflectivity) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+}
+
+vec3 BRDF_fresnelFunction_roughness(float cosTheta, vec3 base_reflectivity, float roughness) {
+	return base_reflectivity + (max(vec3(1.0 - roughness), base_reflectivity) - base_reflectivity) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }
