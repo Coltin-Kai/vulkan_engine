@@ -69,7 +69,8 @@ void main() {
             float environMipLevel = roughness == 0.0 ? 0.0 : 0.5 * log2(saSample / saTexel);
 
             //vec4 sampledValue = clamp(texture(hdrCubeMap, L), 0.0, 100.0);
-            vec4 sampledValue = clamp(textureLod(hdrCubeMap, L, environMipLevel), 0.0, 10.0); //Clamp just in case HDR Value is really bright (Use low clamp value due to artifacts showing up should look for other solutions maybe)
+            //vec4 sampledValue = clamp(textureLod(hdrCubeMap, L, environMipLevel), 0.0, 100.0); //Clamp just in case HDR Value is really bright (Use low clamp value due to artifacts showing up should look for other solutions maybe)
+            vec4 sampledValue = textureLod(hdrCubeMap, L, environMipLevel);
             prefilteredColor += sampledValue.rgb * NdotL;
             totalWeight += NdotL;
         }

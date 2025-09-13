@@ -2229,8 +2229,6 @@ void RenderSystem::setup_hdrMap2() {
 
 	vkCmdDispatch(hdr_commandBuffer, _hdrIrradianceCubeMap.extent.width / 16, _hdrIrradianceCubeMap.extent.height / 16, 6);
 
-	_vkContext.transition_image(hdr_commandBuffer, _hdrIrradianceCubeMap, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-
 	//-Specular Cubemap
 	vkCmdBindPipeline(hdr_commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, specularCubeMap_pipeline);
 	vkCmdBindDescriptorSets(hdr_commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, specularCubeMap_pipelineLayout, 0, 1, &specularCubeMap_descriptorSet, 0, nullptr);
@@ -2249,15 +2247,11 @@ void RenderSystem::setup_hdrMap2() {
 		vkCmdDispatch(hdr_commandBuffer, mipWidth / 8, mipHeight / 8, 6);
 	}
 
-	_vkContext.transition_image(hdr_commandBuffer, _hdrSpecularCubeMap, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-
 	//Specular LUT
 	vkCmdBindPipeline(hdr_commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, specularLUT_pipeline);
 	vkCmdBindDescriptorSets(hdr_commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, specularLUT_pipelineLayout, 0, 1, &specularLUT_descriptorSet, 0, nullptr);
 	
 	vkCmdDispatch(hdr_commandBuffer, _hdrSpecularLUT.extent.width / 8, _hdrSpecularLUT.extent.height / 8, 1);
-
-	_vkContext.transition_image(hdr_commandBuffer, _hdrSpecularLUT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
 	VK_CHECK(vkEndCommandBuffer(hdr_commandBuffer));
 

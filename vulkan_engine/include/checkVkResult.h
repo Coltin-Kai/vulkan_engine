@@ -8,7 +8,7 @@
 #define VK_CHECK(x)                                                     \
     do {                                                                \
 		if (x != VK_SUCCESS) {	\
-			std::cout << std::format("Detected Vulkan Error: {}", string_VkResult(x)) <<  " on line " << __LINE__ << "in file " << __FILE__ << std::endl; \
+			std::cout << std::format("Detected Vulkan Error: {}", string_VkResult(x)) <<  " on line " << __LINE__ << " in file " << __FILE__ << std::endl; \
 			abort();	\
 		}	\
     } while (0)

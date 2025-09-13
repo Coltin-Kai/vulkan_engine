@@ -106,16 +106,23 @@ layout(location = 1) out vec3 outColor;
 layout(location = 2) out vec2 outUV;
 layout(location = 3) out vec3 outFragPos;
 layout(location = 4) out vec3 outNormal;
-layout(location = 5) out vec4 outTangent;
+layout(location = 5) out mat3 TBN;
 
 void main() {
 	int primID = primIdBuffer.prim_ids[gl_DrawID];
 	PrimitiveInfo primitive = primInfoBuffer.primitiveInfos[primID];
+	mat4 model = modelsBuffer.model[primitive.model_matrix_id];
+
 	outPrimID = primID;
 	outColor = color;
 	outUV = uv;
-	outFragPos = (modelsBuffer.model[primitive.model_matrix_id] * vec4(inPosition, 1.0f)).xyz;
+	outFragPos = (model * vec4(inPosition, 1.0f)).xyz;
 	outNormal = inNormal;
-	outTangent = tangent;
-	gl_Position = viewprojBuffer.proj * viewprojBuffer.view * modelsBuffer.model[primitive.model_matrix_id] * vec4(inPosition, 1.0f);
+
+	vec3 T = normalize(vec3(model * vec4(tangent.xyz, 0.0)));
+	vec3 N = normalize(vec3(model * vec4(inNormal, 0.0)));
+	vec3 B = cross(N, T) * tangent.w; //tangent.w is the bitangent sign
+	TBN = mat3(T, B, N);
+
+	gl_Position = viewprojBuffer.proj * viewprojBuffer.view * model * vec4(inPosition, 1.0f);
 }

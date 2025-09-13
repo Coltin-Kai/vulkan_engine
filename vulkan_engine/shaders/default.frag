@@ -100,7 +100,7 @@ layout(location = 1) in vec3 inColor; //Color_0
 layout(location = 2) in vec2 inUV; //TexCoord_0
 layout(location = 3) in vec3 inFragPos;
 layout(location = 4) in vec3 inNormal;
-layout(location = 5) in vec4 inTangent;
+layout(location = 5) in mat3 TBN;
 
 layout(location = 0) out vec4 outFragColor;
 
@@ -142,8 +142,8 @@ void main() {
 	else if (mat.normal_texcoord_id == 0) {
 		vec2 normal_texcoord = inUV;
 		normal = texture(sampler2D(texture_images[normal_texture.textureImage_id], samplers[normal_texture.sampler_id]), normal_texcoord).rgb * mat.normal_scale; //NOt sure normal_scale applies before or after
-		vec3 bitangent = inTangent.w * cross(inNormal, inTangent.xyz);
-		normal = normalize(normal.x * inTangent.xyz + normal.y * bitangent + normal.z * inNormal); //Transform the Sampled Normal Vector from Tangent Space to World Space
+		normal = normal * 2.0 - 1.0; //Transform normal from [0,1] range to [-1,1] range.
+		normal = normalize(TBN * normal); //Transform the Normal Vector from Tangent Space to World Space
 	}
 
 	//-Metal_Roughness 
