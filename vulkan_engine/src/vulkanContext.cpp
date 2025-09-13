@@ -305,7 +305,6 @@ AllocatedImage VulkanContext::create_image(const char* name, VkImageCreateInfo i
 	AllocatedImage newImage;
 	newImage.format = imageInfo.format;
 	newImage.extent = imageInfo.extent;
-	newImage.layout = imageInfo.initialLayout;
 
 	VK_CHECK(vmaCreateImage(allocator, &imageInfo, &allocInfo, &newImage.image, &newImage.allocation, nullptr));
 	vmaSetAllocationName(allocator, newImage.allocation, name);

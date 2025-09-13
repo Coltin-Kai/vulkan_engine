@@ -12,6 +12,7 @@ void RenderSystem::init(VkExtent2D windowExtent) {
 
 	setup_depthImage();
 
+	//temp code
 	_deviceBufferTypesCounter[DeviceBufferType::ViewProj] = 0;
 	_deviceBufferTypesCounter[DeviceBufferType::Indirect] = 0;
 	_deviceBufferTypesCounter[DeviceBufferType::PrimID] = 0;
@@ -22,9 +23,6 @@ void RenderSystem::init(VkExtent2D windowExtent) {
 	_deviceBufferTypesCounter[DeviceBufferType::Material] = 0;
 	_deviceBufferTypesCounter[DeviceBufferType::Texture] = 0;
 	_deviceBufferTypesCounter[DeviceBufferType::Light] = 0;
-
-	setup_hdrMap2();
-	setup_skybox();
 }
 
 VkResult RenderSystem::run() {
@@ -214,7 +212,8 @@ void RenderSystem::init_descriptorSet() {
 	//Create Descriptor Pool
 	std::vector<VkDescriptorPoolSize> poolSizes = {
 		{.type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, .descriptorCount = MAX_SAMPLED_IMAGE_COUNT },
-		{.type = VK_DESCRIPTOR_TYPE_SAMPLER, .descriptorCount = MAX_SAMPLER_COUNT }
+		{.type = VK_DESCRIPTOR_TYPE_SAMPLER, .descriptorCount = MAX_SAMPLER_COUNT },
+		{.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = 3 }
 	};
 
 	VkDescriptorPoolCreateInfo poolInfo{};
@@ -233,13 +232,22 @@ void RenderSystem::init_descriptorSet() {
 		{.binding = 0, .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, .descriptorCount = MAX_SAMPLED_IMAGE_COUNT,
 		.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT, .pImmutableSamplers = nullptr },
 		{.binding = 1, .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER, .descriptorCount = MAX_SAMPLER_COUNT,
-		.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT, .pImmutableSamplers = nullptr }
+		.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT, .pImmutableSamplers = nullptr },
+		{.binding = 2, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = 1,
+		.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT, .pImmutableSamplers = nullptr },
+		{.binding = 3, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = 1,
+		.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT, .pImmutableSamplers = nullptr },
+		{.binding = 4, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = 1,
+		.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT, .pImmutableSamplers = nullptr },
 	};
 
 	//-Set Binding Flags
 	std::vector<VkDescriptorBindingFlags> binding_flags = {
 		VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT | VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_UNUSED_WHILE_PENDING_BIT,
-		VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT | VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_UNUSED_WHILE_PENDING_BIT
+		VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT | VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_UNUSED_WHILE_PENDING_BIT,
+		VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT,
+		VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT,
+		VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT
 	};
 
 	VkDescriptorSetLayoutBindingFlagsCreateInfo set_binding_flags{};
@@ -804,8 +812,9 @@ void RenderSystem::resize_swapchain(VkExtent2D windowExtent) {
 }
 
 void RenderSystem::bind_descriptors(GraphicsDataPayload& payload) {
-	std::vector<VkWriteDescriptorSet> descriptorWrites(2);
+	std::vector<VkWriteDescriptorSet> descriptorWrites(5);
 
+	//Graphic Payload Texture Image and Samplers
 	std::vector<VkDescriptorImageInfo> sampledImages_imgInfos;
 	for (auto& image : payload.images) {
 		VkDescriptorImageInfo imgInfo{};
@@ -836,6 +845,46 @@ void RenderSystem::bind_descriptors(GraphicsDataPayload& payload) {
 	descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
 	descriptorWrites[1].descriptorCount = sampler_imgInfos.size();
 	descriptorWrites[1].pImageInfo = sampler_imgInfos.data();
+
+	//IBL Resources
+	VkDescriptorImageInfo enviroIrradianceCubemapInfo;
+	enviroIrradianceCubemapInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	enviroIrradianceCubemapInfo.imageView = _hdrIrradianceCubeMap.imageView;
+	enviroIrradianceCubemapInfo.sampler = _cubemapSampler;
+
+	descriptorWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	descriptorWrites[2].dstSet = _descriptorSet;
+	descriptorWrites[2].dstBinding = 2;
+	descriptorWrites[2].dstArrayElement = 0;
+	descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	descriptorWrites[2].descriptorCount = 1;
+	descriptorWrites[2].pImageInfo = &enviroIrradianceCubemapInfo;
+	
+	VkDescriptorImageInfo enviroSpecPrefilteredCubemapInfo;
+	enviroSpecPrefilteredCubemapInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	enviroSpecPrefilteredCubemapInfo.imageView = _hdrSpecularCubeMap.imageView;
+	enviroSpecPrefilteredCubemapInfo.sampler = _cubemapSampler;
+
+	descriptorWrites[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	descriptorWrites[3].dstSet = _descriptorSet;
+	descriptorWrites[3].dstBinding = 3;
+	descriptorWrites[3].dstArrayElement = 0;
+	descriptorWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	descriptorWrites[3].descriptorCount = 1;
+	descriptorWrites[3].pImageInfo = &enviroSpecPrefilteredCubemapInfo;
+
+	VkDescriptorImageInfo enviroSpecLUTInfo;
+	enviroSpecLUTInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	enviroSpecLUTInfo.imageView = _hdrSpecularLUT.imageView;
+	enviroSpecLUTInfo.sampler = _cubemapSampler;
+
+	descriptorWrites[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	descriptorWrites[4].dstSet = _descriptorSet;
+	descriptorWrites[4].dstBinding = 4;
+	descriptorWrites[4].dstArrayElement = 0;
+	descriptorWrites[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	descriptorWrites[4].descriptorCount = 1;
+	descriptorWrites[4].pImageInfo = &enviroSpecLUTInfo;
 
 	vkUpdateDescriptorSets(_vkContext.device, descriptorWrites.size(), descriptorWrites.data(), 0, nullptr);
 }
@@ -2180,6 +2229,8 @@ void RenderSystem::setup_hdrMap2() {
 
 	vkCmdDispatch(hdr_commandBuffer, _hdrIrradianceCubeMap.extent.width / 16, _hdrIrradianceCubeMap.extent.height / 16, 6);
 
+	_vkContext.transition_image(hdr_commandBuffer, _hdrIrradianceCubeMap, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
 	//-Specular Cubemap
 	vkCmdBindPipeline(hdr_commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, specularCubeMap_pipeline);
 	vkCmdBindDescriptorSets(hdr_commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, specularCubeMap_pipelineLayout, 0, 1, &specularCubeMap_descriptorSet, 0, nullptr);
@@ -2198,11 +2249,15 @@ void RenderSystem::setup_hdrMap2() {
 		vkCmdDispatch(hdr_commandBuffer, mipWidth / 8, mipHeight / 8, 6);
 	}
 
+	_vkContext.transition_image(hdr_commandBuffer, _hdrSpecularCubeMap, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
 	//Specular LUT
 	vkCmdBindPipeline(hdr_commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, specularLUT_pipeline);
 	vkCmdBindDescriptorSets(hdr_commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, specularLUT_pipelineLayout, 0, 1, &specularLUT_descriptorSet, 0, nullptr);
 	
 	vkCmdDispatch(hdr_commandBuffer, _hdrSpecularLUT.extent.width / 8, _hdrSpecularLUT.extent.height / 8, 1);
+
+	_vkContext.transition_image(hdr_commandBuffer, _hdrSpecularLUT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
 	VK_CHECK(vkEndCommandBuffer(hdr_commandBuffer));
 

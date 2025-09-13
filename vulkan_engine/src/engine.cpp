@@ -51,6 +51,10 @@ void Engine::init() {
 	_payload.pointLights.push_back({ .pos = glm::vec3(0.0f, 2.0f, -2.0f), .color = glm::vec3(1.0f, 1.0f, 1.0f), .power = 100.0f });
 	_payload.pointLights.push_back({ .pos = glm::vec3(-2.0f, 2.0f, 2.0f) , .color = glm::vec3(1.0f, 0.0f, 0.0f), .power = 100.0f });
 
+	//Environmap and Skybox
+	_renderSys.setup_hdrMap2();
+	_renderSys.setup_skybox();
+
 	//Bind Images and Samplers
 	_renderSys.bind_descriptors(_payload);
 	//Upload Draw Data

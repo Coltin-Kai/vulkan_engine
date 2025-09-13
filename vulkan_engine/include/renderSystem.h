@@ -96,6 +96,8 @@ public:
 	void setup_drawContexts(const GraphicsDataPayload& payload);
 	void signal_to_updateDeviceBuffers(DeviceBufferTypeFlags deviceBufferTypes);
 	void updateSignaledDeviceBuffers(const GraphicsDataPayload& payload);
+	void setup_hdrMap2();
+	void setup_skybox();
 private:
 	struct Swapchain {
 		VkSwapchainKHR vkSwapchain;
@@ -244,6 +246,4 @@ private:
 
 	//Skybox/Environment Map Functions
 	void setup_hdrMap();
-	void setup_hdrMap2();
-	void setup_skybox(); 
 };
