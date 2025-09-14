@@ -105,6 +105,7 @@ layout(location = 5) in mat3 TBN;
 layout(location = 0) out vec4 outFragColor;
 
 const float PI = 3.14159265359;
+const bool FLIP_ENVIRON_MAP_Y = true; //Used for IBL Enviroment Cubemaps to flip certain vector-y components in case of upside down cubemap sampling
 
 float BRDF_NormalDistributionFunction(vec3 normal, vec3 halfwayVector, float roughness);
 float BRDF_GeometryAttenuationFunction(vec3 normal, vec3 viewDir, vec3 lightDir, float roughness);
@@ -127,10 +128,10 @@ void main() {
 	//-BaseColor
 	Texture baseColor_texture = texBuffer.textures[mat.baseColor_texture_id];
 	if (mat.baseColor_texcoord_id == -1) //If Texcoord doesn't exist, just return vertex color.
-		baseColor = inColor;
+		baseColor = mat.baseColor_factor.rgb;
 	else if (mat.baseColor_texcoord_id == 0) { //If it uses TexCorrd_0, grab from vertex input
 			vec2 baseColor_texcoord = inUV;
-			baseColor = texture(sampler2D(texture_images[baseColor_texture.textureImage_id], samplers[baseColor_texture.sampler_id]), baseColor_texcoord).rgb * inColor * mat.baseColor_factor.rgb; //Sampled Texture Value * Associated Factor. Not sure i need to multiple with inColor
+			baseColor = texture(sampler2D(texture_images[baseColor_texture.textureImage_id], samplers[baseColor_texture.sampler_id]), baseColor_texcoord).rgb * mat.baseColor_factor.rgb; //Sampled Texture Value * Associated Factor. 
 	}
 
 	baseColor = pow(baseColor, vec3(2.2)); //Convert Texture Colors to Linear Space
@@ -149,8 +150,8 @@ void main() {
 	//-Metal_Roughness 
 	Texture metal_roughness_texture = texBuffer.textures[mat.metal_rough_texture_id];
 	if (mat.metal_rough_texcoord_id == -1) {
-		metallic = 0.1;
-		roughness = 0.5;
+		metallic = mat.metallic_factor;
+		roughness = mat.roughness_factor;
 	}
 	else if (mat.metal_rough_texcoord_id == 0) {
 		vec2 metal_rough_texcoord = inUV;
@@ -216,16 +217,26 @@ void main() {
 	vec3 kS = F;
 	vec3 kD = 1.0 - kS;
 	kD *= 1.0 - metallic;
-	vec3 environ_irradiance = texture(IBL_irradianceCubemap, normal).rgb;
-	vec3 diffuse = environ_irradiance * baseColor;
+
+	vec3 enviro_normal = normal; //Used to sample Enviroment Irradiance Cubemap
+	if (FLIP_ENVIRON_MAP_Y) 
+		enviro_normal.y = -enviro_normal.y;
+	vec3 enviro_irradiance = texture(IBL_irradianceCubemap, enviro_normal).rgb;
+
+	vec3 diffuse = enviro_irradiance * baseColor;
 
 	//IBL Specular Lighting
 	const float MAX_REFLECTION_LOD = 5.0;
-	vec3 prefilteredColor = textureLod(IBL_specPreFilteredCubemap, reflectVec, roughness * MAX_REFLECTION_LOD).rgb;
+
+	vec3 enviro_reflect = reflectVec;
+	if (FLIP_ENVIRON_MAP_Y)
+		enviro_reflect.y = -enviro_reflect.y;
+	vec3 prefilteredColor = textureLod(IBL_specPreFilteredCubemap, enviro_reflect, roughness * MAX_REFLECTION_LOD).rgb;
+
 	vec2 brdf = texture(IBL_specLUT, vec2(max(dot(normal, viewDir), 0.0), roughness)).rg;
 	vec3 specular = prefilteredColor * (F * brdf.x + brdf.y);
 
-	vec3 ambient = (kD * diffuse * specular) * ao; //Ambient Lighting
+	vec3 ambient = (kD * diffuse + specular) * ao; //Ambient Lighting
 
 	//Final Color Adjustments
 	vec3 finalColor = ambient + irradiance; 
