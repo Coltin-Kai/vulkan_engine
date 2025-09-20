@@ -117,10 +117,12 @@ void main() {
 	outColor = color;
 	outUV = uv;
 	outFragPos = (model * vec4(inPosition, 1.0f)).xyz;
-	outNormal = inNormal;
+
+	vec3 normal = inverse(transpose(mat3(model))) * inNormal;
+	outNormal = normal;
 
 	vec3 T = normalize(vec3(model * vec4(tangent.xyz, 0.0)));
-	vec3 N = normalize(vec3(model * vec4(inNormal, 0.0)));
+	vec3 N = normalize(vec3(model * vec4(normal, 0.0)));
 	vec3 B = cross(N, T) * tangent.w; //tangent.w is the bitangent sign
 	TBN = mat3(T, B, N);
 

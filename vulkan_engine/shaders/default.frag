@@ -150,8 +150,10 @@ void main() {
 	//-Metal_Roughness 
 	Texture metal_roughness_texture = texBuffer.textures[mat.metal_rough_texture_id];
 	if (mat.metal_rough_texcoord_id == -1) {
-		metallic = mat.metallic_factor;
-		roughness = mat.roughness_factor;
+		//metallic = mat.metallic_factor;
+		//roughness = mat.roughness_factor;
+		metallic = 0.9;
+		roughness = 0.1;
 	}
 	else if (mat.metal_rough_texcoord_id == 0) {
 		vec2 metal_rough_texcoord = inUV;
