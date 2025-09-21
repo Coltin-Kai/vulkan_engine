@@ -152,6 +152,7 @@ void main() {
 	if (mat.metal_rough_texcoord_id == -1) {
 		//metallic = mat.metallic_factor;
 		//roughness = mat.roughness_factor;
+		//Below values are for checking/testing if normal and enviromapping is working
 		metallic = 0.9;
 		roughness = 0.1;
 	}

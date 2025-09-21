@@ -118,11 +118,15 @@ void main() {
 	outUV = uv;
 	outFragPos = (model * vec4(inPosition, 1.0f)).xyz;
 
-	vec3 normal = inverse(transpose(mat3(model))) * inNormal;
-	outNormal = normal;
+	mat3 normalMatrix = inverse(transpose(mat3(model)));
+	outNormal = normalMatrix * inNormal;
 
-	vec3 T = normalize(vec3(model * vec4(tangent.xyz, 0.0)));
-	vec3 N = normalize(vec3(model * vec4(normal, 0.0)));
+	vec3 T = normalize(normalMatrix * tangent.xyz);
+	vec3 N = normalize(normalMatrix * inNormal);
+	
+	//Re-Orthogonalize T with respect to N
+	T = normalize(T - dot(T,N) * N);
+
 	vec3 B = cross(N, T) * tangent.w; //tangent.w is the bitangent sign
 	TBN = mat3(T, B, N);
 
