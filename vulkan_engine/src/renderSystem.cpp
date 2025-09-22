@@ -912,7 +912,7 @@ void RenderSystem::extract_render_data(const GraphicsDataPayload& payload, Devic
 		data.viewproj.view = payload.camera_transform;
 		data.viewproj.proj = payload.proj_transform;
 		data.viewproj.pos = payload.cam_pos;
-		data.viewprojMatrix_copy_info = { .srcOffset = 0, .dstOffset = 0, .size = sizeof(glm::mat4) * 2 };
+		data.viewprojMatrix_copy_info = { .srcOffset = 0, .dstOffset = 0, .size = sizeof(RenderShader::ViewProj)};
 	}
 
 	if (dataType.light) {

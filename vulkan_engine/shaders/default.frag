@@ -105,7 +105,7 @@ layout(location = 5) in mat3 TBN;
 layout(location = 0) out vec4 outFragColor;
 
 const float PI = 3.14159265359;
-const bool FLIP_ENVIRON_MAP_Y = true; //Used for IBL Enviroment Cubemaps to flip certain vector-y components in case of upside down cubemap sampling
+const bool FLIP_ENVIRON_MAP_Y = false; //Used for IBL Enviroment Cubemaps to flip certain vector-y components in case of upside down cubemap sampling. Dont think I need this for now but keeping here just in case an Enviromap caues me trouble
 
 float BRDF_NormalDistributionFunction(vec3 normal, vec3 halfwayVector, float roughness);
 float BRDF_GeometryAttenuationFunction(vec3 normal, vec3 viewDir, vec3 lightDir, float roughness);
@@ -150,11 +150,8 @@ void main() {
 	//-Metal_Roughness 
 	Texture metal_roughness_texture = texBuffer.textures[mat.metal_rough_texture_id];
 	if (mat.metal_rough_texcoord_id == -1) {
-		//metallic = mat.metallic_factor;
-		//roughness = mat.roughness_factor;
-		//Below values are for checking/testing if normal and enviromapping is working
-		metallic = 0.9;
-		roughness = 0.1;
+		metallic = mat.metallic_factor;
+		roughness = mat.roughness_factor;
 	}
 	else if (mat.metal_rough_texcoord_id == 0) {
 		vec2 metal_rough_texcoord = inUV;
