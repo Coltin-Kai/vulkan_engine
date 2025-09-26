@@ -291,7 +291,7 @@ void RenderSystem::setup_drawContexts(const GraphicsDataPayload& payload) {
 	size_t alloc_vertAttrib_size = sizeof(RenderShader::VertexAttributes) * renderData.attributes.size();
 	size_t alloc_index_size = sizeof(uint32_t) * renderData.indices.size();
 	size_t alloc_indirect_size = sizeof(VkDrawIndexedIndirectCommand) * renderData.indirect_commands.size();
-	size_t alloc_viewprojMatrix_size = sizeof(glm::mat4) * 2;
+	size_t alloc_viewprojMatrix_size = sizeof(RenderShader::ViewProj);
 	size_t alloc_modelMatrices_size = sizeof(glm::mat4) * renderData.model_matrices.size();
 	size_t alloc_primIds_size = sizeof(int32_t) * renderData.primitiveIds.size();
 	size_t alloc_primInfo_size = sizeof(RenderShader::PrimitiveInfo) * renderData.primitiveInfos.size();
