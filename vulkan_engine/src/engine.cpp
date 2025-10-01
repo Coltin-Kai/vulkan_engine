@@ -38,9 +38,10 @@ void Engine::init() {
 	_guiSys.init(_window, _renderSys.get_swapChainFormat());
 
 	setup_default_data();
+
 	//LAZY CODE STUFF
 	//-Load File Data
-	loadGLTFFile(_vkContext, _payload, "C:\\Github\\vulkan_engine\\vulkan_engine\\assets\\Sample_Models\\Box.gltf"); //Exception expected to be thrown since allocated data in payload is not released
+	loadGLTFFile(_vkContext, _payload, "C:\\Github\\vulkan_engine\\vulkan_engine\\assets\\Sample_Models\\AntiqueCamera\\AntiqueCamera.gltf"); //Exception expected to be thrown since allocated data in payload is not released
 	
 	_camera = Camera({ 0.0f, 0.0f, 0.15f });
 	_camera.update_view_matrix();

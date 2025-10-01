@@ -24,7 +24,7 @@ void loadGLTFFile(VulkanContext& vkContext, GraphicsDataPayload& dataPayload, st
 
 	fastgltf::Asset asset = std::move(expected_asset.get());
 
-	//Index offsets. To offset index for already existing data in the payload's data vectors (Default data and existing data)
+	//Index offsets. To offset index for already existing data in the payload's data vectors (Default data and existing data). Note how we do this will have to change eventually if going to transition to ID system as this relies on the data structure vector size
 	size_t textureImage_index_offset = dataPayload.images.size();
 	size_t samplers_index_offset = dataPayload.samplers.size();
 

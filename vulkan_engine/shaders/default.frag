@@ -117,6 +117,7 @@ void main() {
 	PrimitiveInfo primitive = primInfoBuffer.primitiveInfos[inPrimID];
 	Material mat = matBuffer.materials[primitive.mat_id];
 
+	//Think maybe having default values should be used if material uses a texcoord other than 0. Dont want unexpected runtime errors
 	vec3 baseColor;
 	vec3 normal;
 	float metallic;
@@ -129,7 +130,7 @@ void main() {
 	Texture baseColor_texture = texBuffer.textures[mat.baseColor_texture_id];
 	if (mat.baseColor_texcoord_id == -1) //If Texcoord doesn't exist, just return vertex color.
 		baseColor = mat.baseColor_factor.rgb;
-	else if (mat.baseColor_texcoord_id == 0) { //If it uses TexCorrd_0, grab from vertex input
+	else if (mat.baseColor_texcoord_id == 0) { //If it uses TexCorrd_0, grab from vertex input. 
 			vec2 baseColor_texcoord = inUV;
 			baseColor = texture(sampler2D(texture_images[baseColor_texture.textureImage_id], samplers[baseColor_texture.sampler_id]), baseColor_texcoord).rgb * mat.baseColor_factor.rgb; //Sampled Texture Value * Associated Factor. 
 	}
