@@ -41,7 +41,7 @@ void Engine::init() {
 
 	//LAZY CODE STUFF
 	//-Load File Data
-	loadGLTFFile(_vkContext, _payload, "C:\\Github\\vulkan_engine\\vulkan_engine\\assets\\Sample_Models\\AntiqueCamera\\AntiqueCamera.gltf"); //Exception expected to be thrown since allocated data in payload is not released
+	loadGLTFFile(_vkContext, _payload, "C:\\Github\\vulkan_engine\\vulkan_engine\\assets\\Sample_Models\\MetalRoughSpheres\\MetalRoughSpheres.gltf"); //Exception expected to be thrown since allocated data in payload is not released
 	
 	_camera = Camera({ 0.0f, 0.0f, 0.15f });
 	_camera.update_view_matrix();
@@ -50,7 +50,6 @@ void Engine::init() {
 
 	//Light
 	_payload.pointLights.push_back({ .pos = glm::vec3(0.0f, 2.0f, -2.0f), .color = glm::vec3(1.0f, 1.0f, 1.0f), .power = 100.0f });
-	_payload.pointLights.push_back({ .pos = glm::vec3(-2.0f, 2.0f, 2.0f) , .color = glm::vec3(1.0f, 0.0f, 0.0f), .power = 100.0f });
 
 	//Environmap and Skybox
 	_renderSys.setup_hdrMap2();

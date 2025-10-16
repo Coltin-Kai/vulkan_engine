@@ -133,9 +133,8 @@ void main() {
 	else if (mat.baseColor_texcoord_id == 0) { //If it uses TexCorrd_0, grab from vertex input. 
 			vec2 baseColor_texcoord = inUV;
 			baseColor = texture(sampler2D(texture_images[baseColor_texture.textureImage_id], samplers[baseColor_texture.sampler_id]), baseColor_texcoord).rgb * mat.baseColor_factor.rgb; //Sampled Texture Value * Associated Factor. 
+			baseColor = pow(baseColor, vec3(2.2)); //Convert Texture Colors to Linear Space
 	}
-
-	baseColor = pow(baseColor, vec3(2.2)); //Convert Texture Colors to Linear Space
 
 	//-Normal
 	Texture normal_texture = texBuffer.textures[mat.normal_texture_id];
@@ -163,7 +162,7 @@ void main() {
 	//Occlusion
 	Texture occlusion_texture = texBuffer.textures[mat.occlusion_texture_id];
 	if (mat.occlusion_texcoord_id == -1) {
-		ao = 0.5;
+		ao = 1.0;
 	}
 	else if (mat.occlusion_texcoord_id == 0) {
 		vec2 occlusion_texcoord = inUV;
@@ -233,10 +232,8 @@ void main() {
 	if (FLIP_ENVIRON_MAP_Y)
 		enviro_reflect.y = -enviro_reflect.y;
 	vec3 prefilteredColor = textureLod(IBL_specPreFilteredCubemap, enviro_reflect, roughness * MAX_REFLECTION_LOD).rgb;
-
 	vec2 brdf = texture(IBL_specLUT, vec2(max(dot(normal, viewDir), 0.0), roughness)).rg;
 	vec3 specular = prefilteredColor * (F * brdf.x + brdf.y);
-
 	vec3 ambient = (kD * diffuse + specular) * ao; //Ambient Lighting
 
 	//Final Color Adjustments
