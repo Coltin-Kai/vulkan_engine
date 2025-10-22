@@ -67,12 +67,8 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="shaders\compile.bat" />
-    <None Include="shaders\convCubeMap.frag" />
-    <None Include="shaders\convCubeMap.vert" />
     <None Include="shaders\convCubeMap_frag.spv" />
     <None Include="shaders\convCubeMap_vert.spv" />
-    <None Include="shaders\cubemap.frag" />
-    <None Include="shaders\cubemap.vert" />
     <None Include="shaders\cubemap_frag.spv" />
     <None Include="shaders\cubemap_vert.spv" />
     <None Include="shaders\default.frag" />

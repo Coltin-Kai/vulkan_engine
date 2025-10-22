@@ -243,7 +243,4 @@ private:
 
 	//Graphics Payload
 	void extract_render_data(const GraphicsDataPayload& payload, DeviceBufferTypeFlags dataType, RenderShaderData& data); //Extracts The specified type of data from payload and output to RenderShaderData param
-
-	//Skybox/Environment Map Functions
-	void setup_hdrMap();
 };
