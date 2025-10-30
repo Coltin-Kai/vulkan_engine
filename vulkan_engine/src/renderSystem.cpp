@@ -1470,7 +1470,7 @@ void RenderSystem::setup_hdrMap2() {
 	specularCubeMap_imageSampleInfo.imageView = _hdrCubeMap.imageView;
 	specularCubeMap_imageSampleInfo.sampler = _cubemapSampler;
 
-	VkDescriptorImageInfo specularCubeMap_targetCubemapInfos[HDR_SPECULAR_CUBEMAP_MIP_LEVELS_COUNT]; //!!!NOTE NEED TO DRASTICALLY CHANGE specularPrefilteredMap shader to target and evaluate the correct values for multiple imageviews
+	VkDescriptorImageInfo specularCubeMap_targetCubemapInfos[HDR_SPECULAR_CUBEMAP_MIP_LEVELS_COUNT];
 	for (int i = 0; i < HDR_SPECULAR_CUBEMAP_MIP_LEVELS_COUNT; i++) {
 		specularCubeMap_targetCubemapInfos[i].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
 		specularCubeMap_targetCubemapInfos[i].imageView = hdrSpecularCubeMap_ImageViews[i];
