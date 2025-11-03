@@ -4,6 +4,8 @@
 #include <unordered_set>
 #include <functional>
 
+#include "vulkan_helper_types.h"
+
 namespace render_graph {
 
 	struct RenderGraph;
@@ -12,18 +14,28 @@ namespace render_graph {
 	using ResourceName = std::string; //Name/ID of a Resource
 	using PassIndex = size_t; //Index of Pass
 	using PassAdjacencyMap = std::unordered_map<Pass, std::vector<PassIndex>, Pass::Hasher>; //Maps a Pass to a list of indices of dependent Passes in the RenderGraph's list of passes
+	using ResourceBufferRef = std::unordered_map<ResourceName, VkBuffer>;
+	using ResourceImageRef = std::unordered_map<ResourceName, VkImage>;
 
 	/*
 		Will be used to construct a RenderGraph. Declare what Passes exist and what Resources will exist/needed for the Graph. Should also declare what queues are available for graph to use
 	*/
 	class RenderGraphBuilder {
 	public:
-		void addResource(resourceParamStruct); //Should pass a struct that contains name of resouce, type of resource, , if its transient or externel, and other necessart info on how its instantiated
-		void addPass(passParamStruct); //Should pass a struct that contains name of pass, if its render or compute type, the name of resources it uses as input and output.
+		//Add Resource Functions are used to 
+		void addResource(transResourceBufferInfoStruct); //Adds info for Buffer construction of a Transient Buffer
+		void addResource(transResourceImageInfoStruct); //Add info for Image construction of a Transient Image
+		void addResource(externResourceBufferInfoStruct); //Adds state info of an existing Buffer
+		void addResource(externResourceImageInfoStruct); //Adds state info of an existing Image
+
+		void addPass(std::string passName, passFlags, std::vector<ResourceName> inputResources, std::vector<ResourceName> outputResources, std::function<void(const ResourceBufferRef&, const ResourceImageRef&)> passCode); //Maybe should pass a struct of params since need to do stuff like indicate if render/compute pass and other info about pass as well
 		RenderGraph buildRenderGraph();
 	private:
 		std::vector<Pass> _unorderedPasses;
-		std::vector<resourceInfoStruct> _resourceInfos; //Contains all resources needed for the graph
+		std::vector<transResourceBufferInfoStruct> _transientResourceBufferInfos;
+		std::vector<transResourceImageInfoStruct> _transientResourceImageInfos;
+		std::vector<externResourceBufferInfoStruct> _externalResourceBufferInfos;
+		std::vector<externResourceImageInfoStruct> _externalResourceImageInfos;
 
 		//Functions to modulize and breakdown the steps of graph generation...
 		PassAdjacencyMap generateAdjacencyList(const std::vector<Pass>& passes);
@@ -43,7 +55,10 @@ namespace render_graph {
 		std::vector<std::vector<PassIndex>> dependencyLevels; //Represents all Dependency Levels of the RenderGraph and what passes (as indices) exists at each level, where passes on the same level are independent from each other and can run concurrently. (Maybe can be a vector of unordered sets of PassIndices instead?)
 		
 		//Resource Info
-		std::vector<resourceInfoStruct> resourceInfos; //Same as the builder. Keeps tractk of resources and all info pertaininig to it.
+		std::vector<transResourceBufferInfoStruct> _transientResourceBufferInfos;
+		std::vector<transResourceImageInfoStruct> _transientResourceImageInfos;
+		std::vector<externResourceBufferInfoStruct> _externalResourceBufferInfos;
+		std::vector<externResourceImageInfoStruct> _externalResourceImageInfos;
 	};
 
 	/*
@@ -54,7 +69,7 @@ namespace render_graph {
 		std::unordered_set<ResourceName> inputResources;
 		std::unordered_set<ResourceName> outputResources;
 
-		std::function<void()> passCode; //Pass a reference/pointer to structure that hold all these resources, probably a map with resourceName as key to a resource (which encapsulate many types like buffer,image,etc)
+		std::function<void(const ResourceBufferRef&, const ResourceImageRef&)> passCode; //Captures the Input and Output Resource Names (Likely variables holding the names) it needs to perform its pass code. And is passed in its parameters the maps that point to the resources it needs (Using ResourceNames to access the resource itslef)
 
 		bool operator==(const Pass& other) const {
 			return name == other.name && inputResources == other.inputResources && outputResources == other.outputResources; //Not sure if comparing function pointers would work for all circumstances. So for now just compares other members except the function code
