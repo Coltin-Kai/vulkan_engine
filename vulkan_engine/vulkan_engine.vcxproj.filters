@@ -108,6 +108,9 @@
     <ClCompile Include="src\renderGraph.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\renderGraphExecuter.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\engine.h">
@@ -183,6 +186,9 @@
       <Filter>Header Files\ThirdParty\imgui-filebrowser</Filter>
     </ClInclude>
     <ClInclude Include="include\renderGraph.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\renderGraphExecuter.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

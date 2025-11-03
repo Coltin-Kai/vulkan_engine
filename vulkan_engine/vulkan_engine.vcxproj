@@ -32,6 +32,7 @@
     <ClCompile Include="src\loader.cpp" />
     <ClCompile Include="src\main.cpp" />
     <ClCompile Include="src\renderGraph.cpp" />
+    <ClCompile Include="src\renderGraphExecuter.cpp" />
     <ClCompile Include="src\renderSystem.cpp" />
     <ClCompile Include="src\pipeline.cpp" />
     <ClCompile Include="src\stbImage.cpp" />
@@ -57,6 +58,7 @@
     <ClInclude Include="include\imstb_truetype.h" />
     <ClInclude Include="include\loader.h" />
     <ClInclude Include="include\renderGraph.h" />
+    <ClInclude Include="include\renderGraphExecuter.h" />
     <ClInclude Include="include\renderSystem.h" />
     <ClInclude Include="include\pipeline.h" />
     <ClInclude Include="include\shader_types.h" />

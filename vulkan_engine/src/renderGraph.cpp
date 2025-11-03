@@ -2,29 +2,25 @@
 #include <algorithm>
 #include <stack>
 
+using namespace render_graph;
+
 RenderGraph RenderGraphBuilder::buildRenderGraph() {
+	RenderGraph renderGraph;
+
 	//If there are no passes, just return an empty Render Graph.
 	if (_unorderedPasses.size() == 0) {
-		return RenderGraph();
+		return renderGraph;
 	}
 
-	//Construct Graph's Adjacency List of Unordered Pass (Might want to use unordered map instead for storing adjacency lists, makes things easier and thus dont need to regenerate an adjacency list after sorting)
+	//Construct Graph's Adjacency List of Unordered Pass (NOt sure if should has it map to the indices of the Pass or pointers/references refering to the Pass
 	//std::vector<std::vector<int>> passAdjacencyList = generateAdjacencyList(_unorderedPasses);
-	PassAdjacencyMap passAdjacencies = generateAdjacencyList(_unorderedPasses);
+	renderGraph.passAdjacencies = generateAdjacencyList(_unorderedPasses);
 
 	//Order Graph by Topoligcal Sort + Check for Circular Depedencies and other wrong constructions
-	std::vector<Pass> orderedPasses = topologicalSort(passAdjacencies, _unorderedPasses);
+	renderGraph.passes = topologicalSort(renderGraph.passAdjacencies, _unorderedPasses);
 
-	//Find and Assign Depedency Levels to each node, aka Node's longest Depth via "Longest Path Search"
-	std::vector<std::vector<PassIndex>> dependencyLevels = generateDependencyLevels(passAdjacencies, orderedPasses);
-
-	//Figure out Resource Aliasing for graph by gathering all transient resources used in the graph, using depedency levels as timelines for each, and then partitioning them into buckets, giving a list of offsets that show how memory should be partitioned
-
-	//Generate SSIS (set of indices representing closest nodes/passes) for each pass to figure out all the dependencies between nodes.
-
-	//Use the SSIS to cull indirect dependencies to reduce sync points
-
-	//Reroute Transitions to a "main" queue (likely graphics) for resources that are used by multiples queues and can possibly cause conflict.
+	//Find and Assign Depedency Levels to each node, aka Node's longest Depth via "Longest Path Search". Gives info on what nodes are independent from each other (and can run concurrently)
+	renderGraph.dependencyLevels = generateDependencyLevels(renderGraph.passAdjacencies, renderGraph.passes); 
 }
 
 PassAdjacencyMap RenderGraphBuilder::generateAdjacencyList(const std::vector<Pass>& passes) {
@@ -36,7 +32,7 @@ PassAdjacencyMap RenderGraphBuilder::generateAdjacencyList(const std::vector<Pas
 		for (int j = 0; j < passes.size(); j++) {
 			Pass dependentPass = passes[j];
 
-			bool isDependent = std::any_of(dependentPass.inputResources.begin(), dependentPass.inputResources.end(), [&currentPass](ResourceName dependentResource) { return currentPass.outputResources.contains(dependentResource)});
+			bool isDependent = std::any_of(dependentPass.inputResources.begin(), dependentPass.inputResources.end(), [&currentPass](ResourceName dependentResource) { return currentPass.outputResources.contains(dependentResource); });
 
 			//If target pass has an input Resource that is an output Resource of the current pass, then its adjacent/dependent to it.
 			if (isDependent) {
@@ -63,7 +59,7 @@ std::vector<Pass> RenderGraphBuilder::topologicalSort(const PassAdjacencyMap& ad
 	DFS_stack.push(0);
 	onStack[0] = true;
 	while (!passListFilled) { //Will continue DFS until the resulting list is completely filled.
-		for (!DFS_stack.empty()) { 
+		while (!DFS_stack.empty()) { 
 			size_t currentPassIndex = DFS_stack.top();
 			visited[currentPassIndex] = true;
 
@@ -115,6 +111,7 @@ std::vector<std::vector<PassIndex>> RenderGraphBuilder::generateDependencyLevels
 	std::vector<std::vector<PassIndex>> result;
 	std::vector<size_t> depth(passes.size(), 0); //Tracks the depth of each pass, which would directly correlate to the dependency level of the pass
 
+	//Find depth of all pases
 	for (PassIndex i = 0; i < passes.size(); i++) {
 		for (PassIndex adjacentPassIndex : adjacencyList.at(passes[i])) {
 			if (depth[adjacentPassIndex] < depth[i] + 1)
@@ -122,6 +119,7 @@ std::vector<std::vector<PassIndex>> RenderGraphBuilder::generateDependencyLevels
 		}
 	}
 
+	//Assign each dependencyLevel the the PassIndex
 	for (PassIndex i = 0; i < depth.size(); i++) {
 		size_t dependencyLevel = depth[i];
 
