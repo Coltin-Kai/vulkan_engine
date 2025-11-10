@@ -4,6 +4,7 @@ using namespace render_graph;
 
 void RenderGraphExecuter::attachRenderGraph(const render_graph::RenderGraph& renderGraph) {
 	//Figure out Resource Aliasing for graph by gathering all transient resources used in the graph, using depedency levels as timelines for each, and then partitioning them into buckets, giving a list of offsets that show how memory should be partitioned
+
 	//Input: DependencyLevels, ResourceNames; Output: Buckets for each allocation, with each info about the resourcename, size, and offset
 
 	//Initalize and allocate resources: vkbuffers, vkiamge, etc.

@@ -7,7 +7,7 @@ namespace render_graph {
 	*/
 	class RenderGraphExecuter {
 	public:
-		void attachQueues(listOfStructsWithInfoForEachQueue);
+		//Add Resource Function here instead of RenderGraph? Maybe should be the one to managed resources
 		void attachRenderGraph(const render_graph::RenderGraph& renderGraph);
 		void executeRenderGraph();
 	private:
@@ -18,3 +18,8 @@ namespace render_graph {
 		std::unordered_set<ResourceName> _isResourceExternal; //Checks if Resource is a External. Used to check if we need to destroy it or not.
 	};
 }
+
+/*
+	For Setting up syncronization, using barries for syncing using the same queue. Use Timeline Semaphores for syncing across multiple queues. Note can use multiple queues submits with semaphores to
+	make multi queue syncing work while allowing concurrency. 
+*/

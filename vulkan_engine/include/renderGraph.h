@@ -10,25 +10,26 @@ namespace render_graph {
 
 	struct RenderGraph;
 	struct Pass;
+	struct ResourceDependencyInfo;
 
 	using ResourceName = std::string; //Name/ID of a Resource
-	using PassIndex = size_t; //Index of Pass
+	using PassIndex = size_t; //Index of a Pass
 	using PassAdjacencyMap = std::unordered_map<Pass, std::vector<PassIndex>, Pass::Hasher>; //Maps a Pass to a list of indices of dependent Passes in the RenderGraph's list of passes
 	using ResourceBufferRef = std::unordered_map<ResourceName, VkBuffer>;
 	using ResourceImageRef = std::unordered_map<ResourceName, VkImage>;
+	using PassCommandCode = std::function<void(const ResourceBufferRef&, const ResourceImageRef&)>;
 
 	/*
 		Will be used to construct a RenderGraph. Declare what Passes exist and what Resources will exist/needed for the Graph. Should also declare what queues are available for graph to use
 	*/
 	class RenderGraphBuilder {
 	public:
-		//Add Resource Functions are used to 
 		void addResource(transResourceBufferInfoStruct); //Adds info for Buffer construction of a Transient Buffer
 		void addResource(transResourceImageInfoStruct); //Add info for Image construction of a Transient Image
 		void addResource(externResourceBufferInfoStruct); //Adds state info of an existing Buffer
 		void addResource(externResourceImageInfoStruct); //Adds state info of an existing Image
 
-		void addPass(std::string passName, passFlags, std::vector<ResourceName> inputResources, std::vector<ResourceName> outputResources, std::function<void(const ResourceBufferRef&, const ResourceImageRef&)> passCode); //Maybe should pass a struct of params since need to do stuff like indicate if render/compute pass and other info about pass as well
+		void addPass(passInfoStruct); //Maybe should pass a struct of params since need to do stuff like indicate if render/compute pass and other info about pass as well
 		RenderGraph buildRenderGraph();
 	private:
 		std::vector<Pass> _unorderedPasses;
@@ -54,11 +55,17 @@ namespace render_graph {
 		PassAdjacencyMap passAdjacencies; //Maps Passes to a list of their directed adjacents (AKA the indices of Passes Dependent on it)
 		std::vector<std::vector<PassIndex>> dependencyLevels; //Represents all Dependency Levels of the RenderGraph and what passes (as indices) exists at each level, where passes on the same level are independent from each other and can run concurrently. (Maybe can be a vector of unordered sets of PassIndices instead?)
 		
-		//Resource Info
-		std::vector<transResourceBufferInfoStruct> _transientResourceBufferInfos;
-		std::vector<transResourceImageInfoStruct> _transientResourceImageInfos;
-		std::vector<externResourceBufferInfoStruct> _externalResourceBufferInfos;
-		std::vector<externResourceImageInfoStruct> _externalResourceImageInfos;
+		//Maps Function Names/ID contained in Passes to the actual executable function
+		std::unordered_map<std::string, PassCommandCode> passCmdCodes;
+
+		//Resource Info - Contains info for either referencing an external resource or creating the transient resource
+		std::vector<transResourceBufferInfoStruct> transientResourceBufferInfos;
+		std::vector<transResourceImageInfoStruct> transientResourceImageInfos;
+		std::vector<externResourceBufferInfoStruct> externalResourceBufferInfos;
+		std::vector<externResourceImageInfoStruct> externalResourceImageInfos;
+
+		//Queue
+		std::vector<QueueInfo> queueInfos;
 	};
 
 	/*
@@ -68,11 +75,13 @@ namespace render_graph {
 		std::string name;
 		std::unordered_set<ResourceName> inputResources;
 		std::unordered_set<ResourceName> outputResources;
-
-		std::function<void(const ResourceBufferRef&, const ResourceImageRef&)> passCode; //Captures the Input and Output Resource Names (Likely variables holding the names) it needs to perform its pass code. And is passed in its parameters the maps that point to the resources it needs (Using ResourceNames to access the resource itslef)
-
+		std::unordered_map<ResourceName, ResourceDependencyInfo> resourceDepInfos;
+		std::string passCommandCodeName; //Referenced Function Captures the Input and Output Resource Names (Likely variables holding the names) it needs to perform its command code. And is passed in its parameters the maps that point to the resources it needs (Using ResourceNames to access the resource itslef)
+		size_t queueID; //References the Queue the Pass Command Code submits to.
+		
 		bool operator==(const Pass& other) const {
-			return name == other.name && inputResources == other.inputResources && outputResources == other.outputResources; //Not sure if comparing function pointers would work for all circumstances. So for now just compares other members except the function code
+			return name == other.name && inputResources == other.inputResources && outputResources == other.outputResources 
+				&& resourceDepInfos == other.resourceDepInfos && passCommandCodeName == other.passCommandCodeName && queueID == other.queueID;
 		}
 
 		struct Hasher {
@@ -84,14 +93,46 @@ namespace render_graph {
 				for (const auto& resource : pass.outputResources) {
 					hashValue ^= std::hash<std::string>{}(resource);
 				}
+
+				for (const auto& resourceName_DepInfo : pass.resourceDepInfos) {
+					hashValue ^= std::hash<std::string>{}(resourceName_DepInfo.first) ^ ResourceDependencyInfo::Hasher{}(resourceName_DepInfo.second);
+				}
+
+				hashValue ^= std::hash<std::string>{}(pass.passCommandCodeName);
+				hashValue ^= std::hash<size_t>{}(pass.queueID);
+
+				return hashValue;
+			}
+		};
+	};
+
+	/*
+		Specifies how the resource will be used in a pass: What Pipeline Stages it participates in the Pass, What kind of Access the Pass will perform on resource, (And if an image) the expected layout and the subresource Range into.
+		Used for setting up the appropriate VkDependencyInfos and its barriers that syncronize between passes
+	*/
+	struct ResourceDependencyInfo {
+		VkPipelineStageFlags2 pipelineStages = VK_PIPELINE_STAGE_NONE; 
+		VkAccessFlags2 accessType = VK_ACCESS_NONE;
+		VkImageLayout imageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		VkImageSubresourceRange imageRange = { .aspectMask = VK_IMAGE_ASPECT_NONE, .baseMipLevel = 0, .levelCount = 0, .baseArrayLayer = 0, .layerCount = 0 };
+
+		bool operator==(const ResourceDependencyInfo& other) const {
+			return pipelineStages == other.pipelineStages && accessType == other.accessType && imageLayout == other.imageLayout
+				&& imageRange.aspectMask == other.imageRange.aspectMask && imageRange.baseArrayLayer == other.imageRange.baseArrayLayer
+				&& imageRange.baseMipLevel == other.imageRange.baseMipLevel && imageRange.layerCount == other.imageRange.layerCount
+				&& imageRange.levelCount == other.imageRange.levelCount;
+		}
+	
+		struct Hasher {
+			size_t operator()(const ResourceDependencyInfo& resDepInfo) const {
+				size_t hashValue = std::hash<uint64_t>{}(resDepInfo.pipelineStages);
+				hashValue ^= std::hash<uint64_t>{}(resDepInfo.accessType);
+				hashValue ^= std::hash<size_t>{}(resDepInfo.imageLayout);
+				hashValue ^= std::hash<uint32_t>{}(resDepInfo.imageRange.aspectMask) ^ std::hash<uint32_t>{}(resDepInfo.imageRange.baseMipLevel)
+					^ std::hash<uint32_t>{}(resDepInfo.imageRange.levelCount) ^ std::hash<uint32_t>{}(resDepInfo.imageRange.baseArrayLayer) 
+					^ std::hash<uint32_t>{}(resDepInfo.imageRange.layerCount);
 				return hashValue;
 			}
 		};
 	};
 }
-/*
-	Not sure if resource should be struct or some kind of string. And how to connect the elusive Resource to what they actually represent (the object/data).
-	Types: RenderTarget, DepthStencil, Texture, Buffer.
-
-	Perhaps have Resource represent a string, then have either the rendergraph or a class that executes the rendergraph to use that string to connect it the actual resource (via unordered map)
-*/
