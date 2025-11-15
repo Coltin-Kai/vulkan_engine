@@ -21,6 +21,20 @@ RenderGraph RenderGraphBuilder::buildRenderGraph() {
 
 	//Find and Assign Depedency Levels to each node, aka Node's longest Depth via "Longest Path Search". Gives info on what nodes are independent from each other (and can run concurrently)
 	renderGraph.dependencyLevels = generateDependencyLevels(renderGraph.passAdjacencies, renderGraph.passes); 
+
+	//Pass down Pass Function Codes
+	renderGraph.passCmdCodes = _passCmdCodes;
+
+	//Figure out Resource Aliasing for graph by gathering all transient resources used in the graph, using depedency levels as timelines for each, and then separating them into different aliasable regions
+	renderGraph.transientMemoryAllocInfos = generateTransientResourceAliasingInfo(renderGraph.dependencyLevels, _transientResourceInfos, renderGraph.passes);
+
+	//Pass down ExternalResoucesInfo
+	renderGraph.externalResourceInfos = _externalResourceInfos;
+
+	//Generate SSIS (set of indices representing closest nodes/passes) for each pass to figure out all the inter-dependencies between nodes.
+	//Input: Need How many Queues, which queue a node is associated with, Adjacency List, The list of passes.
+
+	//Use the SSIS to cull indirect dependencies to reduce sync points
 }
 
 PassAdjacencyMap RenderGraphBuilder::generateAdjacencyList(const std::vector<Pass>& passes) {
@@ -126,6 +140,144 @@ std::vector<std::vector<PassIndex>> RenderGraphBuilder::generateDependencyLevels
 		if (dependencyLevel >= result.size()) //Ensures that the dependencyLevel index exists in the vector. If not, then resize the vector before adding the pass.
 			result.resize(dependencyLevel + 1);
 		result[dependencyLevel].push_back(i);
+	}
+
+	return result;
+}
+
+std::vector<TransientMemoryAliasableRegion> RenderGraphBuilder::generateTransientResourceAliasingInfo(const std::vector<std::vector<PassIndex>>& dependencyLevels, const std::unordered_map<ResourceName, transResourceInfoStruct>& transientResourceInfos, const std::vector<Pass>& passes) {
+	struct ResourceEffectiveLifetime {
+		ResourceName name; //The refered Resource
+		size_t begin; //Dependency Level where resource is first used
+		size_t end; //Dependency Level where resource is last used
+	};
+
+	//Generate list of EffectiveLifetimes for each Resource
+	std::vector<ResourceEffectiveLifetime> resourceLifeTimes;
+	std::unordered_map<ResourceName, size_t> resourceNameToLifeTimeIndex; //Maps Resource Name to Index of its EffectiveTimeline in the lifetime list.
+
+	for (size_t level = 0; level < dependencyLevels.size(); level++) {
+		for (PassIndex passIndex : dependencyLevels[level]) {
+			const Pass& pass = passes[passIndex];
+
+			//Resources designated as input represent a possible end of its lifetime. 
+			for (ResourceName resourceName : pass.inputResources) {
+				//Check to make sure Resource is Transient (and existing in the resourceName to Index Map)
+				if (resourceNameToLifeTimeIndex.contains(resourceName)) {
+					size_t i = resourceNameToLifeTimeIndex[resourceName];
+					resourceLifeTimes[i].end = level;
+				}
+			}
+
+			//Resource designated as output represent as a start of it's lifetime
+			for (ResourceName resourceName : pass.outputResources) {
+				//Check to make sure Resource is Transient
+				if (transientResourceInfos.contains(resourceName)) {
+					resourceLifeTimes.push_back({ .name = resourceName, .begin = level, .end = level });
+					resourceNameToLifeTimeIndex[resourceName] = resourceLifeTimes.size() - 1;
+				}
+			}
+		}
+	}
+
+	//Sort list by memory size in descending order
+	std::sort(resourceLifeTimes.begin(), resourceLifeTimes.end(), [&transientResourceInfos](ResourceEffectiveLifetime a, ResourceEffectiveLifetime b) {
+		return transientResourceInfos[a.name].sizeWhatever > transientResourceInfos[b.name].sizeWhatever;
+		});
+
+	//Generate Transient Aliasable Memory Regions
+	std::vector<TransientMemoryAliasableRegion> result;
+
+	//-Keep Generating Memory Regions unitl there are no more resource lifetimes left.
+	while (resourceLifeTimes.size() != 0) {
+		//Create new region with size matching that with the current largest existing resource in list of resource lifetimes.
+		result.emplace_back();
+		TransientMemoryAliasableRegion& currentRegion = result.back();
+		
+		currentRegion.size = transientResourceInfos[resourceLifeTimes.front().name].calcualteSizeWhatever;
+
+		//Add all possible Resources to the Region, removing those that have been added from the lifetimes list.
+		std::unordered_map<ResourceName, ResourceEffectiveLifetime> addedResourceLifetimes; //Holds all the lifetime of resources that can occupy the aliasable region.
+		resourceLifeTimes.erase(std::remove_if(resourceLifeTimes.begin(), resourceLifeTimes.end(), [&currentRegion, &addedResourceLifetimes, &transientResourceInfos](ResourceEffectiveLifetime resourceLifetime) {
+			enum class PointType
+			{
+				Start,
+				End
+			};
+			
+			//Represents a offset in memory representing where a region of memory starts or ends
+			struct OffsetPoint {
+
+				PointType type;
+				size_t offset; //Offset in Memory
+			};
+
+			const transResourceInfo& resourceInfo = transientResourceInfos[resourceLifetime.name];
+			size_t resourceSize = resourceInfo.CalcualteSizeWhatever;
+			std::vector<OffsetPoint> unavailableSubregionOffsetPoints; //List of offset points representing start and end points of unavailable subregions of memory in the current Region.
+
+			//Add Offsetpoints representing the start and end of the region of memory that is available.
+			unavailableSubregionOffsetPoints.emplace_back(PointType::End, 0); 
+			unavailableSubregionOffsetPoints.emplace_back(PointType::Start, currentRegion.size);
+
+			//Generate offsetPoints representing unavailable subregions of memory based on any existing aliased resources aliasing from this region and if they conflict with their lifetimes
+			for (auto aliasedResource : currentRegion.transResources) {
+				ResourceEffectiveLifetime& aliasedResourceLifetime = addedResourceLifetimes[aliasedResource.resourceName];
+				
+				if (resourceLifetime.begin <= aliasedResourceLifetime.end && resourceLifetime.end >= aliasedResourceLifetime.begin) {
+					unavailableSubregionOffsetPoints.emplace_back(PointType::Start, aliasedResource.offset);
+					unavailableSubregionOffsetPoints.emplace_back(PointType::End, aliasedResource.offset + aliasedResource.size);
+				}
+			}
+
+			//Sort OffsetPoints so that offsets are ordered in ascending offsets.
+			std::sort(unavailableSubregionOffsetPoints.begin(), unavailableSubregionOffsetPoints.end(), [](OffsetPoint a, OffsetPoint b) {
+				if (a.offset == b.offset) { //If offsets match. Then must guarentee that all end points with the same offset must come before all start points with the same offset, as any end point with matching offset as a start point and that comes after it represents an unavailable subregion of size 0, which is invalid.
+					if (a.type == PointType::End)
+						return true;
+					else
+						return false;
+				}
+				else if (a.offset < b.offset)
+					return true;
+				else
+					return false;
+				});
+
+			//Find the smallest available space without lifetime conflicts by iterating through the offsetpoints (If there is one)
+			uint32_t overlapCounter = 0;
+			size_t smallestAvailableSubregionOffset = currentRegion.size; //Keep track of the smallest available subregion that can fit the current resource that we know so far. If none, then offset matches the region's size;
+			size_t smallestAvailableSubreionSize = SIZE_MAX;
+			size_t currentEndPointOffset; //Represents the current EndPoint to keep track for looking for available subregions
+			for (OffsetPoint point : unavailableSubregionOffsetPoints) {
+				if (point.type == PointType::End) {
+					currentEndPointOffset = point.offset;
+
+					if (overlapCounter > 0)
+						overlapCounter--;
+				}
+				else {
+					if (overlapCounter == 0) { //If Counter is 0, then the End, Start Pair is not being overlapped by other End,Start Pair. Thus it is an available subregion
+						size_t availableSubregionSize = point.offset - currentEndPointOffset;
+
+						if (availableSubregionSize <= smallestAvailableSubreionSize && availableSubregionSize >= resourceSize) { //If the availabe subregion is smaller than what we know as smallest subregion at the time and big enough to hold the resource, designate as smallest.
+							smallestAvailableSubregionOffset = currentEndPointOffset;
+							smallestAvailableSubreionSize = availableSubregionSize;
+						}
+
+						overlapCounter++;
+					}
+				}
+			}
+
+			//Check if we found an available subregion of space, if so, then add the resource to the region with an offset matching that available subregion's offset and return true to remove from lifetime list.
+			if (smallestAvailableSubregionOffset != currentRegion.size) {
+				currentRegion.transResources.push_back({ .offset = smallestAvailableSubregionOffset, .size = resourceSize, .resourceInfo = resourceInfo });
+				return true;
+			}
+			else
+				return false;
+			}), resourceLifeTimes.end());
 	}
 
 	return result;

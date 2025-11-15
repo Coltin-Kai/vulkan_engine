@@ -14,8 +14,6 @@ namespace render_graph {
 		RenderGraph _renderGraph; //Have one rendergraph for now. Not sure if should be pointer or not. Keep as value for now
 		ResourceBufferRef _resourceBuffers;
 		ResourceImageRef _resourceImages;
-
-		std::unordered_set<ResourceName> _isResourceExternal; //Checks if Resource is a External. Used to check if we need to destroy it or not.
 	};
 }
 
