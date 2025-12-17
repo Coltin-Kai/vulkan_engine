@@ -28,8 +28,8 @@ RenderGraph RenderGraphBuilder::buildRenderGraph() {
 	//Figure out Resource Aliasing for graph by gathering all transient resources used in the graph, using depedency levels as timelines for each, and then separating them into different aliasable regions
 	renderGraph.transientMemoryAllocInfos = generateTransientResourceAliasingInfo(renderGraph.dependencyLevels, _transientResourceInfos, renderGraph.passes);
 
-	//Pass down ExternalResoucesInfo
 	renderGraph.externalResourceInfos = _externalResourceInfos;
+	renderGraph.queueInfos = _queueInfos;
 
 	//Generate SSIS (set of indices representing closest nodes/passes) for each pass to figure out all the inter-dependencies between nodes.
 	//Input: Need How many Queues, which queue a node is associated with, Adjacency List, The list of passes.

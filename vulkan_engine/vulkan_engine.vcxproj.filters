@@ -108,7 +108,7 @@
     <ClCompile Include="src\renderGraph.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="src\renderGraphExecuter.cpp">
+    <ClCompile Include="src\gpuGraphExecuter.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -188,7 +188,7 @@
     <ClInclude Include="include\renderGraph.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="include\renderGraphExecuter.h">
+    <ClInclude Include="include\gpuGraphExecuter.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

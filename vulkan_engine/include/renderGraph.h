@@ -3,6 +3,7 @@
 #include <string>
 #include <unordered_set>
 #include <functional>
+#include <variant>
 
 #include "vulkan_helper_types.h"
 
@@ -27,6 +28,7 @@ namespace render_graph {
 	public:
 		void addResource(transResourceInfoStruct); //Adds info for Buffer/Image construction of a Transient Resource
 		void addResource(externResourceInfoStruct); //Adds info fo referencing a Buffer/Image as an External Resource
+		void addQueue(QueueInfo);
 
 		void addPass(passInfoStruct); //Maybe should pass a struct of params since need to do stuff like indicate if render/compute pass and other info about pass as well
 		RenderGraph buildRenderGraph();
@@ -35,12 +37,14 @@ namespace render_graph {
 		std::unordered_map<std::string, PassCommandCode> _passCmdCodes; //Map Function Name to Function Code
 		std::unordered_map<ResourceName, transResourceInfoStruct> _transientResourceInfos; //Infos for creating Transient Resources. In map so it's easier to access for constructing aliasing memory regions.
 		std::vector<externResourceInfoStruct> _externalResourceInfos; //Infos for referencing External Resources
+		std::vector<QueueInfo> _queueInfos;
 
 		//Functions to modulize and breakdown the steps of graph generation...
 		PassAdjacencyMap generateAdjacencyList(const std::vector<Pass>& passes);
 		std::vector<Pass> topologicalSort(const PassAdjacencyMap& adjacencyList, const std::vector<Pass>& passes);
 		std::vector<std::vector<PassIndex>> generateDependencyLevels(const PassAdjacencyMap& adjacencyList, const std::vector<Pass>& passes);
 		std::vector<TransientMemoryAliasableRegion> generateTransientResourceAliasingInfo(const std::vector<std::vector<PassIndex>>& dependencyLevels, const std::unordered_map<ResourceName, transResourceInfoStruct>& transientResourceInfos, const std::vector<Pass>& passes);
+		std::unordered_map<Pass, std::vector<PassIndex>> generateSyncronizationIndexSet(size_t queueCount);
 	};
 
 	/*
@@ -54,7 +58,8 @@ namespace render_graph {
 		std::vector<Pass> passes; //List of Passes of the RenderGraph (Topoligcally Sorted). Will represent ownership of the pass and should be the structure used to access a pass
 		PassAdjacencyMap passAdjacencies; //Maps Passes to a list of their directed adjacents (AKA the indices of Passes Dependent on it)
 		std::vector<std::vector<PassIndex>> dependencyLevels; //Represents all Dependency Levels of the RenderGraph and what passes (as indices) exists at each level, where passes on the same level are independent from each other and can run concurrently. (Maybe can be a vector of unordered sets of PassIndices instead?)
-		
+		std::unordered_map<Pass, std::vector<PassIndex>> syncronizationIndexSet; //Represents the list of Passes (as Indices) the referencing Pass needs to syncronize with within each Queue (Index of the list associates with respective Queue)
+
 		//Maps Function Names/ID contained in Passes to the actual executable function
 		std::unordered_map<std::string, PassCommandCode> passCmdCodes;
 
@@ -148,3 +153,73 @@ namespace render_graph {
 		std::vector<AliasingResource> transResources;
 	};
 }
+
+namespace gpu_graph {
+	struct ImageResource {
+		std::string name;
+		VkImage image;
+		//extent and stuff
+	};
+
+	struct ImageSubResource { //Represents a subresource (image view) of an image resource
+		ResourceHandle image;
+		VkImageView imageView;
+		//subresource range and stuff
+	};
+
+	struct BufferResource {
+		std::string name;
+		VkBuffer buffer; //Represents the Buffer the Resource points to
+		BufferRange resourceRange; //Represents the range of the Resource in Buffer
+	};
+
+	struct BufferSubResource { //Represents a subrange of a buffer resource
+		ResourceHandle bufferResource;
+		BufferRange subresourceRange;
+	};
+
+	struct BufferRange {
+		VkDeviceSize offset;
+		VkDeviceSize range;
+	};
+
+	enum class QueueType {
+		Primary,
+		AsyncCompute,
+		TransferDedicated,
+		PresentDedicated
+	};
+
+	using ExecutionHandle = size_t;
+	using ResourceHandle = size_t;
+	using ResourceMap = std::unordered_map<ResourceHandle, std::variant<BufferResource, BufferSubResource, ImageResource, ImageSubResource>>;
+
+	//Represents an execution of a series of passes. Used for memoization and reusing taskes
+	struct Execution {
+
+	};
+
+	//Represents a distinct GPU Operation performed on a read and write Targets
+	struct Pass {
+		std::string name;
+		QueueType passType; //Specifies which queue the pass should be executed on
+		std::unordered_set<ResourceHandle> readTargets;
+		std::unordered_set<ResourceHandle> writeTargets;
+
+		std::function<void()> passExecution; 
+	};
+}
+
+/*
+How it would work:
+During run time, create pass to represent one indivuidual GPU task.
+Can wrap these pass creation in functions for reusability of lambdas while also letting passes represent distinct executions (ex Upload Data from Staging Buffer to another Buffer)
+Helps reduce the number of anonymous classes and allows reusability of these implicit classes.
+So can pass these functions with handles to the desired resourcs. And the user attaches the actual resource/creation data to these resources handles, letting passes being able to know which resources to point to.
+
+Ordering. Simply order the passes based on their targets via BFS.
+Memory Aliasing. Knowledge of the pass and its subpasses can help. For example, if we can tell if a pass utilizes no trans resources, it has no affect on if we can reuse resources or not so its not considered.
+
+If a pass that uses trans resources may only be used only used sparingly like a conditional that only runs one frame that its needed but unused otherwise till then, it would be better separate their trans 
+resources from more persistent passes' trans resources, so we dont have to reallocate persistent passes.
+*/
