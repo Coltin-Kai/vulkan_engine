@@ -155,32 +155,92 @@ namespace render_graph {
 }
 
 namespace gpu_graph {
-	struct ImageResource {
-		std::string name;
-		VkImage image;
-		//extent and stuff
-	};
+	using ExecutionHandle = size_t;
 
-	struct ImageSubResource { //Represents a subresource (image view) of an image resource
-		ResourceHandle image;
-		VkImageView imageView;
-		//subresource range and stuff
+	using vDataResourceHandle = size_t; //Can represent either a virutal buffer or image resource handle
+	using vDataSubResourceHandle = size_t; //Can represents either a virtual buffer or image subresource handle
+	using vBufferResourceHandle = size_t;
+	using vImageResourceHandle = size_t;
+	using vBufferSubResourceHandle = size_t;
+
+	using vImageSubResourceHandle = size_t;
+	using vSamplerResourceHandle = size_t; //Virtual handle to Samplers
+	using vDescriptorSetResourceHandle = size_t; //Virtual handle to DescriptorSets
+
+	struct ImageResource {
+		VkImage image;
 	};
 
 	struct BufferResource {
-		std::string name;
 		VkBuffer buffer; //Represents the Buffer the Resource points to
-		BufferRange resourceRange; //Represents the range of the Resource in Buffer
+		VkDeviceAddress deviceAddress; //0 indicates no available address. Buffer must have been created to support Buffer Device Addresses to use.
 	};
 
-	struct BufferSubResource { //Represents a subrange of a buffer resource
-		ResourceHandle bufferResource;
-		BufferRange subresourceRange;
+	//Represents an Image Subresource
+	struct ImageSubResource {
+		vImageResourceHandle imageResource;
+		VkImageView imageView;
+		VkImageSubresourceRange range;
+		VkOffset3D offset;
+		VkExtent3D extent;
 	};
 
-	struct BufferRange {
+	//Represents a Buffer Subresource
+	struct BufferSubResource {
+		vBufferResourceHandle bufferResource;
 		VkDeviceSize offset;
 		VkDeviceSize range;
+	};
+
+	//Represents all the resources of an executing graph that each pass of it can use to access resources using the virtual handles in their setup and execution code
+	class GraphResource {
+		std::vector<ImageResource> imageResources;
+		std::vector<BufferResource> bufferResources;
+		std::vector<ImageSubResource> imageSubResources;
+		std::vector<BufferSubResource> bufferSubResources;
+		std::vector<VkSampler> samplers;
+		std::vector<VkDescriptorSet> descriptorSets;
+	public:
+		ImageResource getImage(vDataResourceHandle handle) {
+			return imageResources[handle];
+		}
+
+		BufferResource getBuffer(vDataResourceHandle handle) {
+			return bufferResources[handle];
+		}
+
+		ImageSubResource getImageSubResource(vDataSubResourceHandle handle) {
+			return imageSubResources[handle];
+		}
+
+		BufferSubResource getBufferSubResource(vDataSubResourceHandle handle) {
+			return bufferSubResources[handle];
+		}
+
+		VkSampler getSampler(vSamplerResourceHandle handle) {
+			return samplers[handle];
+		}
+
+		VkDescriptorSet getDescriptorSet(vDescriptorSetResourceHandle handle) {
+			return descriptorSets[handle];
+		}
+	};
+
+	//Dependency info describing a Buffer or Image Resource and all subResources under it
+	struct DataResourceDependency {
+		vDataResourceHandle resource;
+		std::vector<vDataSubResourceHandle> subResources;
+
+		//Checks if two Dependencies refer to the same resource
+		bool operator==(const DataResourceDependency& other) {
+			return this->resource == other.resource;
+		}
+
+		struct Hasher {
+			size_t operator()(const DataResourceDependency& dep) {
+				return std::hash<vDataResourceHandle>{}(dep.resource);
+			}
+		};
 	};
 
 	enum class QueueType {
@@ -190,23 +250,19 @@ namespace gpu_graph {
 		PresentDedicated
 	};
 
-	using ExecutionHandle = size_t;
-	using ResourceHandle = size_t;
-	using ResourceMap = std::unordered_map<ResourceHandle, std::variant<BufferResource, BufferSubResource, ImageResource, ImageSubResource>>;
-
-	//Represents an execution of a series of passes. Used for memoization and reusing taskes
-	struct Execution {
-
-	};
-
 	//Represents a distinct GPU Operation performed on a read and write Targets
 	struct Pass {
 		std::string name;
 		QueueType passType; //Specifies which queue the pass should be executed on
-		std::unordered_set<ResourceHandle> readTargets;
-		std::unordered_set<ResourceHandle> writeTargets;
 
-		std::function<void()> passExecution; 
+		std::unordered_set<DataResourceDependency, DataResourceDependency::Hasher> readBufferTargets;
+		std::unordered_set<DataResourceDependency, DataResourceDependency::Hasher> readImageTargets;
+
+		std::vector<DataResourceDependency> writeBufferTargets;
+		std::vector<DataResourceDependency> writeImageTargets;
+
+		std::function<void(GraphResource)> passSetup;
+		std::function<void(GraphResource)> passExecution; 
 	};
 }
 
@@ -216,10 +272,54 @@ During run time, create pass to represent one indivuidual GPU task.
 Can wrap these pass creation in functions for reusability of lambdas while also letting passes represent distinct executions (ex Upload Data from Staging Buffer to another Buffer)
 Helps reduce the number of anonymous classes and allows reusability of these implicit classes.
 So can pass these functions with handles to the desired resourcs. And the user attaches the actual resource/creation data to these resources handles, letting passes being able to know which resources to point to.
+So basically a function scope defines and attaches all the resources it understand it needs to supply its one or more passes it creates, and may supply those down the chain of functions that also do the same.
+Aka a scope represents a group of passes. 
+
+Executer has to do following:
+Allocate and Generate TransResources
+Sort and Order Passes
+Perform setupcode of passes
+Execute commandcode of passes in order
+
+Resources.
+Allow Resources and Subresources. There is a directed line from Pass 1 to Pass 2 if Pass 2 reads from a subresource that intersects with a subresource written to in Pass 1 from the same Resource.
+If a pass may requre usage of the actual buffer/image itself. Would count that as a subresource covering the entire whole.
+For Buffers, a subresource is basically a subregion of the buffer: offset and range vkdevicesizes.
+For Images, its complicated:
+	There are layers, levels, aspect, and the more granular image regions describing texels.
+	There are three main structs for describing image subresource except for regions: vkimagesubresource, vkimagesubresourcelayers, and vkimagesubresourcerange; where first just describes a singer array layer
+	and mip level, multiple layers and a single mip level, and multiple layers and levels. Easy to find and evaluate intersection.
+	Operations involving shaders and the pipeliens would usualy take the whole image regions. So only really care about the subresources defining aspect, layers, and miplevels.
+	Texel level operations like those in transfer ones would require specifying the regions as well. And barriers
+	Since Imageviews represents an actual vkobject as well than jsut being a subresource, can specify and attach imageview creation info to subresources structs if we know we need to use them.
+	THe choice of allowing external subresources like imageviews kind of makes it difficult of giving flexibility to functions to generate necessary subresources on their own. So subresource creation is fully relegated compilation
+
+Command Code should be able to access these subresources to both access the the resource the subresource points to and data pertaining to that subresource (Like ranges and imageview)
+
+Some resources will be likely shared but also contextual to what a pass does. For example a pass may need a sampler to use alongside an imageview. But since samplers are just metadata not tied to a resource,
+it is sharable across the entire graph. Need a way to allow passes to declare what kind of sampler they would use, while resolving the correct pointer to resource during pass setup during compilation (as during compilation is when we know how much we need)
+
+Also applies to descriptor sets. As they can be sharable objects, but used in both setup (updating descriptor set) and commands (binding descriptor set) for each pass object, with former also requiring accessing resources on demand.
+Descriptor sets require knowledge of the subresources they use and how it will be attached to fit the descriptor layout of pipeline computation of a pass. So the scope describing and setingup the pass
+should be the one to declare how its descriptor set (if any) should be. But since descriptor sets are sharable, need to resolve to allow handle to point to sharedresource.
+Can also reuse descriptor sets from previous executions. As long as we aware if the execution is finished and resources are released. Then can either reuse the descriptor set or dont even have to udpate it 
+if resources are same. 
+
+For a lot of sharable resources, can use an associative container between creation info of resource and resource handle in execution struct, to allow fast check if past execution utilized such and such resource.
+
+Push Constants, data is simply passed and loaded via commands so as simple as capturing whatever data the pass object needs in execution code.
+
+BDA, easy to do with external resources, just make sure to pass the address data through appropriate external buffers or push constant datas. 
+For transient resources, need to either copy addresses to external buffer in setup code or push addresses through pus constants in command code. Since multiple passes can use the address, acquiring the
+address should be done by executer after creating resource if flagged to for that specific resource buffer. 
+Transient resource buffers flagged for BDA should be allocated as their own VkBuffer. As Executer normally would probably pass a buffer that represents multiple virtual buffers if not done so.
+Though can leverage buffer subresoruce offset and range info to pass it to shaders to appropriately pointer and bound the correct address of data in the BDA buffer. Though shader has to be setup for it.
 
 Ordering. Simply order the passes based on their targets via BFS.
 Memory Aliasing. Knowledge of the pass and its subpasses can help. For example, if we can tell if a pass utilizes no trans resources, it has no affect on if we can reuse resources or not so its not considered.
 
 If a pass that uses trans resources may only be used only used sparingly like a conditional that only runs one frame that its needed but unused otherwise till then, it would be better separate their trans 
 resources from more persistent passes' trans resources, so we dont have to reallocate persistent passes.
+
+Passes interface with Virtual Resource Handles. Executer connect these handles to the actual resources it manages.
 */
