@@ -6,6 +6,7 @@
 #include <variant>
 
 #include "vulkan_helper_types.h"
+#include <optional>
 
 namespace render_graph {
 
@@ -156,113 +157,148 @@ namespace render_graph {
 
 namespace gpu_graph {
 	using ExecutionHandle = size_t;
+	using vPipelineHandle = size_t;
 
 	using vDataResourceHandle = size_t; //Can represent either a virutal buffer or image resource handle
 	using vDataSubResourceHandle = size_t; //Can represents either a virtual buffer or image subresource handle
-	using vBufferResourceHandle = size_t;
-	using vImageResourceHandle = size_t;
-	using vBufferSubResourceHandle = size_t;
 
-	using vImageSubResourceHandle = size_t;
-	using vSamplerResourceHandle = size_t; //Virtual handle to Samplers
-	using vDescriptorSetResourceHandle = size_t; //Virtual handle to DescriptorSets
+	//Use State Handles to allow sharing states between commands within and across passes
+	using vDescriptorSetStateHandle = size_t;
 
-	struct ImageResource {
-		VkImage image;
+	//Contains the indices to their respective descriptor for a transient resource
+	struct GlobalDescriptorSetIndices {
+		uint32_t sampledImageId;
+		uint32_t samplerId;
+		uint32_t storageImageId;
+		uint32_t uniformBufferId;
+		uint32_t uniformTexelBufferId;
+		uint32_t storageTexelBufferId;
 	};
 
-	struct BufferResource {
-		VkBuffer buffer; //Represents the Buffer the Resource points to
-		VkDeviceAddress deviceAddress; //0 indicates no available address. Buffer must have been created to support Buffer Device Addresses to use.
-	};
-
-	//Represents an Image Subresource
-	struct ImageSubResource {
-		vImageResourceHandle imageResource;
-		VkImageView imageView;
-		VkImageSubresourceRange range;
-		VkOffset3D offset;
-		VkExtent3D extent;
-	};
-
-	//Represents a Buffer Subresource
-	struct BufferSubResource {
-		vBufferResourceHandle bufferResource;
-		VkDeviceSize offset;
-		VkDeviceSize range;
-	};
-
-	//Represents all the resources of an executing graph that each pass of it can use to access resources using the virtual handles in their setup and execution code
-	class GraphResource {
-		std::vector<ImageResource> imageResources;
-		std::vector<BufferResource> bufferResources;
-		std::vector<ImageSubResource> imageSubResources;
-		std::vector<BufferSubResource> bufferSubResources;
-		std::vector<VkSampler> samplers;
-		std::vector<VkDescriptorSet> descriptorSets;
-	public:
-		ImageResource getImage(vDataResourceHandle handle) {
-			return imageResources[handle];
-		}
-
-		BufferResource getBuffer(vDataResourceHandle handle) {
-			return bufferResources[handle];
-		}
-
-		ImageSubResource getImageSubResource(vDataSubResourceHandle handle) {
-			return imageSubResources[handle];
-		}
-
-		BufferSubResource getBufferSubResource(vDataSubResourceHandle handle) {
-			return bufferSubResources[handle];
-		}
-
-		VkSampler getSampler(vSamplerResourceHandle handle) {
-			return samplers[handle];
-		}
-
-		VkDescriptorSet getDescriptorSet(vDescriptorSetResourceHandle handle) {
-			return descriptorSets[handle];
-		}
-	};
-
-	//Dependency info describing a Buffer or Image Resource and all subResources under it
-	struct DataResourceDependency {
-		vDataResourceHandle resource;
-		std::vector<vDataSubResourceHandle> subResources;
-
-		//Checks if two Dependencies refer to the same resource
-		bool operator==(const DataResourceDependency& other) {
-			return this->resource == other.resource;
-		}
-
-		struct Hasher {
-			size_t operator()(const DataResourceDependency& dep) {
-				return std::hash<vDataResourceHandle>{}(dep.resource);
-			}
-		};
+	//Represents the exposed resources accessable by the command code
+	class GraphResources {
 	};
 
 	enum class QueueType {
 		Primary,
 		AsyncCompute,
 		TransferDedicated,
-		PresentDedicated
+		Present
 	};
 
-	//Represents a distinct GPU Operation performed on a read and write Targets
-	struct Pass {
-		std::string name;
-		QueueType passType; //Specifies which queue the pass should be executed on
+	enum class PassType {
+		Graphics,
+		Compute,
+		Transfer
+	};
 
-		std::unordered_set<DataResourceDependency, DataResourceDependency::Hasher> readBufferTargets;
-		std::unordered_set<DataResourceDependency, DataResourceDependency::Hasher> readImageTargets;
+	struct RenderingAttachmentInfo {
+		VkFormat format;
+		vDataSubResourceHandle subResourceImage;
+		VkImageLayout layout;
+		VkResolveModeFlags resolveMode;
+		vDataSubResourceHandle subResourceResolveImage;
+		VkImageLayout resolveLayout;
+		VkAttachmentLoadOp loadOp;
+		VkAttachmentStoreOp storeOp;
+		VkClearValue clearValue;
+	};
 
-		std::vector<DataResourceDependency> writeBufferTargets;
-		std::vector<DataResourceDependency> writeImageTargets;
+	struct RenderingInfo {
+		VkRect2D renderArea;
+		uint32_t viewMask;
+		uint32_t colorAttachmentCount;
+		const RenderingAttachmentInfo* pColorAttachments;
+		const RenderingAttachmentInfo* pDepthAttachment;
+		const RenderingAttachmentInfo* pStencilAttachment;
+	};
 
-		std::function<void(GraphResource)> passSetup;
-		std::function<void(GraphResource)> passExecution; 
+	struct VertexBindInfo {
+		VkDeviceSize offset;
+		vDataResourceHandle buffer;
+	};
+
+	struct IndexBindInfo {
+		VkDevice offset;
+		VkIndexType type;
+		vDataResourceHandle buffer;
+	};
+
+	struct DynamicViewportInfo {
+		float x;
+		float y;
+		float width;
+		float height;
+		float minDepth;
+		float maxDepth;
+	};
+
+	struct DynamicScissorInfo {
+		VkOffset2D offset;
+		VkExtent2D extent;
+	};
+
+	struct DynamicDepthBiasInfo {
+		float depthBiasConstant;
+		float depthBiasClamp;
+		float depthBiasSlopeFactor;
+	};
+
+	struct DynamicStencilCompareInfo {
+		VkStencilFaceFlags faceMask;
+		uint32_t compareMask;
+	};
+
+	struct DynamicStencilWriteInfo {
+		VkStencilFaceFlags faceMask;
+		uint32_t writeMask;
+	};
+
+	struct DynamicStencilRefInfo {
+		VkStencilFaceFlags faceMask;
+		uint32_t reference;
+	};
+
+	struct PipelineDynamicStateInfo {
+		std::optional<vDynamicViewportStateHandle> viewportState;
+		std::optional<vDynamicScissorStateHandle> scissorState;
+	};
+
+	struct PushConstantInfo {
+		VkShaderStageFlags shaders;
+		uint32_t offset;
+		uint32_t size;
+		void* pValues;
+	};
+
+	//Draw Commands are executed in order and sequentially according to how they are laid out in vector to ensure primitive order drawing.
+	struct GraphicsCommands {
+		struct DrawCommands {
+			std::function<void(GraphResources)> commandCode;
+		};
+
+		RenderingInfo renderInfo;
+
+		std::span<DrawCommands> commandCodes;
+	};
+
+	/*
+		Compute Commands will only be tied to one binding of pipelines and uniform data.CommandCode can contain however many dispatches user feels it needs.In future could see if rebinding
+		is neccesary for any of these resources within a pass.
+	*/
+	struct ComputeCommands {
+		vPipelineHandle pipeline;
+		std::optional<vDescriptorSetStateHandle> descriptorSetState;
+		std::optional<vPushConstantsStateHandle> pushConstantState;
+
+		std::function<void(GraphResources)> commandCode;
+	};
+	
+	/*
+		Transfer Commands. Not much except for command code
+	*/
+	struct TransferCommands {
+		std::function<void(GraphResources)> commandCode;
 	};
 }
 
@@ -278,7 +314,6 @@ Aka a scope represents a group of passes.
 Executer has to do following:
 Allocate and Generate TransResources
 Sort and Order Passes
-Perform setupcode of passes
 Execute commandcode of passes in order
 
 Resources.
@@ -290,7 +325,6 @@ For Images, its complicated:
 	There are three main structs for describing image subresource except for regions: vkimagesubresource, vkimagesubresourcelayers, and vkimagesubresourcerange; where first just describes a singer array layer
 	and mip level, multiple layers and a single mip level, and multiple layers and levels. Easy to find and evaluate intersection.
 	Operations involving shaders and the pipeliens would usualy take the whole image regions. So only really care about the subresources defining aspect, layers, and miplevels.
-	Texel level operations like those in transfer ones would require specifying the regions as well. And barriers
 	Since Imageviews represents an actual vkobject as well than jsut being a subresource, can specify and attach imageview creation info to subresources structs if we know we need to use them.
 	THe choice of allowing external subresources like imageviews kind of makes it difficult of giving flexibility to functions to generate necessary subresources on their own. So subresource creation is fully relegated compilation
 
@@ -299,12 +333,52 @@ Command Code should be able to access these subresources to both access the the 
 Some resources will be likely shared but also contextual to what a pass does. For example a pass may need a sampler to use alongside an imageview. But since samplers are just metadata not tied to a resource,
 it is sharable across the entire graph. Need a way to allow passes to declare what kind of sampler they would use, while resolving the correct pointer to resource during pass setup during compilation (as during compilation is when we know how much we need)
 
+Descriptor Sets:
 Also applies to descriptor sets. As they can be sharable objects, but used in both setup (updating descriptor set) and commands (binding descriptor set) for each pass object, with former also requiring accessing resources on demand.
 Descriptor sets require knowledge of the subresources they use and how it will be attached to fit the descriptor layout of pipeline computation of a pass. So the scope describing and setingup the pass
 should be the one to declare how its descriptor set (if any) should be. But since descriptor sets are sharable, need to resolve to allow handle to point to sharedresource.
 Can also reuse descriptor sets from previous executions. As long as we aware if the execution is finished and resources are released. Then can either reuse the descriptor set or dont even have to udpate it 
-if resources are same. 
+Though also need a way to ensure that we may know what passes use the same descriptor set(s) in an execution as well. As set bindings can be reused between passes as long as
+the passes utilized sets that have both matching layouts and the sets bindings have the same resources. And resources in this case is subresources of images and buffers
+and samplers (Only these three).
 
+Basically want to minmize the number of binding descriptor sets during execution. And also absolutely minminize the need to recreate them/update them between executions
+
+But if going for bindless with update after bind. Only need to bind descriptor set once, and as long as a pipeline supports its layout if it uses sets at all, then no need
+to rebind. Thus can maintain the same set across even executions as long as updates to the descriptor set do not touch bindings/binding array elements that are being used
+by previous executions.
+For this case, instead of having executer check for this descriptor set in previous executions, checking if layouts match and if pointing to same resource(s) for every descriptor, treat it
+differently
+
+Perhaps best to distinguish external and transient descriptor sets.
+External descriptor sets are those maintained by user and registered by user to executer. Executer doesnt have to worry about its creation or deletion. Just ensure it connects whatever it needs.
+Transient Descriptor sets are those created and managed by executer. This means that it also has to check if it can be reused across executions that are waited by the CPU. 
+Mostly use external descriptor sets for external resources. Though can allow transient resources to slot in the set though need to ensure when updates are needed if transient resource is invalidated.
+Transient Descriptor sets  are also free to utilize external and transient resources.
+
+Binding:
+State Setting commands that do binding like pipelines, descriptor sets, vertex and index buffer, and even technically push constants can be both reusable or dynamically
+changed across not only passes but within individual passes as well (Since a pass merely describes operations done using given read and write target resources). That means
+that passes can contain multiple drawings/dispatches where they can either have so many bindings of these states. Or these bindings can span across multiple passes, where
+either pipelines persist, sets persists, the vertex and index binding buffers persists, and push constants remain the same. (This mainly affects Graphic and Compute).
+
+Binding commands could be given to the executer to figure out. Since some passes can utilize the same bindings, can ensure that passes are ordered in a way to minimize the
+number of bindings needed to execute passes. Just need passes to declare what pipelines, descriptor sets, vertex and index bindings, and push constants are being used
+by each pass. 
+Though to allow inter-pass state changing between draws/dispatches, requires passes to be given flexibility to decide what bindings they want to use for a set of draw/dispatch
+calls. Let passes contain a vector of structures that each define what pipeline, dSet, vertex and index buffer binding, and push constants they use (if they do) and commands
+to run under these conditions. All are optional depending on the command code run in each. Like Transfer doesnt need any of these. And Compute only really needs a pipeline
+and dSet. These structs are executed sequentially while either binding or pushing whatever is needed. The executer just checks what types of bindings each of thse use and
+indicate when to bind after getting an idea on how the whole graph will execute. 
+Note: The State Commands only affect action commands within individual command buffers so need to reinsert binds when recording to a new command buffer.
+
+So in summary: Passes can only Graphics, Compute, or Transfer but not a combination of them as these three as that could lead to WAW race conditions as the scope of access is limited to the subresource: Image Subresource range and Buffer offset+range
+Graphics Passes can utilize multiple pipelines, dSets, etc; with each having their set of draw commands;  As render Passes (More so subpasses) ensure that draw calls within them are enforced with primitive and rasterization order,
+where Primitive Order ensures that primitives are ordered both within and across draw calls, and rasterization order enforces order of depth testing, blending, etc; for each primitive.
+Compute Passes can only use one combination of pipeline, dSet, etc; and one lambda function to provide its commands
+And Transfer, without any bindings or state setting really, only needs one lambda function to provide its commands
+
+Other:
 For a lot of sharable resources, can use an associative container between creation info of resource and resource handle in execution struct, to allow fast check if past execution utilized such and such resource.
 
 Push Constants, data is simply passed and loaded via commands so as simple as capturing whatever data the pass object needs in execution code.
@@ -322,4 +396,84 @@ If a pass that uses trans resources may only be used only used sparingly like a 
 resources from more persistent passes' trans resources, so we dont have to reallocate persistent passes.
 
 Passes interface with Virtual Resource Handles. Executer connect these handles to the actual resources it manages.
+
+Passes can may have setup command code seperate from the structure code that is executed before these. Can be mostly used for non-state determined actions like clear
+
+Would need to create/recreate graphics pipelines JIT as pipeline creation relies on render passes and the specific subpasses. And render passes
+and subpasses depend on the order of pass executions and how attachments are used between them (With Dependencies as well). And even if using dynamic rendering, 
+Perhaps best to also supply executer pipeline creation info so that it may use for both to support possibly of using renderpasses and to allow dynamically create and cache pipelines.
+Best to have system where can add and gain handles to graphics pipeline, but the actual underlying resource creation is created/or reused in compilation of execution based on rendering info
+
+During a Render Pass Instance, can only perform rendering within. So best practice ensures that graphics rendering is put together with minimal splits caused by
+passes performing non-graphics action commands inbetween them. And better to maintain minimal split command buffers as well (Cross Queue Dependency), as that requires
+a new render pass instance for the new command buffer.
+Note: Dynamic Rendering allows rendering pass instances to suspend and resume. This allows render pass instances to persist across command buffers. So helps in 
+situations with cross queue dependencies. Though can't perform any sync or action commands between a suspending and resuming render pass instance so non-graphic
+action commands on the same queue can split instances.
+
+Best to ignore subpasses for now as simply implementation dependent and tile-based.
+Though problem is that pipeline barriers cant be used within instances, as subpasses are the primary method of syncronization within them. Though extensions like dynamic rendering-local-read
+allow dynamic rendering to adapt subpass implementation and inter-syncing. Thus allows self-dependency as well.
+
+So. for now, can just have individual render passes for each rendering part. Applies to both using dynamic rendering and render passes (Just one subpass). Can look into dynamic render-local-read
+and render passes with one subpass (But with self-dependency) later if seeking to integrate barriers within multi passes
+
+For managing and checking if resources are valid, aka reusable or need udpating, can do a system where invalidation propogates to connected resources. For example, if a buffer resource is
+either removed or not used, then we can know that subresource of that buffer are invalidated. Another example could be with descriptor sets. If any subresources are invalidated that are a part
+of that descriptor set, then can tell that the descriptor set needs to be updated.
+
+!!!!
+Just design around 1.3 Features in mind. Utilize One universal descriptor set that represents textures/sampler heap used by all pipelines, utilize buffer device addresses and push constants.
+No longer need to manage descriptor sets, just let manager control of descriptors.
+Can maybe still keep a heap of buffers in the global descriptor set, though decision to use Uniform Buffers vs BDA SSBO depends on dynamic changing data and size of data + runtime arrays
+So best to only access them via BDA.
+Since onlying using BDA to access buffers, can only rely on push constants. Though push constants are limited in size and can only send usualy just 16 buffer addresses through them.
+Though can do some indirection by storing addresses in a buffer and passing the address of that via push constant, expanding the number of accessable addresses.
+Can offset the buffer device address in application code to get addresses for pointing to data within the buffer that potentially represents sub-buffer resources.
+Allows the app to dynamically supply runtime pointers to buffers and have shaders not needing to worry about anything else but just the SSBO buffer it needs.
+Shaders overall just need to know/given the index into the global descriptor set for Textures and Uniform Buffers and the buffer addresses it needs
+
+Technically can make multiple descriptor sets for each pipeline bind point, as each set can bind to it without interfering with each other's bindings. And can provide more slots to be available
+by allowing each pipeline their own sets. Though requires more indexs to track for each resource for each pipeline
+
+Have execution wait be indicated before pass set up/add transient resources and passes. Allows ahead of knowledge of what resources and handles are available to use. Mainly transient resources
+and global descriptor set ids.
+
+		A Pipeline Barrier Command are inserted between dependency levels that exist within the same command buffer.
+
+		Within one pipeline barrier command, a Global memory Barrier is generated for every pass in future dependency levels that read from buffers and dependent on passes from the dependency
+		level that the pipeline barrier comes after. And the Barrier should be linked to the identity of the pass.
+		Within that, the srcStagemask should be a combination of all the writting passes WriteStageMasks for the specific buffers that are read  by the representing pass.
+		And dstStageMask should be the readStageMasks combination of all buffers that are the ones being written too (As not all the buffer resources are being written too so dont want to 
+		block uneccesary stages). Same should be said for Access Mask.
+
+		A Image Memory Barrier is generated for and linked to each Image Subresource that was written to in the previous dep level. The srcStageMask is the writting pass' specified
+		writeStageMask for the specific image subresource. The dstStageMask should be the combination of readStageMasks for the specific subresource from passes that read from it in future
+		dependencies. Same goes for Access Mask. The layouts should be generated and evaluated implcitiy by executer during compilation. The new layout should be a layout that is determined
+		by the type of read access performed by reading passes. At least, it would be general layout.
+
+Resource representation and what handles should represent:
+	For external data resources. Since only called once and not reliant on graph order, so can immediately create the resource and have handle directly connect to it.
+	
+	Transient data resource. First execution: Handle should point to a potential object that need to be created after pass order is parsed and know how to allocate the transient resource. Thus need to keep
+	a list of the transient data resources that need to be created as wait till compilation starts.
+	Future execution and reuse: If set so that we know what executions is dependent on by the next execution, can tell what data resources may be available for reuse ahead of time, like matching creation info.
+	However factors like allocation of the memory and the usage may be different if the order of passes are seen to be different enough to warrent reallocation of aliasing resources.
+
+	JIT: User provides the details what they want for transient resources. Executer will take that to both create and update resources after compilation of passes to ensure that these states and resources are correct and
+	available when command srun. 
+
+If doing independent descriptor sets in the future. Maintain both external sets and transient sets. Method of providing binding info to both type of sets for JIT updates after JIT initlization of resources,
+and knowing when and how it can be reused. If the descriptor set has bindings that point to the same underlying subresource, then it can be reused from the previous depndent execution. Else create and update
+a new descriptor set.
+
+For push constants. Have method for specifying ranges of raw data, whether it may be known or transient and unknown at the time, then executer will manage that automatically. Can use a vector of std::byte and
+pointer math. For example like with uploading buffer device addresses of transient resources via the push constants.
+
+Similiar practice for uploading raw data, both known and unknown until compilation, to buffers like those used for uniform data. 
+
+Perhaps use handles for state info just like with descriptor sets, for stuff like dynamic pipeline state and push constant, makes it easy to make it known what state to use for each pass by just seeing if handle
+match. Though requires now passing around state info handles now, which could be hassle on user.
+
+Top Down Build approach. Instead of inserting passes random then sorting. Ensure that passes dependent on another always comes after.
 */

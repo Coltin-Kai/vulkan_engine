@@ -18,41 +18,46 @@ void VulkanContext::init(SDL_Window* window) {
 	//Create Surface
 	SDL_Vulkan_CreateSurface(window, instance, &surface);
 
-	//Get Physical Device and Features
+	//Specifies Required Features. Mostly Guarenteed features upto 1.3 and some other optional features important for app design
 	VkPhysicalDeviceVulkan13Features features3{};
 	features3.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
+	VkPhysicalDeviceVulkan12Features features2{};
+	features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+	VkPhysicalDeviceVulkan11Features features1{};
+	features1.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
+	VkPhysicalDeviceFeatures features{};
+
 	features3.dynamicRendering = true;
 	features3.synchronization2 = true;
 
-	VkPhysicalDeviceVulkan12Features features2{};
-	features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
-
-	features2.scalarBlockLayout = true;
+	features2.timelineSemaphore = true;
 
 	features2.bufferDeviceAddress = true;
-
 	features2.descriptorIndexing = true;
-	features2.shaderUniformBufferArrayNonUniformIndexing = true;
-	features2.shaderStorageBufferArrayNonUniformIndexing = true;
-	features2.shaderSampledImageArrayNonUniformIndexing = true;
-	features2.shaderStorageImageArrayNonUniformIndexing = true;
-
-	features2.descriptorBindingVariableDescriptorCount = true;
 	features2.runtimeDescriptorArray = true;
-
 	features2.descriptorBindingPartiallyBound = true;
-
-	features2.descriptorBindingUniformBufferUpdateAfterBind = true;
-	features2.descriptorBindingStorageBufferUpdateAfterBind = true;
-	features2.descriptorBindingSampledImageUpdateAfterBind = true;
-	features2.descriptorBindingStorageImageUpdateAfterBind = true;
-
 	features2.descriptorBindingUpdateUnusedWhilePending = true;
 
-	VkPhysicalDeviceVulkan11Features features1{};
-	features1.shaderDrawParameters = true;
+	features2.shaderUniformTexelBufferArrayDynamicIndexing = true;
+	features2.shaderStorageTexelBufferArrayDynamicIndexing = true;
 
-	VkPhysicalDeviceFeatures features{};
+	features2.shaderUniformBufferArrayNonUniformIndexing = true;
+	features2.shaderSampledImageArrayNonUniformIndexing = true;
+	features2.shaderStorageImageArrayNonUniformIndexing = true;
+	features2.shaderUniformTexelBufferArrayNonUniformIndexing = true;
+	features2.shaderStorageTexelBufferArrayNonUniformIndexing = true;
+
+	features2.descriptorBindingUniformBufferUpdateAfterBind = true;
+	features2.descriptorBindingSampledImageUpdateAfterBind = true;
+	features2.descriptorBindingStorageImageUpdateAfterBind = true;
+	features2.descriptorBindingUniformTexelBufferUpdateAfterBind = true;
+	features2.descriptorBindingStorageTexelBufferUpdateAfterBind = true;
+
+	features1.shaderDrawParameters = true;
+	
+	features.shaderUniformBufferArrayDynamicIndexing = true;
+	features.shaderSampledImageArrayDynamicIndexing = true;
+	features.shaderStorageImageArrayDynamicIndexing = true;
 	features.multiDrawIndirect = true;
 
 	vkb::PhysicalDeviceSelector selector{ vkb_inst };
