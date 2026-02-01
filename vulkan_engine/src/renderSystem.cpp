@@ -620,7 +620,7 @@ VkResult RenderSystem::draw() {
 
 	VkImageSubresourceRange clearRange = vkutil::image_subresource_range(VK_IMAGE_ASPECT_COLOR_BIT);
 
-	vkCmdClearColorImage(cmd, swapchainImage.image, VK_IMAGE_LAYOUT_GENERAL, &clearValue, 1, &clearRange);
+	vkCmdClearColorImage(cmd, swapchainImage.image, VK_IMAGE_LAYOUT_GENERAL, &clearValue, 1, &clearRange); //Not needed as rendering attachment has load op clear
 
 	//Draw Geometry
 	draw_geometry(cmd, swapchainImage);

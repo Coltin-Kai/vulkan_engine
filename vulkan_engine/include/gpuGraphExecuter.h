@@ -8,6 +8,7 @@ namespace gpu_graph {
 	using QueueHandle = size_t; //Identifies a Queue
 	using PassHandle = size_t; //Identifies a unique pass within the executers list of passes that is filled during pass setup
 	using ResourceHandle = size_t; //Represents handle to actual resource data.
+	using ActionCommands = std::function<void(GraphResources)>;
 
 	enum ResourceType {
 		BufferType,
@@ -15,23 +16,25 @@ namespace gpu_graph {
 	};
 
 	struct SubResourceTargetInfo {
-		ResourceType type;
 		VkPipelineStageFlags2 stageAccessFlags;
 		VkAccessFlags2 accessTypeFlags;
+		vDataSubResourceHandle subResource;
 	};
 
-	struct PassCreateInfo {
+	struct ExecutionParameterInfo {
+		const char* name;
+		std::span<ExecutionHandle> ExecutionContingencies; //Executions that the Execution must wait on to finish
+	};
+
+	struct PassParameterInfo {
 		const char* name;
 		PassType type;
 		QueueType queueType; //Specifies which queue to utilize
-		bool transientOperation; //Specifies if Pass may not exist more than one frame. Hint on how to treat aliasing transient resources it writes too.
-		std::unordered_map<vDataSubResourceHandle, SubResourceTargetInfo> readTargets;
-		std::span<std::pair<vDataSubResourceHandle, SubResourceTargetInfo>> writeTargets;
-
-		std::variant<GraphicsCommands, ComputeCommands, TransferCommands> commands;
+		std::vector<SubResourceReadTargetGroupHandle> readTargets;
+		std::span<SubResourceTargetInfo> writeTargets;
 	};
 
-	struct GraphExecution {
+	struct Execution {
 
 	};
 
@@ -50,26 +53,41 @@ namespace gpu_graph {
 		VkImageTiling tiling;
 	};
 
-	struct BufferSubResourceCreateInfo {
-		vDataResourceHandle resource;
+	struct SubBufferRange {
 		VkDeviceSize offset;
-		VkDeviceSize range;
+		VkDeviceSize size;
 	};
 
-	struct ImageSubresourceCreateInfo {
-		struct ImageViewCreateInfo {
-			VkImageViewCreateFlags flags;
-			VkImageViewType viewType;
-			VkFormat format;
-			VkComponentMapping components;
-		};
-
-		vDataResourceHandle resource;
+	struct SubImageRange {
 		VkImageAspectFlags aspectMask;
 		uint32_t baseMipLevel;
 		uint32_t levelCount;
 		uint32_t baseArrayLayer;
 		uint32_t layerCount;
+	};
+
+	struct BufferViewCreateInfo {
+		VkBufferViewCreateFlags flags;
+		VkFormat format;
+	};
+
+	struct BufferSubResourceCreateInfo {
+		vDataResourceHandle resource;
+		SubBufferRange range;
+
+		std::optional<BufferViewCreateInfo> bufferViewInfo;
+	};
+
+	struct ImageViewCreateInfo {
+		VkImageViewCreateFlags flags;
+		VkImageViewType viewType;
+		VkFormat format;
+		VkComponentMapping components;
+	};
+
+	struct ImageSubresourceCreateInfo {
+		vDataResourceHandle resource;
+		SubImageRange range;
 
 		std::optional<ImageViewCreateInfo> imageViewInfo;
 	};
@@ -108,10 +126,8 @@ namespace gpu_graph {
 
 	class GPU_GraphExecuter {
 	public:
-		void pushBackPass(const PassCreateInfo& passInfo);
-		void addQueue(QueueType type, VkQueue queue, uint32_t queueFamily);
-		void waitOnExecutions(const GraphExecution* executions, size_t numExecutions); //CPU wait on Exectuions.
-		GraphExecution execute(const GraphExecution* dependentExecutions, size_t numExecutions); //Compile and Execute Passes
+		//Resource Registration and Creation
+		void addOperationQueue(QueueType type, VkQueue queue, uint32_t queueFamily);
 
 		//Pipelines are compiled once executer starts compiling, as graphics pipeline is dependedent on renderPass/renderingInfo, which is defined by passes. 
 		vPipelineHandle addPipeline(const GraphicsPipelineCreateInfo& info); 
@@ -136,100 +152,46 @@ namespace gpu_graph {
 		vDataSubResourceHandle addTransientDataSubResource(BufferSubResourceCreateInfo info);
 		vDataSubResourceHandle addTransientDataSubResource(ImageSubresourceCreateInfo info);
 
+		//Adds SubresourceReadTargets. External ones can only hold non-transient subresources. Transient ones can hold both.
+		SubResourceReadTargetGroupHandle addExternalReadTargets(std::span<vDataSubResourceHandle> subResources, std::span<SubResourceTargetInfo> subResourceTargetInfos); //Note: subResourcesTargetInfo i describes subresource i.
+		SubResourceReadTargetGroupHandle addTransientReadTargets(std::span<vDataSubResourceHandle> subResources, std::span<SubResourceTargetInfo> subResourceTargetInfos);
+
+		void addSubResourceToReadTargets(SubResourceReadTargetGroupHandle readTargetHandle, vDataSubResourceHandle subResourceHandle, SubResourceTargetInfo Targetinfo);
+		void removeSubResourceFromReadTargets(SubResourceReadTargetGroupHandle readTargetHandle, vDataSubResourceHandle subResourceHandle);
+
+		void removeExternalReadTargets(SubResourceReadTargetGroupHandle handle);
+
 		//Registers an External subresource to the Global Descriptor Set. Returns index to their descriptor in the respective binding.
 		uint32_t registerGlobalDescriptor(vDataSubResourceHandle handle, DescriptorType type);
 		uint32_t registerSampler(VkSamplerCreateInfo info);
 
+		//Execution Functions
+		void beginRecording();
+		void endRecording(); //Submit Commands
+		ExecutionHandle beginExecution(); 
+		void beginPass(const PassParameterInfo& passInfo);
+
+		void addAction(std::function<void(GraphResources)> actionCommands);
+
+		//State Setting Functions...
+
 	private:
-		using VkBufferHandle = size_t;
-		using VkImageHandle = size_t;
-
-		//Represents resources and their logical relationships with each other and the underlying resource		
-		struct ImageInfo {
-			VkImageHandle image;
-		};
-
-		struct BufferInfo {
-			VkBufferHandle buffer; //Represents the real underlying VkBuffer
-			VkDeviceAddress deviceAddress; //The address to the underlying VkBuffer if available
-			VkDeviceSize offset; //Offset and Range in the underlying VkBuffer
-			VkDeviceSize range;
-		};
-
-		//Represents an Image Subresource
-		struct SubImageInfo {
-			VkImageView imageView;
-			VkImageSubresourceRange range;
-		};
-
-		//Represents a Buffer Subresource
-		struct SubBufferInfo {
-			VkBufferView bufferView;
-			VkDeviceSize offset; //Offset and Range of the subrange of the virtual buffer.
-			VkDeviceSize range;
-		};
-
-		struct Resource {
+		//Represents resource's meta info and relationships with subresources
+		struct DataResourceMetaInfo {
+			bool isTransient;
+			ResourceType type;
+			VkImageLayout imageLayout; //If the Resource is a Buffer or a Transient Image, layout is Undefined. Never changes outside Executions
 			std::vector<vDataSubResourceHandle> subResources;
-
-			std::variant<ImageInfo, BufferInfo> resourceInfo;
 		};
 
-		struct SubResource {
+		//Represents subResources's meta info and relatioship with its representing resource and other subresources
+		struct DataSubResourceMetaInfo {
+			bool isTransient;
+			bool hasViewObject; //Indicates if Subresource also represents a vkBufferView/vkImageView object
+			ResourceType type;
 			vDataResourceHandle resource;
-			std::vector<vDataSubResourceHandle> intersectingSubResources;
 
-			std::variant<SubImageInfo, SubBufferInfo> subResourceInfo;
-		};
-
-		struct DirectedAdjacencyList {
-		private:
-			size_t virtualListSize = 0; //Represents the size of the list of available vectors. Guarentees that vectors existing outside this range are empty.
-			std::vector<std::vector<PassHandle>> list;
-		public:
-			size_t size() const {
-				return virtualListSize;
-			}
-
-			//Updates container to support the given number of lists
-			void resize(size_t size) {
-				//If internal list is less than size, update it with empty vectors till matches size
-				if (list.size() < size) {
-					list.reserve(size);
-				}
-
-				while (list.size() < size) {
-					list.emplace_back();
-				}
-
-				//If size is less than virtual size, clear all vectors between size and virtual size range
-				for (size_t i = size; i < virtualListSize; i++) {
-					list[i].clear();
-				}
-			}
-
-			//Clears all vectors that were utilized by the list.
-			void clear() {
-				for (PassHandle i = 0; i < virtualListSize; i++) {
-					list[i].clear();
-				}
-
-				virtualListSize = 0;
-			}
-
-			//Destruct vectors outside the virtual size range so that the internal container size matches the virtual. Used to free memory occupied by unused internal vectors
-			void compactLists() {
-				list.resize(virtualListSize);
-			}
-
-			//Potential for accessing lists that are out of bounds of the given virtual size.
-			const std::vector<PassHandle>& operator[](PassHandle pass) const {
-				return list[pass];
-			}
-
-			std::vector<PassHandle>& operator[](PassHandle pass) {
-				return list[pass];
-			}
+			std::variant<SubBufferRange, SubImageRange> range;
 		};
 
 		struct QueueInfo {
@@ -237,87 +199,111 @@ namespace gpu_graph {
 			uint32_t queueFamily;
 		};
 
-		struct PassDepndencyInfo { //Not really sure need this. Can maybe just have SubResourceDependencyInfo contain the
-			std::string name;
-			uint32_t depLevel;
+		//Represents a bundle of subresources that are targetted for read or write access by a pass
+		struct SubResourceReadTargetGroup {
+			bool isTransient;
+			std::unordered_map<vDataResourceHandle, std::vector<SubResourceTargetInfo>> readResources; //Contains a mapping of the resources to all the subresources that are read as part of the ReadTarget
 		};
-
-		struct SubResourceDependencyInfo {
-			vDataSubResourceHandle subResource;
-			PassDepndencyInfo passDepInfo; //Describes the Pass that writes to the subResource;
-		};
-
-		struct QueueCommandList {
-			std::vector<std::vector<std::variant<GraphicsCommands, ComputeCommands, TransferCommands>>> commands; //First Dimension represents the dependency level. Second is the list of passes within each dependency level
-		};
-
-		struct PassDependentTransientResourceCreationInfo {
-			std::variant<VkBufferUsageFlags, VkImageUsageFlags> usageFlags;
-			VkSharingMode sharingMode;
-			uint32_t queueFamily;
-
-		};
-
-		//idk to keep:
-		struct DataSubResourceAccessInfo {
-			VkPipelineStageFlags2 accessStages;
-			VkAccessFlags2 accessTypes;
-		};
-
-		//Represents a distinct GPU Operation performed on a read and write Targets. Internal struct managed by Executer
-		struct Pass {
-			const char* name;
-			PassType type; //Specifies what kind of commands this pass executes
-			QueueType queueType; //Specifies which queue the pass commands should execute on.
-			bool transientOperation;
-
-			std::unordered_map<vDataResourceHandle, std::vector<vDataSubResourceHandle>> readBufferTargets;
-			std::unordered_map<vDataResourceHandle, std::vector<vDataSubResourceHandle>> readImageTargets;
-
-			std::vector<std::pair<vDataResourceHandle, std::vector<vDataSubResourceHandle>>> writeBufferTargets;
-			std::vector<std::pair<vDataResourceHandle, std::vector<vDataSubResourceHandle>>> writeImageTargets;
-
-			std::unordered_map<vDataSubResourceHandle, DataSubResourceAccessInfo> accessInfos; //Specifies what stages and the type of access performed on a subResource
-
-			std::variant<GraphicsCommands, ComputeCommands, TransferCommands> commands;
-		};
-
-		//Containers used for compiling and executing a graph of passes. Cleared after the compilation and initiating execution of the graph.
-		std::vector<Pass> passes; //Loaded passes for execution. Will contain the actual passes and PassHandle is used to index through it.
-		std::vector<std::vector<PassHandle>> adjacencyLists; //Contains adjacenies List for each Pass. 
-		std::vector<PassHandle> orderedPasses; //Ordered Passes by Topological Sorting
-		std::stack<PassHandle> DFS_orderStack; //Reserves visited nodes that need to wait until algorithm finished on it's adjacent nodes
-		std::vector<bool> DFS_visited; //Index with PassHandle, indicates if a pass has been visited by the sort algorithm.
-		std::vector<bool> DFS_onStack; //Index with PassHandle, indicates if a pass is on the DFS_orderStack
-		std::vector<uint32_t> dependencyLevels; //Index with PassHandle
-
-		//Containers2 for building up graph of passes
-		std::vector<SubResourceDependencyInfo> subResourceDepInfos; //Represents all currently known written to subResources and their dependency information. Reset after every execution
 		
-		std::vector<QueueCommandList> queuePassList; //Each represents a Queue and the commands they run.
+		//Describes a Subresource that is Dependency within a Execution Graph. AKA Subresources that are written too.
+		struct SubResourceDependency {
+			struct ReadQueueAccess {
+				VkPipelineStageFlags2 readStages; //Combined Read Stages performed by the Queue
+				VkAccessFlags2 readAccess; //Combined Read Access performed by the Queue
+				uint32_t earliestReadDepLevel;
+			};
+
+			vDataSubResourceHandle subResource;
+			QueueHandle writeQueue;
+			uint32_t writeDepLevel;
+			VkPipelineStageFlags2 writeStages;
+			VkAccessFlags2 writeAccessTypes;
+			std::vector<ReadQueueAccess> readQueueAccesses; //Index with QueueHandle, the queues that perform read access on the subresource
+		};
+
+		//MemoryBarrier
+
+		//Represents all the types of barriers for a pipeline barrier to utilize
+		struct PipelineBarrier {
+			std::vector<VkMemoryBarrier2> memoryBarriers;
+			std::vector<VkBufferMemoryBarrier2> bufferBarriers;
+			std::vector<VkImageMemoryBarrier2> imageBarriers;
+		};
+
+		struct QueueCommandRecording {
+			struct CommandBufferRange {
+				bool immutable; //Specifies that the range cant be altered after initlization. This is usually the result of it being used to designate a set of operations as part of an Execution
+				size_t depLevelOffset; //Dep Level Offset of the Command Buffer
+				size_t depLevelCount; //Dep Level Count from the offset
+			};
+
+			std::vector<PipelineBarrier> pipelineBarriers; //Describes the PipelineBarriers that needs to be inserted before and after each dep level. Where PipelineBarrier i is inserted before dep level i and i+1 is inserted after dep level i.
+			std::vector<std::vector<ActionCommands>> actionCommands; //Represents a series of Action Commands within each Dependency Level of a Queue
+			std::vector<CommandBufferRange> commadBufferRanges; //Represents each Command Buffer to record and the offset they start at
+		};
+
+		//
+		struct StateUpdates {
+
+		};
+
+		//A Edge group represents a collection of edges representing all combinations of ((queue, srcStage),(queue, dstStage)) directed edges
+		struct EdgeGroup {
+			struct QueueStages {
+				VkPipelineStageFlags2 srcStages;
+				VkPipelineStageFlags2 dstStages;
+			};
+
+			std::unordered_set<size_t> contingentEdgeGroups; //Represents a set of handles pointing to edge groups that exist on a path to this edge group
+			std::vector<QueueStages> queueStages; //Index with QueueHandle, represents the stages on each queue and specifies the tails and heads within the Edge group
+		};
+
+		//Executer State
+		bool creatingRecording;
+		bool creatingExecution; //Indicates if currently creating an execution
+		bool creatingPass; //Indicates if currently creating a pass within an execution
+
+		//Pass Read and Write Target Data
+		std::vector<SubResourceReadTargetGroup> subResourceReadTargetGroups; //Index with SubResourceTargetHandle
+
+		//Containers for building up passes and execution
+		size_t currentPassDepLevel; //Represents the Dependency Level the current creating Pass is inserted into
+		QueueHandle currentPassQueue; //Represents the Queue the current creating Pass is inserted onto
+		std::vector<SubResourceDependency> externalSubResDeps; //Represents subresources of external resources that were written too. Reset after every recording
+		std::vector<SubResourceDependency> transientSubResDeps; //Represents subresources of transient resources that were written too. Reset after every Execution.
+		std::vector<size_t> readExternalSubResDeps; //Holds the handles to subresource dependencies in externalSubResDeps and represents thsoe read from a pass. Used to update relevant subresource dependenies after figuring out pass info. Reset after every pass
+		std::vector<size_t> readTransientSubResDeps; //Holds the handles to subresource dependencies in transientSubResDeps and represents thsoe read from a pass. Used to update relevant subresource dependenies after figuring out pass info. Reset after every pass
+
+		std::vector<StateUpdates> stateUpdates; //Index with QueueHandle. Contains all the updates to states
+		
+		std::vector<QueueCommandRecording> queueCommandRecordings; //Index with QueueHandle, represents each Recording
 
 		//List of Transient Resource Creation Infos that are dependent on pass info.
-		std::vector<std::pair<vDataResourceHandle, VkBufferCreateInfo>> transientBufferCreationQueue; //Transient Buffers that need to have their underlying resource created or given from pass executions
-		std::vector<std::pair<vDataResourceHandle, VkImageCreateInfo>> transientImageCreationQueue; //Transient Images that need to have their underlying resource created or given from pass execution
+		std::unordered_map<vDataResourceHandle, std::variant<TransientBufferCreateInfo, TransientImageCreateInfo>> transientResourceCreateInfos;
+		std::unordered_map<vDataSubResourceHandle, std::variant<BufferViewCreateInfo, ImageViewCreateInfo>> transientSubResourceViewCreateInfos;
+		std::vector<vDataResourceHandle> transientResourceCreationQueue; //Holds the list of Transient Resource whos underlying resource need to be instatiated
+		std::vector<vDataSubResourceHandle> transientSubResourceCreationQueue; //Holds the list of Transient SubREsources whos underlying resource needs to be instantiated.
 
-		//Graph Accessable Resources and Relationships. Reset after every execution so that any transient resource handles and relations are removed but external are kept
-		std::vector<Resource> dataResources; //Index with vDataResourceHandle
-		std::vector<SubResource> dataSubResources; //Index with vDataSubResourceHandle
+		//Resources and their Relationships. Reset after every execution so that any transient resource handles and relations are removed but external are kept
+		std::vector<DataResourceMetaInfo> dataResourceMetaInfos; //Index with vDataResourceHandle
+		std::vector<DataSubResourceMetaInfo> dataSubResourceMetaInfos; //Index with vDataSubResourceHandle
 
-		//Underlying Vulkan Object Resources
+		//Command Accessable Data
+		GraphResources graphResources;
 
+		//Underlying Vulkan Object Data
+		std::vector<std::variant<std::pair<VkBuffer, VkDeviceAddress>, VkImage>> vDataResources;
+		std::vector<std::variant<VkBufferView, VkImageView>> vDataSubResources;
 
 		//Queue
 		QueueHandle primaryQueue;
-		QueueHandle aSyncQueue;
+		QueueHandle aSyncComputeQueue;
 		QueueHandle transferDedicatedQueue;
-		QueueHandle presentQueue;
 		std::vector<QueueInfo> queues;
 
-		void compile(); //Compile Pass Data
-		void compileAdjacencyList();
-		void compileOrderedPasses();
-		void compileDependencyLevels();
+		void evaluateDependencies(const PassParameterInfo& passInfo, std::vector<SubResourceDependency>& subResourceDependencies, bool isTransient);
+		void compileExecution();
+		void compileTransientResources();
 	};
 }
 
@@ -337,8 +323,6 @@ namespace gpu_graph {
 	So it would probably look like that for each queue, we have a vector of vector of passes, where each vector represents all the passes for one command buffer recording.
 
 	Though remember to minimize cross queue syncing so that we only need to sync at the earlist instances where a cross queue read is neccesary after a write to a resource.
-
-
 
 	Aliasing. In order for transient resources to alias with each other, they must both have non-conflicting lifetimes and there must be a path from the pass that last
 	reads from it to the first pass that writes to the other resource. 

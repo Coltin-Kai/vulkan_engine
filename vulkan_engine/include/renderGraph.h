@@ -157,6 +157,7 @@ namespace render_graph {
 
 namespace gpu_graph {
 	using ExecutionHandle = size_t;
+	using SubResourceReadTargetGroupHandle = size_t;
 	using vPipelineHandle = size_t;
 
 	using vDataResourceHandle = size_t; //Can represent either a virutal buffer or image resource handle
@@ -174,16 +175,41 @@ namespace gpu_graph {
 		uint32_t uniformTexelBufferId;
 		uint32_t storageTexelBufferId;
 	};
+	
+	//The main way users access and interface with data resources with action commands
+	struct SubresourceBufferData {
+		VkBuffer buffer;
+		VkDeviceAddress address;
+		VkDeviceSize offset;
+		VkDeviceSize range;
+	};
+
+	struct SubresourceImageData {
+		VkImage image;
+		VkImageView imageView;
+		VkImageSubresourceRange range;
+		VkImageLayout readLayout; //Specifies the layout used for reading
+		VkImageLayout writeLayout; //Specifies the layout used for writting
+	};
 
 	//Represents the exposed resources accessable by the command code
 	class GraphResources {
+	private:
+		std::vector<std::variant<SubresourceBufferData, SubresourceImageData>> subResources;
+	public:
+		SubresourceBufferData getBufferData(vDataSubResourceHandle handle) {
+			return std::get<SubresourceBufferData>(subResources[handle]);
+		}
+
+		SubresourceImageData getImageData(vDataSubResourceHandle handle) {
+			return std::get<SubresourceImageData>(subResources[handle]);
+		}
 	};
 
 	enum class QueueType {
 		Primary,
 		AsyncCompute,
 		TransferDedicated,
-		Present
 	};
 
 	enum class PassType {
@@ -195,10 +221,8 @@ namespace gpu_graph {
 	struct RenderingAttachmentInfo {
 		VkFormat format;
 		vDataSubResourceHandle subResourceImage;
-		VkImageLayout layout;
 		VkResolveModeFlags resolveMode;
 		vDataSubResourceHandle subResourceResolveImage;
-		VkImageLayout resolveLayout;
 		VkAttachmentLoadOp loadOp;
 		VkAttachmentStoreOp storeOp;
 		VkClearValue clearValue;
@@ -259,46 +283,12 @@ namespace gpu_graph {
 		uint32_t reference;
 	};
 
-	struct PipelineDynamicStateInfo {
-		std::optional<vDynamicViewportStateHandle> viewportState;
-		std::optional<vDynamicScissorStateHandle> scissorState;
-	};
 
 	struct PushConstantInfo {
 		VkShaderStageFlags shaders;
 		uint32_t offset;
 		uint32_t size;
 		void* pValues;
-	};
-
-	//Draw Commands are executed in order and sequentially according to how they are laid out in vector to ensure primitive order drawing.
-	struct GraphicsCommands {
-		struct DrawCommands {
-			std::function<void(GraphResources)> commandCode;
-		};
-
-		RenderingInfo renderInfo;
-
-		std::span<DrawCommands> commandCodes;
-	};
-
-	/*
-		Compute Commands will only be tied to one binding of pipelines and uniform data.CommandCode can contain however many dispatches user feels it needs.In future could see if rebinding
-		is neccesary for any of these resources within a pass.
-	*/
-	struct ComputeCommands {
-		vPipelineHandle pipeline;
-		std::optional<vDescriptorSetStateHandle> descriptorSetState;
-		std::optional<vPushConstantsStateHandle> pushConstantState;
-
-		std::function<void(GraphResources)> commandCode;
-	};
-	
-	/*
-		Transfer Commands. Not much except for command code
-	*/
-	struct TransferCommands {
-		std::function<void(GraphResources)> commandCode;
 	};
 }
 
@@ -439,19 +429,6 @@ by allowing each pipeline their own sets. Though requires more indexs to track f
 Have execution wait be indicated before pass set up/add transient resources and passes. Allows ahead of knowledge of what resources and handles are available to use. Mainly transient resources
 and global descriptor set ids.
 
-		A Pipeline Barrier Command are inserted between dependency levels that exist within the same command buffer.
-
-		Within one pipeline barrier command, a Global memory Barrier is generated for every pass in future dependency levels that read from buffers and dependent on passes from the dependency
-		level that the pipeline barrier comes after. And the Barrier should be linked to the identity of the pass.
-		Within that, the srcStagemask should be a combination of all the writting passes WriteStageMasks for the specific buffers that are read  by the representing pass.
-		And dstStageMask should be the readStageMasks combination of all buffers that are the ones being written too (As not all the buffer resources are being written too so dont want to 
-		block uneccesary stages). Same should be said for Access Mask.
-
-		A Image Memory Barrier is generated for and linked to each Image Subresource that was written to in the previous dep level. The srcStageMask is the writting pass' specified
-		writeStageMask for the specific image subresource. The dstStageMask should be the combination of readStageMasks for the specific subresource from passes that read from it in future
-		dependencies. Same goes for Access Mask. The layouts should be generated and evaluated implcitiy by executer during compilation. The new layout should be a layout that is determined
-		by the type of read access performed by reading passes. At least, it would be general layout.
-
 Resource representation and what handles should represent:
 	For external data resources. Since only called once and not reliant on graph order, so can immediately create the resource and have handle directly connect to it.
 	
@@ -476,4 +453,270 @@ Perhaps use handles for state info just like with descriptor sets, for stuff lik
 match. Though requires now passing around state info handles now, which could be hassle on user.
 
 Top Down Build approach. Instead of inserting passes random then sorting. Ensure that passes dependent on another always comes after.
-*/
+
+State Setting.
+-Maintain a Global consistent set of states during execution recording that designates what values to use for a operation IF they can
+use them. Command Buffer Change Invalidations and Pipeline Change Invalidations
+-When we know that a specific set of states were invalidated due to these circumstances, signal to system that these states were invalidated.
+-But to make sure no state settings are done uneccesary, maintain a system of flags an state availability for each pipeline and pass type
+that indicates what states can actually be set.
+-For Graphic Passes. Requires a pipeline bind. And needs to query the pipeline for what dynamic states it uses, 
+
+Aliasing wth Pipeline Barrier and Submission Waiting
+Since barriers and submission wait utilize syncing on a per-stage granularity, can't effectively use aliasing without having to spend cycles evaluating
+dependency on a per-stage basis. So can leave out for now.
+Could do stuff like using a heuristic to insert stop gaps in the code where it guarentees that resources before a certain dependency level is guarenteed
+to be aliasable across all queues. Though figure out in future
+
+Internal Resource Management of Transient Resources
+Have handles managed by user correspond to custom objects representing the underlying vulkan objects.
+For example. A dataResourceHandle corresponds to a unique Resource Object, and that object holds a VkBuffer/VkImage.
+But since Vulkan objects are simply pointers, can describe these custom objects as simply use-a ownership over
+the Vulkan object, but still allow the ownership to be transfered to other custom objects.
+And if the custom object does not have ownership/never had the object, can set the Vulkan object to nullptr.
+Allows Execution-Execution Dependency to both transfer ownership of Vulkan objects between Execution's transient objects
+and for the previous owner tagging their Vulkan objects as nullptr.
+
+So for Executions, track the handles for their transient objects via vectors: transientBuffers, transientImages, etc.
+Can use an unordered map to map transient creation data with a container of handles that hold data that are similiar,
+then can transfer ownship between two objects if a match is found.
+
+For Deletion of transient resources, use the list of transient object handles for each Execution waited on to iterate through
+them. If they do not have nullptr, then can perform deletion.
+
+Image Layout
+The executer, due to how data is given for read and write subresources, can only effectively know what subresources to image layout
+transition if they are write targets. 
+For transient subresources, not really a problem as they are always guarenteed to be written too. And can always assumed to be transitioning from undefined,
+as the subresource may be being initally created or reused from a previous execution.
+For External subresources, need to track layout to maintain data across executions. But also troublesome to try iterate through every read target subresource
+to check if they need to be transitioned, especially since read targets are stored in a unordered set/map. So best to also keep it consistent
+So let external image suberesources maintain a consistent image layout dependent on the inital layout of the resource it represents.
+Writting to the external subresource that would require a image layout suitable for the specific write is valid, as long as the pass transitions it back to the layout it was right after.
+Reading though is limited to the capabilities of the layout. Thus an external subresources layout, and by extension the external resources layout, represents the layout suitable for reading.
+This alleviates the need to iterate through read targets as always assumed that read operations perform on a image subresource is always consistent with the layout compatibility.
+Only exception is swapchain image resources and subresources. They start off as undefined. Though that is okay since normal passes will never read from them. Can treat them as undefined
+and transition from that to the appropriate layout when writting to them and set the dst layout to undefined for now. But once a present pass is added, can simply change the barrier representing
+the subresource to have a dst layout for presenting.
+In fact, can do the same for all subresources with undefined layout, external or transient. Transition to whatever write layout. Keep dstLayout as undefined temporary. But once a read from
+a dependency is found, can update the respective subresources layout to the desired read layout. This works as guarenteed written too subresources will always show up in the list of dependenies
+of the executioon which is iterated though.
+This also ensures that multiple separate executions are guarenteed to know that a read-only external resource will always have a consistent layout despite being utilized by multiple
+of them for reading at the same time.
+
+Swapchain.
+Have Executer manage and create Swapchain images and subresource images, just haveto supply it with a surface, since
+each swapchain is associated with a surface. Executer will create a swapchain for the surface. But since swapchain manages its
+own images, executer doesnt exactly have ownership over the underlying VkImages. So after creating the swapchain, executer
+acquires its images and assigns them to vDataResourceHandles, that should be in a list and ordered in the same order as
+these acquired swapchain images. Then it creates subresource range image views as well for each one. Depending on parameters,
+these imageviews can be adjusted as such. But usually, an imageview is created to target for each image covering the one array
+layer.
+Then return a Swaphchain handle, that points to the swapchain object and the list of resources.
+
+Then, during an execution. Can then acquire next swapchain image via the swapchain handle. Which internally, have executer
+track the current index for that swapchain to use for presenting. Then the acquire function returns the handle to the 
+swapchain image and the associated subresource image view.
+
+With the above idea on how layout transition in mind, have to let executer handle swapchain image presenting.
+Can define a special Present Pass that accepts a different type of parameters. SInce it can present multiple swapchain images,
+let it accept multiple swapchain handle(s) as input. The executer will resolve syncing by checking for the subresource of the
+current swapchain image (via its current acquired index) with the subresource dependenices. Likely that 
+
+Acquiring Swapchain image allows signalling non-timeline semaphores as well. So technically part of an execution as well.
+This should be sync such that the queue(s) that require usage of the swapchain image should wait on this semaphore.
+Acuiring Swapchain image can't be really treated like a pass that read/writes to resources, as it is simply designating
+when a swapchain image is ready for writting. 
+Let Acquiring be somewhat aport of execution recording. Before an Execution, have user call Executer to Acquire the next
+swapchain image, returning the index of appropriate vDataSubresourceHandle of Swapchain subresource image
+operation on swapchain semaphore.
+Then when Executer is given a pass that writes to the swapchain image, it starts a new command buffer for the appropriate
+queue that waits on the semaphore for the respective swapchain acquisition, so that it waits for the subresource to be
+available to actually write too.
+
+Host Reading
+Host Reading requires performing a memory barrier to make a resource available for reading. For this case, just specify
+an external resource as one that will be read on host, then the executer will insert appropriate barrier info for host
+reading after done writting to it.
+
+ReadTargets
+Use a specialized object for collecting subresource read information, both external and transient versions. 
+This allows maintaing what subresource passes read from without having to iterate through large collection of data resources
+just to specify what is being read while performing other operations that will help parsing these read targets.
+
+ Interesting SubResources
+ Instead of Read Targets storing maps with subresource as keys. Instead store maps with resources as keys, that map to the list
+ of subresources used for reading. Thus each writing subresource dependency can quickly check for a matching resource read from
+ the pass then iterate through the list of read subresources, checking for insection for each.
+
+ Queue Family Ownership Transfer
+ Have to worry about queue family ownership of resources as well before an execution starts
+
+Note that since Queue Family Ownership Transfer only matters in the context of reading operations, as can still write
+to resources that are owned by a different queue from another queue, its just that the contents of the data in the resource
+will become undefined.
+With this info, dont have to worry about performing ownership transfer over transient resources, as assumed undefined even if 
+its a reused underlying resource
+
+For external resources, in order to maintain the data, similiar to image layout, can maintain a constant queue family owner
+for the resource that must be respected. Or it can be queue family shared resource.
+A execution can write to a subresource of this external resource from any queue, but must guarentee that after the operation
+that ownership is transfered to queue family owner defined by the resource for the specified subresource range.
+It's difficult to say on how the subresource is determine for the automatic implicit queue family owenership acquisition.
+Can perhaps experiment with like a dummy barrier to see if its possible to specify the subresource range.
+If its too much trouble, can just make the resource concurrent instead. And have write to exclusive resources limited so that
+it will be known that it will end up undefined for the whole resource when performing a write from a different queue family
+then it belong too.
+
+For Concurrent resources, since its specified what queue families use the reosurce, both writes and read are restricted
+to the specified queue families.
+
+Executions
+Want to treat them as more broad series of tasks that user can interact with to establish dependencies and to allow
+waiting on them. To allow resource sharing between dependenies, want to establish full command waiting via semaphores.
+
+Note: In order to allow executions with dependencies but are not neccesary to have separate vkqueue submits, can have
+the submission/execute function execute all currently know executions in the order they were instatiated. 
+
+One example coulde be like Rendering Exection -> Post Processing+Present Execution per frame. So create the first, then the second
+with the first specified as dependency. After that can execute so that both are submitted via the same vkqueue submit.
+Then in the next frame, in order to reuse transient resource, have this frame's rendering execution depend on the 
+previous frame's rendering execution, and then the frame's post processing one depending on the same frame rendering exectuion
+and the previous frames post processing execution. Thus the second frame's rendering execution can execute while first frame
+does its post process + present.
+
+But also dont want to do a full command wait between rendering and post process executions. And also prefer them not stealing
+resoruces from each other.
+
+Instead, let Executions represents distinct set of passes within a recording that can be assign as a dependency for 
+another Execution, and this dependency enforces a full command wait for the dependening Execution until all its dependencies
+finish. But Executions in the same recording, if they have no dependency connection, will have the same tight syncronization
+utilized normally. Transient resources still are limited to the Executions they are created in, thus reading and writing
+of these transient resources are also limited within an Execution. Thus external resources must be used for read-write interaction
+between Executions.
+
+Can more so think of Executions as just separate rendergraaphs that read/write external resources.
+
+Another example is staging data. Can have one execution represent the upload of staging data from the staging buffer to other
+external resources. By decoupling it from the render execution, can now just wait on the Staging Execution when we need to wait
+for the subresource range of the staging buffer to be available for reuse instead of waiting for like the whole rendering execution.
+
+So basically use Executions to represent distinct parts of tasks that work on external resources. Though doesnt restrict writting and reading the same external resource in a Execution
+Allow Executions within the same recording to have tight syncronization with each other, 
+and allow executions to have a dependency with other executions that enforce
+all commands wait, allowing reuse of transient resources of the dependent execution. And Executions allow multiple parts of a frame
+to run concurrently with other frame's executions.
+
+For syncing executions within the same recording, more so how to sync with respect to external resources with overhead of syncing
+queues in mind. To keep the number of command buffers minimal, for any cross queue dependency involving external resources
+that are interacted between different executions, want to utilize the semaphore signalling established by executions as much
+as possible. So when creating executions, can mark the deplevels for each queue where execution ends and use that as a good place to start
+for finding where to cut command buffers, as its guarenteed by execution to be cut.
+
+How to ensure that everything within an execution finishs?
+Can't reliably use just the last commandd buffer for each queue as simply
+the ones that just need to signal. Need to track dependencies between command buffers and figure out which ones
+are the last in a respective dependency chain
+Actually, due to semaphore signalling and waiting guarenteeing that all commands are included in the respective scope in submission order occuring before or after,
+just need the last command buffers to signal and the first command buffers to wait within an execution.
+ 
+ The Stage flags should be fine grained and specific to what the Execution does. This reduces the chances of 
+ waiting for uneccesary worked to be drained before a dependent Execution can execute. One example is two
+ separate Executions, one runs a transfer on the Primary Queue, the other compute on the same Queue. If have another
+ Execution that is dependent on the first, thus having the signaling stage mask jsut include transfer will prevent
+ the Execution from waiting on the latter.
+
+ Above requires just tracking all the stages performed by the Execution on each queue. Then having it wait and
+ signal with just those stages.
+
+ Note: Using PipelineBarriers2 and VkQueueSubmit2
+
+ ImageLayout2
+ The previous layout of the image chages if a iamge subreoursce shoudl be transitioned and if to jsut use memory barrier instead
+ Only care about transitioning if actually wrote to the subresource in my impementation.
+ If General, though unsure of performance difference, can leave out transioning the image for any kind of writes or reads
+ Some layouts also supports layouts where they cover multiple bases like read and write or an attachment that can be used for both
+ color and depth+stencil.
+ This means tthat finding the optimal layout is dependent on both the write and reads performed on a subresource.
+For external, guarenteed that the layout after writting will match what it was created with. So its up to user to define
+a layout suitable for not only its read but also the expected usual writes to the image to reduce pre write layout transitions
+when believed to be suitable..
+For transient, since trying to figure out the layout based on write and reads. So hard to say how to optimize it.
+Aim for minimizing transitions by determing the an appropriate layout based on the write and reads performed on the
+iamge subresource, but trying not to use general unless neccesary (storage image write)
+ex: A subrsource is used as a wirte in a color attachment, but hen used as a read as a depth attachment, can go for the generic
+attachment optimal, skipping the need to transition image.
+But this requires holding off of adding the barrier representing the subresource to the list of barriers, as the image subresource
+will end up not needing to transition, thus can instead opt for a memory barrier.
+Same can be said for when a subresource requires queue ownership transition, the subresource must use a buffer/image memory
+barrier instead.
+So best to instead of barrier information for each subresource dependency then iterate through dependencies after, creating
+the actual barriers needed for execution.
+
+Since Commands parameters usually take the layout for images, want them to access the final decided layout for both writting
+and reading. For Action Commands especially, want to pass layout for reading and writting.
+
+Minimizing Barriers
+First start off with subresource dependencies having their specified write and read stage masks, write and read image layout,\
+and queue write and read access info.
+Iterate through list, first figure out if utilize just a memory barrier or a more granular barrier.
+Then if utilizing global memory barrier, check for any existing global memory barriers within the same dep level
+by iterating through the list of current memory barriers for overlapping stage masks. For each adding barrier, 
+check with each existing barrier if they already represent the adding barrier
+or if it can be updated to do so. And if no more existing barrrers represent the barrier,
+then create a new barrier to represent the non represented stages we have left. 
+Representing means that the adding barrier is a subset of the existing barrier.
+If it the adding barrier intersects with the existing or the existing is a subset of the adding, then can try
+update the existing to try fully or partially represent the adding barrier based on matching or intersecting src and dst stage
+masks.
+
+Timeline Semaphores
+A timeline semaphore signal operation can represent multiple pairs of (signal, wait) as long as signal is the same for
+these set of pairs, same dep level of signalling and same src stage flags. Thus for every wait, at the dep level specified
+for waiting, the value representing that timeline semaphore signal should be waited on.
+How are timeline semaphores utilized?
+A timeline semaphore is needed for every path of signaling within the entire execution across all queues.
+If two signals are not connected by stage mask dependency chain, then would need two separate timeline semaphores for them.
+Can happen when they represent two distinct operations or a fork of operations.
+But can use any timeline semaphore if a signal is connected to multiple previous signals.
+This works as a timeline semaphore works by guarenteeing that if signal1 sets timeline semaphoreA to 1, and signal2 sets timeline
+semaphoreB to 2, then signal2 implies that signal1 sets off, and thus the operation represented by signal1 is finished
+
+For Syncing Executions, can reuse timeline semaphores that are used to sync the internal cross queue dependencies.
+Treat Timeline semaphores as just
+
+Minimizing Semaphores
+Prioritize minimizing semaphores by placing them with respect of indirect dependenices.
+Semaphore signalling and waiting is similiar to a barrier, but a disjoint where the placement of signal and wait
+and the stage flags complicate this further.
+
+For each cross queue accessed subresource dependency, let there be (signal, wait) pair that would represent a semaphore
+signal and wait operation. With signal having the queue that signals and dep level of it. And wait the queue that waits and dep level of it
+
+For each adding pair, check with existing pairs signal and waits like with global memory barriers to reduce redundant signals
+and waits within the same dep levels.
+Note that multiple waits can be tied to a single signal. And a signal basically represents a single semaphore (though timeline
+semaphores its kind of weird).
+Let the existing pair be pair1 (sig1, wait1) and adding pair be pair2 (sig2, wait2). Pair1 fully represents pair2 if the dep 
+and write levels of both their sig and waits match and the stage masks of pair2's sig2 and wait2s is a subset of pair1's.
+Thus dont need to add pair2.
+When pair2 intersects with pair1 or pair1 is a subset of pair2 in terms of stage masks and dep level+queue of access of sig and wait,
+can try to update pair1 to fully or partially represent pair2, and add pair2 with the rest of nonrepresented parts of it.
+So can end up pair2 not being needed or added with the unrepresented parts or just fully added. Can also have situations where
+pair2 is updated as (sig1, wait2) so wait2 waits on the signal operation represented by sig1, thus use same semaphore signalling. Though doesnt work other way
+around as something like pair2 being changed to (sig2, wait1) still represents usage of a different semaphore.
+
+For culling redundant dependencies do to the chain of dependencies between stages established by barriers and other semaphores
+operatons.
+To do this, perform a second pass over the list of pairs after the first pass performs its culling, For each pair, compare it 
+with other pairs and see if both the other pair's signal and dep level exist between the first, inclusive, iterate through dep levels
+from both ends to see if they are connected by stage mask chain through both barriers and semaphores. Then if so, cull the outer pair.
+
+Note: Granularity of both semaphore signaling and waiting is by dep levels. And treat semaphores similiar to barrier in terms
+on how to handle multiple reads acros s multiple dep levels, have only one wait that include all dstStages for reading at the earliest dep level. 
+Trying to do more granular approach doesnt work with queue family ownership transfer, and would require also tracking multiple
+points where a subresource is read from, and more semaphores and split command buffers.
+
+Note: Queue family ownership transfer doesnt allow granular stages for signaling. Must use all commands stage for srcMask
+when signaling.
+*/  
